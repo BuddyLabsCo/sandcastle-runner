@@ -269,6 +269,12 @@ export async function runProject(input: RunInput): Promise<RunSummary> {
         ? publication.outcome
         : "incomplete";
     }
+    if (
+      !input.autoMerge &&
+      (input.issueTicket !== undefined ||
+        input.standaloneIssueList !== undefined)
+    )
+      return null;
     const ordered = await Promise.all(
       publication.published.map(async (published) => ({
         ...published,
@@ -400,6 +406,7 @@ export async function runProject(input: RunInput): Promise<RunSummary> {
       inputs,
     );
     if (outcome) return summary(outcome);
+    if (!input.autoMerge) return summary("succeeded");
   }
 
   if (input.issueTicket !== undefined) {

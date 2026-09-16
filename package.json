@@ -23,6 +23,7 @@
     "typescript-eslint": "8.70.0"
   },
   "dependencies": {
-    "@ai-hero/sandcastle": "0.12.0"
+    "@ai-hero/sandcastle": "0.12.0",
+    "cac": "7.0.0"
   }
 }

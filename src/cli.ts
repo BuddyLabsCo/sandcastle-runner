@@ -9,6 +9,7 @@ import { GitHubTracker } from "./adapters/github-tracker.ts";
 import { SandcastleAgentExecutor } from "./adapters/sandcastle.ts";
 import { TerminalOperator } from "./adapters/terminal.ts";
 import { AuditLog } from "./audit.ts";
+import { cac } from "cac";
 import { loadProject } from "./config.ts";
 import {
   InvalidRecoverySnapshot,
@@ -49,40 +50,99 @@ export interface CliResult {
   logPath: string | null;
 }
 
+const usageMessage =
+  "usage: sandcastle-runner run --project <project-key> (--parent <issue-number> | --issue [<issue-number>])";
+
+function parseRunOptions(argv: string[]) {
+  const cli = cac("sandcastle-runner");
+  cli
+    .command("run")
+    .option("--project <project>", "Project key")
+    .option("--parent <ticket>", "Parent Ticket number")
+    .option("--issue [ticket]", "Standalone Issue number")
+    .option("--auto-merge", "Request merge after the Pull Request is CI-ready")
+    .option("--no-auto-merge", "Stop after the Pull Request is CI-ready")
+    .action(() => undefined);
+  cli.parse(["node", "sandcastle-runner", ...argv]);
+  if (cli.matchedCommandName !== "run") throw new Error(usageMessage);
+  const options = cli.options as {
+    project?: unknown;
+    parent?: unknown;
+    issue?: unknown;
+    autoMerge?: unknown;
+  };
+
+  if (argv.includes("--auto-merge") && argv.includes("--no-auto-merge"))
+    throw new Error("auto-merge flags are mutually exclusive");
+  if (typeof options.autoMerge !== "boolean")
+    throw new Error("auto-merge flags do not accept a value");
+  if (typeof options.project !== "string" || options.project.length === 0)
+    throw new Error(
+      "project and a positive Parent Ticket or issue number are required",
+    );
+  return {
+    project: options.project,
+    options,
+    autoMerge: options.autoMerge === true,
+  };
+}
+
+function ticketNumber(value: unknown): number | undefined {
+  if (value === undefined || value === true) return undefined;
+  return parseTicket(value);
+}
+
+function startupProject(argv: string[]): string {
+  const value = argv[argv.indexOf("--project") + 1];
+  return typeof value === "string" &&
+    value.length > 0 &&
+    !value.startsWith("--")
+    ? value
+    : "unknown";
+}
+
+function parseTicket(value: unknown): number {
+  const ticket = Number(value);
+  if (!Number.isSafeInteger(ticket) || ticket <= 0)
+    throw new Error(
+      "project and a positive Parent Ticket or issue number are required",
+    );
+  return ticket;
+}
+
 function parseArguments(argv: string[]): {
   project: string;
   parentTicket?: number;
   selector: "parent" | "issue";
   issueTicket?: number;
+  autoMerge: boolean;
 } {
-  if (
-    (argv.length !== 4 && argv.length !== 5) ||
-    argv[0] !== "run" ||
-    argv[1] !== "--project"
-  )
-    throw new Error(
-      "usage: sandcastle-runner run --project <project-key> (--parent <issue-number> | --issue [<issue-number>])",
-    );
-  const project = argv[2];
-  const rawSelector = argv[3];
-  if (!project || (rawSelector !== "--parent" && rawSelector !== "--issue")) {
-    throw new Error(
-      "project and a positive Parent Ticket or issue number are required",
-    );
+  const { project, options, autoMerge } = parseRunOptions(argv);
+  const parentTicket = ticketNumber(options.parent);
+  const issueTicket = ticketNumber(options.issue);
+  if ((parentTicket === undefined) === (issueTicket === undefined))
+    throw new Error(usageMessage);
+
+  const explicitAutoMerge =
+    argv.includes("--auto-merge") || argv.includes("--no-auto-merge");
+  if (explicitAutoMerge && issueTicket === undefined)
+    throw new Error("auto-merge flags require a value-bearing --issue");
+  if (issueTicket === undefined) {
+    if (parentTicket === undefined) throw new Error(usageMessage);
+    return {
+      project,
+      parentTicket,
+      selector: "parent",
+      autoMerge,
+    };
   }
-  const selector = rawSelector === "--issue" ? "issue" : "parent";
-  if (argv.length === 4) {
-    if (selector !== "issue") throw new Error("a Parent Ticket is required");
-    return { project, selector };
-  }
-  const ticket = Number(argv[4]);
-  if (!Number.isSafeInteger(ticket) || ticket <= 0)
-    throw new Error(
-      "project and a positive Parent Ticket or issue number are required",
-    );
-  return selector === "issue"
-    ? { project, selector, parentTicket: ticket, issueTicket: ticket }
-    : { project, selector, parentTicket: ticket };
+  return {
+    project,
+    parentTicket: issueTicket,
+    selector: "issue",
+    issueTicket,
+    autoMerge,
+  };
 }
 
 export async function executeCli(
@@ -93,12 +153,14 @@ export async function executeCli(
   let parentTicket: number | undefined;
   let selector: "parent" | "issue";
   let issueTicket: number | undefined;
+  let autoMerge: boolean;
   try {
-    ({ project, parentTicket, selector, issueTicket } = parseArguments(argv));
+    ({ project, parentTicket, selector, issueTicket, autoMerge } =
+      parseArguments(argv));
   } catch (error) {
     const summary: RunSummary = {
       outcome: "failed",
-      project: argv[2] ?? "unknown",
+      project: startupProject(argv),
       parentTicket: 0,
       targetBranch: "unresolved",
       reasons: [
@@ -308,6 +370,7 @@ export async function executeCli(
       issueList: loaded.config.issueList,
       ...(issueTicket === undefined ? {} : { issueTicket }),
       ...(standaloneIssueList === undefined ? {} : { standaloneIssueList }),
+      autoMerge,
       repository: loaded.config.repository,
       ...(loaded.config.targetBranch === undefined
         ? {}
@@ -404,7 +467,10 @@ export async function executeCli(
   }
   await writeRecoverySnapshot(paths.snapshot, {
     ...currentSnapshot,
-    phase: summary.outcome,
+    phase:
+      summary.outcome === "succeeded" && !autoMerge
+        ? currentSnapshot.phase
+        : summary.outcome,
     targetBranch: summary.targetBranch,
     updatedAt: dependencies.clock.now().toISOString(),
   });

@@ -26,7 +26,7 @@ locked dependencies, and invoke the local executable through npm:
 git clone https://github.com/xiakeng/sandcastle-runner.git
 cd sandcastle-runner
 npm ci
-npm exec -- sandcastle-runner run --project <project-key> (--parent <issue-number> | --issue [<issue-number>])
+npm exec -- sandcastle-runner run --project <project-key> (--parent <issue-number> | --issue [<issue-number>]) [--auto-merge | --no-auto-merge]
 ```
 
 The Runner is not published to a package registry, globally installed, invoked
@@ -168,6 +168,8 @@ npm exec -- sandcastle-runner run --project <project-key> (--parent <issue-numbe
 ```
 
 The command prints one JSON summary. `succeeded` and `no_work` exit with status 0; `incomplete`, `cancelled`, and `failed` exit non-zero.
+
+By default, a standalone Run requests a merge after its Pull Request is CI-ready. With `--no-auto-merge`, the Runner creates and validates the Pull Request, then preserves the Reservation, Worktree, and Recovery Snapshot without adding the ticket to completed deliveries. Explicit auto-merge flags require a value-bearing `--issue <issue-number>` and accept no value.
 
 ## Local development
 
