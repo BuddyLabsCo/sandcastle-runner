@@ -1,6 +1,6 @@
 {
   "$comment": "Replace repository, checkout, runnerAccount, and targetBranch for your Project. checkout must be absolute. ticketClosure is runner or code_host.",
-  "repository": "xiakeng/sandcastle-runner",
+  "repository": "BuddyLabsCo/sandcastle-runner",
   "checkout": "/home/xiakeng/Desktop/workspace/sandcastle-runner-checkout/",
   "issueList": [],
   "targetBranch": "main",

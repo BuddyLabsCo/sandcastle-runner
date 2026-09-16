@@ -12,7 +12,7 @@
 
 ### Issue tracker
 
-Issues are tracked in GitHub Issues for `xiakeng/sandcastle-runner`. See `docs/agents/issue-tracker.md`.
+Issues are tracked in GitHub Issues for `BuddyLabsCo/sandcastle-runner`. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
