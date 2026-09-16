@@ -266,7 +266,7 @@ export interface AgentAttemptInput {
   promptArgs: Record<string, string | number>;
   pullRequestMetadata: "required" | "required_for_committed" | "ignored";
   model: string;
-  effort: "low" | "medium" | "high" | "xhigh";
+  effort: string;
   gitConfigGlobal: string;
   logFile: string;
   timeoutMs: number;

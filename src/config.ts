@@ -11,7 +11,7 @@ const reviewConfigurationError =
 
 export interface AgentConfig {
   model: string;
-  reasoningEffort: "low" | "medium" | "high" | "xhigh" | "max";
+  reasoningEffort: string;
 }
 
 export interface ProjectConfig {
@@ -119,7 +119,7 @@ function agent(value: unknown, name: string): AgentConfig {
   const input = record(value, name);
   const model = text(input.model, `${name}.model`);
   const effort = text(input.reasoningEffort, `${name}.reasoningEffort`);
-  return { model, reasoningEffort: effort as AgentConfig["reasoningEffort"] };
+  return { model, reasoningEffort: effort };
 }
 
 function parseConfig(

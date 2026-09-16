@@ -1,5 +1,4 @@
 import {
-  codex,
   Output,
   StructuredOutputError,
   run as runSandcastle,
@@ -23,6 +22,7 @@ import type {
   AgentExecutor,
   ReviewAttemptInput,
 } from "../run/contracts.ts";
+import { codexWithRunnerEffort } from "./codex-agent.ts";
 import { OperatorCancelled } from "../run/operations.ts";
 import { noShellSandbox } from "./no-shell-sandbox.ts";
 
@@ -164,7 +164,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
           "Reply with exactly: SESSION_READY",
         );
         const result = await this.run({
-          agent: codex(input.model, { effort: input.effort }),
+          agent: codexWithRunnerEffort(input.model, input.effort),
           sandbox: noShellSandbox({
             env: { GIT_CONFIG_GLOBAL: input.gitConfigGlobal },
           }),
@@ -279,7 +279,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
         await this.logPrompt(input.logFile, runPrompt);
         try {
           result = await this.run({
-            agent: codex(input.model, { effort: input.effort }),
+            agent: codexWithRunnerEffort(input.model, input.effort),
             sandbox: noShellSandbox({
               env: { GIT_CONFIG_GLOBAL: input.gitConfigGlobal },
             }),

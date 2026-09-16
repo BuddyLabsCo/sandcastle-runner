@@ -395,7 +395,7 @@ test("SandcastleAgentExecutor supplies the complete controlled Codex invocation"
       prompt: "controlled prompt",
       dangerouslySkipPermissions: true,
     }).command,
-    /-m 'gpt-5\.6-sol'.*model_reasoning_effort="high"/u,
+    /-m 'glm-5\.3-flash'.*model_reasoning_effort="max"/u,
   );
   assert.equal(options.sandbox.name, "no-sandbox");
   assert.deepEqual(options.sandbox.env, {
