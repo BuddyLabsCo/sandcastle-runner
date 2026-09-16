@@ -64,6 +64,7 @@ function parseRunOptions(argv: string[]) {
     .option("--no-auto-merge", "Stop after the Pull Request is CI-ready")
     .action(() => undefined);
   cli.parse(["node", "sandcastle-runner", ...argv]);
+  if (cli.matchedCommandName !== "run") throw new Error(usageMessage);
   const options = cli.options as {
     project?: unknown;
     parent?: unknown;
