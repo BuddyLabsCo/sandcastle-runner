@@ -11,7 +11,7 @@ const reviewConfigurationError =
 
 export interface AgentConfig {
   model: string;
-  reasoningEffort: "low" | "medium" | "high" | "xhigh";
+  reasoningEffort: "low" | "medium" | "high" | "xhigh" | "max";
 }
 
 export interface ProjectConfig {
