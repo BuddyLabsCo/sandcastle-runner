@@ -44,7 +44,11 @@ _Avoid_: Task, work item
 A Project-configured list of issue numbers. In a Parent Ticket run it limits processing to listed same-repository direct children; in a value-less `--issue` run it supplies the standalone issues to process.
 _Avoid_: Sub-issue list
 
-**Eligible Delivery Ticket**:
+**Standalone Issue**:
+A GitHub issue processed as its own delivery scope rather than as a child of a Parent Ticket.
+_Avoid_: Single issue, orphan issue
+
+**Eligible Delivery Ticket***:
 An open Delivery Ticket with no non-runner assignee, no complete or partial Reservation, and only closed native blockers.
 _Avoid_: Ready ticket, available ticket
 
