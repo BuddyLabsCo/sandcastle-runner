@@ -92,6 +92,15 @@ function ticketNumber(value: unknown): number | undefined {
   return parseTicket(value);
 }
 
+function startupProject(argv: string[]): string {
+  const value = argv[argv.indexOf("--project") + 1];
+  return typeof value === "string" &&
+    value.length > 0 &&
+    !value.startsWith("--")
+    ? value
+    : "unknown";
+}
+
 function parseTicket(value: unknown): number {
   const ticket = Number(value);
   if (!Number.isSafeInteger(ticket) || ticket <= 0)
@@ -151,7 +160,7 @@ export async function executeCli(
   } catch (error) {
     const summary: RunSummary = {
       outcome: "failed",
-      project: argv[2] ?? "unknown",
+      project: startupProject(argv),
       parentTicket: 0,
       targetBranch: "unresolved",
       reasons: [

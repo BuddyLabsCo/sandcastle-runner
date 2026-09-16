@@ -341,3 +341,14 @@ test("auto-merge flag forms are parsed and restricted", async () => {
     assert.equal(rejected.summary.outcome, "failed");
   }
 });
+
+test("parse failures retain the project supplied in any option order", async () => {
+  const root = await createProject();
+  const result = await executeCli(
+    ["run", "--issue", "10", "--project", "demo", "--auto-merge", "true"],
+    createCliDependencies(root),
+  );
+
+  assert.equal(result.summary.outcome, "failed");
+  assert.equal(result.summary.project, "demo");
+});
