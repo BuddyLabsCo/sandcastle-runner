@@ -17,7 +17,7 @@
   "workflow": {
     "$comment": "Both nodes default to true when omitted and can be disabled independently.",
     "review": true,
-    "documentationMaintenance": true
+    "documentationMaintenance": false
   },
   "tracker": {
     "$comment": "GitHub tracker settings. tokenEnv names an environment variable; reservationLabel marks Runner-owned Delivery Tickets.",
