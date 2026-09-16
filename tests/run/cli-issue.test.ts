@@ -312,6 +312,9 @@ test("auto-merge flag forms are parsed and restricted", async () => {
   for (const args of [
     ["run", "--project", "demo", "--issue", "10", "--auto-merge", "true"],
     ["run", "--project", "demo", "--issue", "10", "--auto-merge", "false"],
+    ["run", "--project", "demo", "--issue", "10", "--auto-merge=true"],
+    ["run", "--project", "demo", "--issue", "10", "--no-auto-merge=true"],
+    ["run", "--project", "demo", "--issue", "10", "--no-auto-merge", "false"],
     [
       "run",
       "--project",
@@ -327,6 +330,8 @@ test("auto-merge flag forms are parsed and restricted", async () => {
     ["run", "--project", "demo", "--issue", "1.2"],
     ["run", "--issue", "10"],
     ["run", "--project", "demo", "--issue", "10", "--project"],
+    ["run", "--unknown", "demo", "--project", "demo", "--issue", "10"],
+    ["run", "--project", "demo", "--parent", "--issue", "10"],
     ["run", "--unknown", "demo", "--issue", "10"],
   ]) {
     const rejected = await executeCli(args, createCliDependencies(root));

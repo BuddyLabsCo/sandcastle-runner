@@ -61,7 +61,8 @@ function parseRunOptions(argv: string[]) {
     .option("--parent <ticket>", "Parent Ticket number")
     .option("--issue [ticket]", "Standalone Issue number")
     .option("--auto-merge", "Request merge after the Pull Request is CI-ready")
-    .option("--no-auto-merge", "Stop after the Pull Request is CI-ready");
+    .option("--no-auto-merge", "Stop after the Pull Request is CI-ready")
+    .action(() => undefined);
   cli.parse(["node", "sandcastle-runner", ...argv]);
   const options = cli.options as {
     project?: unknown;
@@ -72,10 +73,7 @@ function parseRunOptions(argv: string[]) {
 
   if (argv.includes("--auto-merge") && argv.includes("--no-auto-merge"))
     throw new Error("auto-merge flags are mutually exclusive");
-  if (
-    (argv.includes("--auto-merge") || argv.includes("--no-auto-merge")) &&
-    typeof options.autoMerge !== "boolean"
-  )
+  if (typeof options.autoMerge !== "boolean")
     throw new Error("auto-merge flags do not accept a value");
   if (typeof options.project !== "string" || options.project.length === 0)
     throw new Error(
