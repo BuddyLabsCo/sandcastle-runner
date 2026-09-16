@@ -95,11 +95,14 @@ export async function runStandaloneIssue(
         : await publishVerifiedHandoffs(publicationInputs);
     context.reasons.push(...discovery.reasons, ...attempts.reasons);
     if (!publication) return context.summary(attempts.outcome);
+    if (!input.autoMerge && publication.outcome === "succeeded")
+      return context.summary("succeeded");
     const outcome = await context.integratePublication(
       publication,
       batchComplete,
       publicationInputs,
     );
     if (outcome) return context.summary(outcome);
+    if (!input.autoMerge) return context.summary("succeeded");
   }
 }
