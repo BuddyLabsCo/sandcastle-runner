@@ -37,6 +37,7 @@ export interface RunInput {
   issueList: number[];
   issueTicket?: number;
   standaloneIssueList?: number[];
+  autoMerge: boolean;
   repository: string;
   configuredTargetBranch?: string;
   runId: string;

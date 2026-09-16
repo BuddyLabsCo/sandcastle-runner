@@ -134,3 +134,33 @@ export async function writePublicationState(
   });
   return snapshot;
 }
+
+export async function recoverySnapshot(
+  root: string,
+  ticket: number,
+  publication: PublicationIntent,
+): Promise<string> {
+  const snapshot = recoveryPaths(
+    `${root}/projects/demo`,
+    ticket,
+    "issue",
+  ).snapshot;
+  await writeRecoverySnapshot(snapshot, {
+    schemaVersion: 1,
+    project: "demo",
+    repository: "owner/repo",
+    checkout: "/tmp/repo",
+    parentTicket: ticket,
+    runKind: "issue",
+    issueTicket: ticket,
+    runId: "interrupted",
+    phase: "running",
+    targetBranch: "main",
+    createdAt: "2026-09-08T00:00:00.000Z",
+    updatedAt: "2026-09-08T00:00:00.000Z",
+    batch: [publication.ticket],
+    completedDeliveries: [],
+    publications: [publication],
+  });
+  return snapshot;
+}
