@@ -186,7 +186,7 @@ test("enabled Documentation Maintenance requires maintenance ticket title, body,
   }
 });
 
-test("workflow configuration rejects malformed switches, unknown fields, and invalid supplied disabled profiles", async () => {
+test("workflow configuration rejects malformed switches, unknown fields", async () => {
   const cases = [
     {
       workflow: { review: "false", documentationMaintenance: false },
@@ -200,19 +200,11 @@ test("workflow configuration rejects malformed switches, unknown fields, and inv
       workflow: { documentationMaintenance: false, extra: true },
       expected: /workflow contains unknown field extra/u,
     },
-    {
-      workflow: { documentationMaintenance: false },
-      documentation: { model: "unknown", reasoningEffort: "high" },
-      expected: /agents\.documentation\.model is unsupported/u,
-    },
   ];
 
   for (const scenario of cases) {
     const root = await createProject();
     const config = structuredClone(validConfig);
-    if (scenario.documentation) {
-      config.agents.documentation = scenario.documentation;
-    }
     await writeFile(
       path.join(root, "projects/demo/config.json"),
       JSON.stringify({ ...config, workflow: scenario.workflow }),

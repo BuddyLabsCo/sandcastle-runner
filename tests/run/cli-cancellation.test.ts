@@ -9,7 +9,7 @@ import {
   createAttemptTracker,
   createCommittedBatch,
 } from "../support/cli-dependencies.ts";
-import { validConfig, createProject } from "../support/cli-project.ts";
+import { createProject } from "../support/cli-project.ts";
 import { executeCli } from "../../src/cli.ts";
 
 test.afterEach(cleanupTempRoots);
@@ -320,56 +320,6 @@ test("cancelling boundary revalidation after an Agent result pauses once", async
 
   assert.equal(result.summary.outcome, "cancelled");
   assert.equal(pauseCalls, 1);
-});
-
-test("unsupported model and effort selections fail before workflow operations", async () => {
-  for (const implement of [
-    { model: "gpt-not-real", reasoningEffort: "high" },
-    { model: "gpt-5.6-sol", reasoningEffort: "ultra" },
-  ]) {
-    const root = await createProject();
-    const config = structuredClone(validConfig);
-    config.agents = { ...config.agents, implement };
-    await writeFile(
-      path.join(root, "projects", "demo", "config.json"),
-      JSON.stringify(config),
-    );
-    let workflowCalls = 0;
-    const result = await executeCli(
-      ["run", "--project", "demo", "--parent", "8"],
-      createCliDependencies(root, {
-        tracker: {
-          async getParent() {
-            workflowCalls += 1;
-            throw new Error("must not run");
-          },
-          async listChildrenPage() {
-            workflowCalls += 1;
-            throw new Error("must not run");
-          },
-          async closeParent() {
-            workflowCalls += 1;
-          },
-        },
-        codeHost: {
-          async resolveTargetBranch() {
-            workflowCalls += 1;
-            return "main";
-          },
-        },
-        operator: {
-          async pause() {
-            workflowCalls += 1;
-            return "q";
-          },
-        },
-      }),
-    );
-
-    assert.equal(result.summary.outcome, "failed");
-    assert.match(result.summary.reasons[0] ?? "", /unsupported/u);
-    assert.equal(workflowCalls, 0);
-  }
 });
 
 test("empty input retries a failed audit creation", async () => {

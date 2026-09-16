@@ -8,14 +8,6 @@ const documentationConfigurationError =
   "Documentation Maintenance is enabled; supply agents.documentation and prompts/documentation.md";
 const reviewConfigurationError =
   "Review is enabled; supply agents.review and prompts/review.md";
-const supportedModels = new Set([
-  "gpt-5.2",
-  "gpt-5.5",
-  "gpt-5.6-luna",
-  "gpt-5.6-sol",
-  "gpt-5.6-terra",
-  "gpt-6-astra",
-]);
 
 export interface AgentConfig {
   model: string;
@@ -126,12 +118,7 @@ function switchValue(value: unknown, name: string): boolean {
 function agent(value: unknown, name: string): AgentConfig {
   const input = record(value, name);
   const model = text(input.model, `${name}.model`);
-  if (!supportedModels.has(model))
-    throw new Error(`${name}.model is unsupported`);
   const effort = text(input.reasoningEffort, `${name}.reasoningEffort`);
-  if (!["low", "medium", "high", "xhigh"].includes(effort)) {
-    throw new Error(`${name}.reasoningEffort is unsupported`);
-  }
   return { model, reasoningEffort: effort as AgentConfig["reasoningEffort"] };
 }
 

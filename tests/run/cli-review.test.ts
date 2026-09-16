@@ -40,7 +40,7 @@ test("default-enabled review reports its required profile and prompt paths", asy
   );
 });
 
-test("disabled review does not read its prompt but validates a supplied profile", async () => {
+test("disabled review does not read its prompt", async () => {
   const root = await createProject();
   await rm(path.join(root, "projects/demo/prompts/review.md"));
 
@@ -49,21 +49,6 @@ test("disabled review does not read its prompt but validates a supplied profile"
     createCliDependencies(root),
   );
   assert.equal(disabled.summary.outcome, "no_work");
-
-  const config = structuredClone(validConfig);
-  config.agents.review = { model: "unsupported", reasoningEffort: "high" };
-  await writeFile(
-    path.join(root, "projects/demo/config.json"),
-    JSON.stringify(config),
-  );
-  const invalid = await executeCli(
-    ["run", "--project", "demo", "--parent", "8"],
-    createCliDependencies(root),
-  );
-  assert.match(
-    invalid.summary.reasons[0] ?? "",
-    /agents\.review\.model is unsupported/u,
-  );
 });
 
 test("a clean fresh-context review gates publication and preserves implementation metadata", async () => {
