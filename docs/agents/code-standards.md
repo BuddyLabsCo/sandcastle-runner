@@ -64,6 +64,7 @@ Under `src/adapters/`, implement only operations the current implementation need
 | `github-code-host.ts` / `CodeHost` | Repository metadata, PRs, required checks, merge requests, and queue observations. |
 | `git-workspace.ts` / `GitWorkspace` | Fetch, Worktree creation/inspection/closure, commits, working-tree evidence, and push. |
 | `sandcastle.ts` / `AgentExecutor` | Sandcastle invocation, streaming, session continuation, timeout/abort, and settlement. Delegate process lifecycle to Sandcastle. |
+| `codex-agent.ts` | Codex provider construction. Forwards configured model and effort verbatim and isolates the Sandcastle dependency's provider typing. |
 | `sandcastle-output.ts` | Agent and Review Attempt output schemas, validation, and prompt placeholder replacement. |
 | `clock.ts` / `Clock` | Time, delays, and timeouts. |
 | `terminal.ts` / `OperatorIO` | Display and input/EOF; workflow code interprets operator decisions. |
