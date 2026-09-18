@@ -15,19 +15,6 @@ The JSON object must contain exactly these fields, plus the conditional Pull Req
   "blocker": null
 }
 
-Field requirements:
-
-- `outcome` is exactly `committed`, `no_change`, or `blocked`.
-- `summary` is a concise non-empty English string describing the result.
-- `commits` is an array of every commit created in the supplied Worktree. Each
-  `sha` must be a full lowercase hexadecimal Git SHA (40 to 64 characters);
-  never use `git log --oneline` abbreviations. Each `message` must be non-empty.
-- `checks` is an array. Every check has a non-empty `command`, a `status` of
-  `passed`, `failed`, or `not_run`, and non-empty `details`.
-- `blocker` must be `null` unless `outcome` is `blocked`; a blocked result must
-  provide a non-empty blocker string.
-- If present, `pr_title` and `pr_body` must each be non-empty JSON strings.
-
 Field definitions:
 
 - "outcome": one of "committed", "no_change", or "blocked".

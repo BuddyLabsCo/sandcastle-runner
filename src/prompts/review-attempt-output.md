@@ -22,20 +22,6 @@ The JSON object must contain exactly these fields:
   "blocker": null
 }
 
-Field requirements:
-
-- `outcome` is exactly `passed` or `blocked`; use `passed` only when both
-  `standards` and `spec` pass with empty finding arrays.
-- `summary` is a concise non-empty English string.
-- `standards` and `spec` each contain only `verdict` and
-  `unresolved_findings`; every finding string must be non-empty.
-- `checks` is an array of objects with non-empty `command`, `details`, and a
-  `status` of `passed`, `failed`, or `not_run`.
-- `blocker` must be `null` when `outcome` is `passed`; a blocked result must
-  provide a non-empty blocker string.
-- Do not add fields, nesting, Markdown, comments, or prose outside the single
-  result tag. The tag content must be valid JSON.
-
 Field definitions:
 
 - "outcome": one of "passed" or "blocked". Use "passed" only when both standards and spec verdicts are "passed" with no unresolved findings.
@@ -44,4 +30,5 @@ Field definitions:
 - "checks": an array of check objects. Each check must contain a non-empty command, a status of "passed", "failed", or "not_run", and non-empty details.
 - "blocker": null when "outcome" is "passed"; otherwise a non-empty string explaining the unresolved obstacle.
 
-Use "outcome": "passed" when both review axes pass cleanly. Use "outcome": "blocked" when an unresolved finding or other obstacle prevents a clean review.
+Use "outcome": "passed" when both review axes pass cleanly. Use "outcome": "blocked" when an unresolved finding or other obstacle prevents a clean review.  
+Do not add fields, nesting, Markdown, comments, or prose outside the single result tag. The tag content must be valid JSON.

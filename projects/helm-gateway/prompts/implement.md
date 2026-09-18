@@ -8,3 +8,4 @@ Implement the work described above.
 Use `/tdd` skill where possible, at pre-agreed seams.  
 Run typechecking regularly, single test files regularly, and the full test suite once at the end.
 
+If the current requirement conflicts with the existing code architecture rules , stop work immediately and ask the user to confirm before proceeding. In the returned JSON object, set the `outcome` field to "blocked" and use the `blocker` field to explain the specific architectural conflict.
