@@ -5,7 +5,7 @@
   "issueList": [],
   "targetBranch": "main",
   "operationRetry": 4,
-  "agentRetry": 4,
+  "agentRetry": 1,
   "operationRetryDelay": [10, 20, 40, 80],
   "agentRetryDelay": [10, 20, 40, 80],
   "ticketClosure": "runner",
@@ -36,28 +36,28 @@
     "$comment": "Each Agent Attempt selects a supported model and low, medium, high, or xhigh reasoning. Review and documentation profiles are required only while their workflow nodes are enabled.",
     "implement": {
       "$comment": "Initial Delivery Ticket implementation.",
-      "model": "gpt-5.6-sol",
-      "reasoningEffort": "high"
+      "model": "glm-5.3-flash",
+      "reasoningEffort": "max"
     },
     "review": {
       "$comment": "Fresh-context Standards and Spec review.",
-      "model": "gpt-5.6-sol",
-      "reasoningEffort": "high"
+      "model": "glm-5.3-flash",
+      "reasoningEffort": "max"
     },
     "ciRepair": {
       "$comment": "Repair of failed required CI checks.",
-      "model": "gpt-5.6-sol",
-      "reasoningEffort": "high"
+      "model": "glm-5.3-flash",
+      "reasoningEffort": "max"
     },
     "conflictRepair": {
       "$comment": "Repair of an explicit merge conflict.",
-      "model": "gpt-5.6-sol",
-      "reasoningEffort": "high"
+      "model": "glm-5.3-flash",
+      "reasoningEffort": "max"
     },
     "documentation": {
       "$comment": "Documentation Maintenance.",
-      "model": "gpt-5.6-sol",
-      "reasoningEffort": "high"
+      "model": "glm-5.3-flash",
+      "reasoningEffort": "max"
     }
   },
   "timeouts": {

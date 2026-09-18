@@ -29,7 +29,7 @@ The GitHub issue supplied to a Run as its delivery scope. Only its same-reposito
 _Avoid_: Parent issue, epic
 
 **Batch**:
-Up to three Delivery Tickets worked concurrently and integrated only after every pull request in that group is ready.
+Up to the Project-configured maximum number of Delivery Tickets worked concurrently and integrated only after every pull request in that group is ready.
 _Avoid_: Wave, group
 
 **CI-ready Pull Request**:
