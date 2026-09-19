@@ -184,7 +184,7 @@ async function closeNoChange(
       await input.persistMaintenance?.({
         phase: "completed",
         ticket,
-        credit: 0,
+        deliveryTickets: input.recovery?.deliveryTickets ?? [],
         barrier: false,
       });
       return confirmation.ticket.stateReason === "completed"
@@ -216,7 +216,7 @@ async function closeNoChange(
     await input.persistMaintenance?.({
       phase: "completed",
       ticket,
-      credit: 0,
+      deliveryTickets: input.recovery?.deliveryTickets ?? [],
       barrier: false,
     });
     return {
@@ -232,8 +232,11 @@ export async function runDocumentationMaintenance(
 ): Promise<MaintenanceResult> {
   const persist = (state: MaintenanceState) =>
     input.persistMaintenance?.(state) ?? Promise.resolve();
-  const parent = await revalidateParentForOperation(input);
-  if (parent.outcome !== "ready") return stopped(parent);
+  const deliveryTickets = input.recovery?.deliveryTickets ?? [];
+  if (input.parentScopedMaintenance !== false) {
+    const parent = await revalidateParentForOperation(input);
+    if (parent.outcome !== "ready") return stopped(parent);
+  }
   let ticket: Ticket;
   if (input.recovery?.ticket !== undefined) {
     ticket = {
@@ -245,11 +248,13 @@ export async function runDocumentationMaintenance(
     };
   } else {
     await ensureLabel(input);
-    const beforeCreate = await revalidateParentForOperation(input);
-    if (beforeCreate.outcome !== "ready") return stopped(beforeCreate);
+    if (input.parentScopedMaintenance !== false) {
+      const beforeCreate = await revalidateParentForOperation(input);
+      if (beforeCreate.outcome !== "ready") return stopped(beforeCreate);
+    }
     await persist({
       phase: "scheduled",
-      credit: input.recovery?.credit ?? 0,
+      deliveryTickets,
       barrier: true,
     });
     ticket = await workflowWrite({
@@ -286,7 +291,7 @@ export async function runDocumentationMaintenance(
     await persist({
       phase: "ticket_created",
       ticket: ticket.number,
-      credit: input.recovery?.credit ?? 0,
+      deliveryTickets,
       barrier: true,
     });
   }
@@ -297,7 +302,7 @@ export async function runDocumentationMaintenance(
   await persist({
     phase: "attempting",
     ticket: ticket.number,
-    credit: input.recovery?.credit ?? 0,
+    deliveryTickets,
     barrier: true,
   });
   if (input.recoveryPublication) {
@@ -320,7 +325,7 @@ export async function runDocumentationMaintenance(
       await persist({
         phase: "completed",
         ticket: ticket.number,
-        credit: 0,
+        deliveryTickets,
         barrier: false,
       });
       return {
@@ -333,7 +338,7 @@ export async function runDocumentationMaintenance(
       await persist({
         phase: "blocked",
         ticket: ticket.number,
-        credit: input.recovery?.credit ?? 0,
+        deliveryTickets,
         barrier: true,
       });
       return {
@@ -357,7 +362,7 @@ export async function runDocumentationMaintenance(
       await persist({
         phase: "completed",
         ticket: ticket.number,
-        credit: 0,
+        deliveryTickets,
         barrier: false,
       });
       return {
@@ -371,7 +376,7 @@ export async function runDocumentationMaintenance(
     await persist({
       phase: "blocked",
       ticket: ticket.number,
-      credit: input.recovery?.credit ?? 0,
+      deliveryTickets,
       barrier: true,
     });
     return {
@@ -399,7 +404,7 @@ export async function runDocumentationMaintenance(
     await persist({
       phase: "blocked",
       ticket: ticket.number,
-      credit: input.recovery?.credit ?? 0,
+      deliveryTickets,
       barrier: true,
     });
     return {
@@ -412,7 +417,7 @@ export async function runDocumentationMaintenance(
     await persist({
       phase: "pending_closure",
       ticket: ticket.number,
-      credit: input.recovery?.credit ?? 0,
+      deliveryTickets,
       barrier: true,
     });
     return closeNoChange(input, ticketBoundary, ticket.number);
@@ -457,7 +462,7 @@ export async function runDocumentationMaintenance(
     await persist({
       phase: "completed",
       ticket: ticket.number,
-      credit: 0,
+      deliveryTickets,
       barrier: false,
     });
     return {
@@ -471,7 +476,7 @@ export async function runDocumentationMaintenance(
   await persist({
     phase: "blocked",
     ticket: ticket.number,
-    credit: input.recovery?.credit ?? 0,
+    deliveryTickets,
     barrier: true,
   });
   return {

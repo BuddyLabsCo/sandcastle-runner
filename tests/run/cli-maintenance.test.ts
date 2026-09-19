@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
@@ -15,13 +15,37 @@ import type { Ticket } from "../../src/run/contracts.ts";
 
 test.afterEach(cleanupTempRoots);
 
-test("final closeout credit triggers one clean no_change Maintenance Ticket without a Pull Request", async () => {
+async function createMaintenanceProject(): Promise<string> {
   const root = await createProject();
+  const configPath = path.join(root, "projects/demo/config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8")) as {
+    workflow: { docMaintainTriggerLabel: string };
+  };
+  config.workflow.docMaintainTriggerLabel = "documentation";
+  await writeFile(configPath, JSON.stringify(config));
+  return root;
+}
+
+function createMatchingDelivery(ticket = 9) {
+  const delivery = createCommittedDelivery(ticket);
+  delivery.tickets[0]!.labels.push("documentation");
+  return delivery;
+}
+
+test("matching delivery label triggers one clean no_change Maintenance Ticket without a Pull Request", async () => {
+  const root = await createMaintenanceProject();
   await writeFile(
     path.join(root, "projects/demo/config.json"),
-    JSON.stringify({ ...validConfig, ticketClosure: "code_host" }),
+    JSON.stringify({
+      ...validConfig,
+      ticketClosure: "code_host",
+      workflow: {
+        ...validConfig.workflow,
+        docMaintainTriggerLabel: "documentation",
+      },
+    }),
   );
-  const delivery = createCommittedDelivery(9);
+  const delivery = createMatchingDelivery(9);
   const maintenance: Ticket = {
     number: 100,
     state: "open",
@@ -46,7 +70,12 @@ test("final closeout credit triggers one clean no_change Maintenance Ticket with
         },
         async getTicket(repository, ticket) {
           if (ticket === 9 && delivered) {
-            return { number: 9, state: "closed", stateReason: "completed" };
+            return {
+              number: 9,
+              state: "closed",
+              stateReason: "completed",
+              labels: ["documentation"],
+            };
           }
           return delivery.tracker.getTicket!(repository, ticket);
         },
@@ -130,8 +159,8 @@ test("final closeout credit triggers one clean no_change Maintenance Ticket with
 });
 
 test("blocked Documentation Maintenance pauses the live Run", async () => {
-  const root = await createProject();
-  const delivery = createCommittedDelivery(9);
+  const root = await createMaintenanceProject();
+  const delivery = createMatchingDelivery(9);
   const maintenance: Ticket = {
     number: 100,
     state: "open",
@@ -210,7 +239,7 @@ test("blocked Documentation Maintenance pauses the live Run", async () => {
   assert.deepEqual(snapshot?.maintenance, {
     phase: "attempting",
     ticket: 100,
-    credit: 1,
+    deliveryTickets: [9],
     barrier: true,
   });
 
@@ -220,8 +249,8 @@ test("blocked Documentation Maintenance pauses the live Run", async () => {
 
 test("Maintenance Ticket label reads and writes use normal supervised failure handling", async () => {
   for (const failure of ["read", "label", "ticket"] as const) {
-    const root = await createProject();
-    const delivery = createCommittedDelivery(9);
+    const root = await createMaintenanceProject();
+    const delivery = createMatchingDelivery(9);
     let labelWrites = 0;
     let ticketWrites = 0;
     let labelReads = 0;
@@ -270,8 +299,8 @@ test("Maintenance Ticket label reads and writes use normal supervised failure ha
 });
 
 test("Documentation Maintenance reuses CI and conflict repair on its original Pull Request", async () => {
-  const root = await createProject();
-  const delivery = createCommittedDelivery(9);
+  const root = await createMaintenanceProject();
+  const delivery = createMatchingDelivery(9);
   const base = "a".repeat(40);
   const initial = "c".repeat(40);
   const ciRepair = "d".repeat(40);

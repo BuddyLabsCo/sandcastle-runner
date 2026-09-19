@@ -8,7 +8,11 @@ import {
   createCliDependencies,
   createCommittedDelivery,
 } from "../support/cli-dependencies.ts";
-import { validConfig, createProject } from "../support/cli-project.ts";
+import {
+  validConfig,
+  createProject,
+  publicationIntent,
+} from "../support/cli-project.ts";
 import { executeCli } from "../../src/cli.ts";
 import {
   readRecoverySnapshot,
@@ -29,15 +33,19 @@ test("disabled Documentation Maintenance allows delivery and Parent closeout wit
       workflow: {
         $comment: "Review is disabled to isolate maintenance behavior.",
         review: false,
-        documentationMaintenance: false,
+        docMaintainTriggerLabel: "",
       },
     }),
   );
   await rm(path.join(root, "projects/demo/prompts/documentation.md"));
+  const maintenancePublication = {
+    ...publicationIntent("pr_created", 100),
+    kind: "maintenance" as const,
+  };
   await writeRecoverySnapshot(
     recoveryPaths(path.join(root, "projects", "demo"), 8).snapshot,
     {
-      schemaVersion: 1,
+      schemaVersion: 2,
       project: "demo",
       repository: "owner/repo",
       checkout: "/tmp/repo",
@@ -47,7 +55,15 @@ test("disabled Documentation Maintenance allows delivery and Parent closeout wit
       targetBranch: "main",
       createdAt: "2026-09-11T00:00:00.000Z",
       updatedAt: "2026-09-11T00:00:00.000Z",
-      maintenance: { phase: "blocked", ticket: 100, credit: 1, barrier: true },
+      batch: [9],
+      completedDeliveries: [{ ticket: 9, labels: ["documentation"] }],
+      maintenance: {
+        phase: "blocked",
+        ticket: 100,
+        deliveryTickets: [9],
+        barrier: true,
+      },
+      publications: [maintenancePublication],
     },
   );
   const delivery = createCommittedDelivery(9);
@@ -94,24 +110,26 @@ test("disabled Documentation Maintenance allows delivery and Parent closeout wit
     )?.maintenance,
     undefined,
   );
-  assert.doesNotMatch(result.summary.reasons.join(" "), /maintenance/iu);
+  assert.match(
+    result.summary.reasons.join(" "),
+    /preserved Maintenance Ticket 100, https:\/\/example\.test\/pull\/4, branch ticket-100-old, worktree \/tmp\/old-ticket-100/u,
+  );
   assert.ok(result.logPath);
-  assert.doesNotMatch(await readFile(result.logPath, "utf8"), /maintenance/iu);
 });
 
-test("Review and Documentation Maintenance switches operate independently and default on", async () => {
+test("Review and Documentation Maintenance trigger operate independently", async () => {
   const scenarios = [
     {
-      workflow: { review: true, documentationMaintenance: false },
+      workflow: { review: true, docMaintainTriggerLabel: "" },
       reviews: 1,
       maintenance: 0,
     },
     {
-      workflow: { review: false, documentationMaintenance: true },
+      workflow: { review: false, docMaintainTriggerLabel: "documentation" },
       reviews: 0,
       maintenance: 1,
     },
-    { workflow: undefined, reviews: 1, maintenance: 1 },
+    { workflow: undefined, reviews: 1, maintenance: 0 },
   ] as const;
 
   for (const scenario of scenarios) {
@@ -126,6 +144,8 @@ test("Review and Documentation Maintenance switches operate independently and de
       JSON.stringify(config),
     );
     const delivery = createCommittedDelivery();
+    if (scenario.workflow?.docMaintainTriggerLabel)
+      delivery.tickets[0]!.labels.push("documentation");
     let reviews = 0;
     let maintenance = 0;
 
@@ -169,6 +189,7 @@ test("enabled Documentation Maintenance requires maintenance ticket title, body,
   for (const field of ["title", "body", "label"] as const) {
     const root = await createProject();
     const config = structuredClone(validConfig);
+    config.workflow.docMaintainTriggerLabel = "documentation";
     delete config.maintenanceTicket[field];
     await writeFile(
       path.join(root, "projects/demo/config.json"),
@@ -189,16 +210,16 @@ test("enabled Documentation Maintenance requires maintenance ticket title, body,
 test("workflow configuration rejects malformed switches, unknown fields", async () => {
   const cases = [
     {
-      workflow: { review: "false", documentationMaintenance: false },
+      workflow: { review: "false", docMaintainTriggerLabel: "" },
       expected: /workflow\.review must be a boolean/u,
     },
     {
-      workflow: { documentationMaintenance: "false" },
-      expected: /workflow\.documentationMaintenance must be a boolean/u,
+      workflow: { docMaintainTriggerLabel: false },
+      expected: /workflow\.docMaintainTriggerLabel must be a string/u,
     },
     {
-      workflow: { documentationMaintenance: false, extra: true },
-      expected: /workflow contains unknown field extra/u,
+      workflow: { documentationMaintenance: false },
+      expected: /workflow contains unknown field documentationMaintenance/u,
     },
   ];
 
@@ -220,16 +241,13 @@ test("workflow configuration rejects malformed switches, unknown fields", async 
   }
 });
 
-test("default-enabled Documentation Maintenance reports its required configuration and prompt paths", async () => {
+test("omitted Documentation Maintenance trigger disables automatic maintenance", async () => {
   const root = await createProject();
+  const config = structuredClone(validConfig);
+  delete config.agents.documentation;
   await writeFile(
     path.join(root, "projects/demo/config.json"),
-    JSON.stringify({
-      ...validConfig,
-      workflow: {
-        $comment: "The maintenance switch is intentionally omitted.",
-      },
-    }),
+    JSON.stringify({ ...config, workflow: { review: false } }),
   );
   await rm(path.join(root, "projects/demo/prompts/documentation.md"));
 
@@ -238,17 +256,13 @@ test("default-enabled Documentation Maintenance reports its required configurati
     createCliDependencies(root),
   );
 
-  assert.equal(result.summary.outcome, "failed");
-  assert.match(
-    result.summary.reasons[0] ?? "",
-    /Documentation Maintenance is enabled.*agents\.documentation.*prompts\/documentation\.md/u,
-  );
-  assert.equal(result.logPath, null);
+  assert.equal(result.summary.outcome, "no_work");
 });
 
 test("enabled Documentation Maintenance rejects a missing profile", async () => {
   const root = await createProject();
   const config = structuredClone(validConfig);
+  config.workflow.docMaintainTriggerLabel = "documentation";
   delete config.agents.documentation;
   await writeFile(
     path.join(root, "projects/demo/config.json"),
@@ -270,6 +284,12 @@ test("enabled Documentation Maintenance rejects a missing profile", async () => 
 
 test("enabled Documentation Maintenance rejects an empty prompt", async () => {
   const root = await createProject();
+  const config = structuredClone(validConfig);
+  config.workflow.docMaintainTriggerLabel = "documentation";
+  await writeFile(
+    path.join(root, "projects/demo/config.json"),
+    JSON.stringify(config),
+  );
   await writeFile(
     path.join(root, "projects/demo/prompts/documentation.md"),
     " \n",

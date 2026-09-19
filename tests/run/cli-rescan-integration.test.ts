@@ -104,7 +104,7 @@ test("a successful Batch rescans added work and an emptied scope closes the Pare
   assert.deepEqual(attempts, [9, 10]);
   assert.deepEqual(result.summary.batch, [9, 10]);
   assert.deepEqual(result.summary.completedTickets, [9, 10]);
-  assert.equal(fetches, 3);
+  assert.equal(fetches, 2);
   assert.equal(parentClosures, 1);
 });
 

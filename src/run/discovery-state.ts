@@ -31,7 +31,13 @@ export interface DiscoveryInput {
   hadChildren?: boolean;
   ticketBoundary?: TicketBoundary;
   ticketKind?: "Delivery Ticket" | "Maintenance Ticket";
+  parentScopedMaintenance?: boolean;
+  maintenanceTicketLabel?: string;
   cleanupTerminal?: (ticket: number) => Promise<void>;
+}
+
+export interface BatchDiscoveryInput extends DiscoveryInput {
+  maxBatchSize: number;
 }
 
 export const readyForAgentLabel = "ready-for-agent";
@@ -274,7 +280,7 @@ export async function releaseReservation(
 }
 
 export async function inspect(
-  input: DiscoveryInput,
+  input: BatchDiscoveryInput,
   children: Ticket[],
   phase: string,
   excluded = new Set<number>(),
@@ -332,7 +338,7 @@ export async function inspect(
   return {
     batch: eligible
       .sort((left, right) => left.number - right.number)
-      .slice(0, 3),
+      .slice(0, input.maxBatchSize),
     blocked: blocked.sort((left, right) => left - right),
     externallyOwned: externallyOwned.sort((left, right) => left - right),
     reservations: reservations

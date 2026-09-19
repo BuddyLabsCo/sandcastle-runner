@@ -12,7 +12,7 @@ guidance. From the repository root, run:
 
 ```sh
 npm ci
-npm exec -- sandcastle-runner run --project <project-key> (--parent <issue-number> | --issue [<issue-number>]) [--auto-merge | --no-auto-merge]
+npm exec -- sandcastle-runner run --project <project-key> (--parent <issue-number> | --issue [<issue-number>] | --document) [--auto-merge | --no-auto-merge]
 ```
 
 The root contract requires Node.js **>=22.18.0** with its bundled npm, Git,
@@ -42,38 +42,40 @@ permanent cross-platform CI are unsupported; see the root contract for details.
 
 - `repository`: GitHub repository in `owner/name` form.
 - `checkout`: absolute path to that repository.
+- `issueList`: unique positive issue numbers used to limit Parent Runs or drive value-less Standalone Runs.
+- `maxBatchSize`: required positive safe integer limiting newly discovered Parent and Standalone Batches.
 - `targetBranch`: branch to update.
 - `tracker`: GitHub settings: `tokenEnv` names the credential variable; `runnerAccount` is the bot/user; `reservationLabel` marks reserved tickets.
 - `codeHost`: GitHub settings; `tokenEnv` names the credential variable and `adminMerge` controls administrative merge requests.
 - `workflow.review`: enable or disable the review attempt.
-- `workflow.documentationMaintenance`: enable or disable Documentation Maintenance.
-- `agents`: model and reasoning effort for `implement`, `review`, `ciRepair`, `conflictRepair`, and `documentation` attempts. `review` and `documentation` are needed only when enabled.
+- `workflow.docMaintainTriggerLabel`: exact, case-sensitive label that triggers automatic Documentation Maintenance after a successful Batch. Omitted, empty, or whitespace-only values disable automatic maintenance.
+- `agents`: model and reasoning effort for `implement`, `review`, `ciRepair`, `conflictRepair`, and `documentation` attempts. `review` is needed when enabled; `documentation` is needed for a nonempty trigger label or `--document`.
 - `timeouts`: positive minute limits for agent attempts, required checks, and merge queue confirmation.
 - `operationRetry` and `agentRetry`: non-negative automatic retry counts; the corresponding `*Delay` arrays are positive delays in seconds.
 - `ticketClosure`: `runner` or `code_host`.
 - `maintenanceTicket`: title, body, and `doc-maintain` label for maintenance tickets.
 
-Keep credentials in the environment, for example `export GH_TOKEN=...`. Both workflow switches default to `true` when omitted. `$comment` fields are ignored.
+Keep credentials in the environment, for example `export GH_TOKEN=...`. `workflow.review` defaults to `true`; `workflow.docMaintainTriggerLabel` defaults to an empty string. `$comment` fields are ignored.
 
 ## Documentation Maintenance workflow
 
-Each completed Delivery Ticket adds one credit. Three credits schedule one maintenance ticket; remaining credits schedule one at final closeout.
+At the normal post-Batch scheduling point, one automatic occurrence is required when at least one successfully delivered issue had the configured `workflow.docMaintainTriggerLabel` when its merged, completed closure was confirmed. Multiple matches in the same Batch still schedule one occurrence. Parent labels, delivery counts, Parent closeout, failed Batches, cancellation, and CI-ready unmerged Pull Requests do not trigger maintenance.
 
 ```mermaid
 flowchart TD
-    A[Delivery Ticket closes] --> B[Add maintenance credit]
-    B --> C{Three credits or final closeout?}
-    C -- No --> D[Continue delivery]
-    C -- Yes --> E[Create or resume doc-maintain ticket]
-    E --> F[Run documentation prompt]
-    F --> G{Result}
-    G -- no_change --> H[Close maintenance ticket]
-    G -- committed --> I[Review, publish, checks, repair, and merge]
-    I --> J[Close maintenance ticket and reset credits]
-    G -- blocked or failed --> K[Pause and retain barrier for recovery]
+    A[Batch integrations complete] --> B{Any completed issue has exact trigger label?}
+    B -- No --> C[Continue delivery or Parent closeout]
+    B -- Yes --> D[Create or resume Maintenance Ticket]
+    D --> E[Run documentation prompt]
+    E --> F{Result}
+    F -- no_change --> G[Close Maintenance Ticket]
+    F -- committed --> H[Publish, checks, repair, merge, and confirm closure]
+    F -- blocked or failed --> I[Retain barrier for automatic recovery]
 ```
 
-With `documentationMaintenance: false`, unfinished maintenance state is forgotten without reading or changing its ticket or artifacts; re-enabling does not rediscover it.
+Delivery-time labels are stored in the Recovery Snapshot. On restart, the current `config.json` trigger is evaluated against that stored evidence. An empty or newly nonmatching trigger stops continuation without closing or deleting the existing Maintenance Ticket, Pull Request, branch, or Worktree; their recorded locations are reported for manual handling.
+
+`--document` runs one fresh, complete occurrence without a Parent or issue scope. It ignores `issueList`, does not require a trigger label, never resumes prior maintenance, and preserves the ordinary no-change behavior without creating an empty Pull Request.
 
 ## Review enabled versus disabled
 
@@ -103,5 +105,5 @@ From the Sandcastle Runner repository:
 
 ```sh
 npm ci
-npm exec -- sandcastle-runner run --project <project-key> (--parent <issue-number> | --issue <issue-number>)
+npm exec -- sandcastle-runner run --project <project-key> (--parent <issue-number> | --issue <issue-number> | --document)
 ```

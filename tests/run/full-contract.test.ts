@@ -18,6 +18,54 @@ import {
 test.afterEach(cleanupTempRoots);
 
 test(
+  "configured maxBatchSize controls Parent and standalone Batches",
+  { timeout: 10_000 },
+  async () => {
+    for (const selector of ["parent", "issue"] as const) {
+      const root = await createProject(false);
+      const configPath = path.join(root, "projects", "demo", "config.json");
+      const config = JSON.parse(await readFile(configPath, "utf8")) as {
+        issueList: number[];
+        maxBatchSize: number;
+      };
+      config.maxBatchSize = 2;
+      config.issueList = selector === "issue" ? [4, 3, 2, 1] : [];
+      await writeFile(configPath, JSON.stringify(config));
+      const scenario = createFiveTicketScenario(
+        root,
+        false,
+        { current: null },
+        2,
+      );
+
+      const result = await executeCli(
+        selector === "parent"
+          ? ["run", "--project", "demo", "--parent", "8"]
+          : ["run", "--project", "demo", "--issue"],
+        scenario.dependencies,
+      );
+
+      assert.equal(result.exitCode, 0);
+      assert.deepEqual(
+        result.summary.completedTickets,
+        selector === "parent" ? [1, 2, 3, 4, 5] : [1, 2, 3, 4],
+      );
+      assert.equal(scenario.maxActiveAgents, 2);
+      assert.ok(
+        scenario.operations.indexOf("reservation:label:3:1") >
+          scenario.operations.indexOf("agent:implement:1:1"),
+      );
+      assert.deepEqual(
+        scenario.operations
+          .filter((operation) => /^reservation:label:[1-5]:1$/u.test(operation))
+          .map((operation) => Number(operation.split(":")[2])),
+        selector === "parent" ? [1, 2, 3, 4, 5] : [1, 2, 3, 4],
+      );
+    }
+  },
+);
+
+test(
   "five Delivery Tickets complete through both maintenance barriers on the first try",
   { timeout: 5_000 },
   async () => {
@@ -42,18 +90,18 @@ test(
       "maintenance:create:101",
       "merge:101:1",
       "merge:4:1",
-      "merge:5:1",
       "maintenance:create:102",
       "merge:102:1",
+      "merge:5:1",
       "parent:close",
     ]);
     assert.deepEqual(batchBarriers(scenario.operations), [
       "maintenance:create:101",
       "reservation:label:4:1",
       "ticket:close:4",
+      "maintenance:create:102",
       "reservation:label:5:1",
       "ticket:close:5",
-      "maintenance:create:102",
     ]);
     assert.equal(
       [...scenario.agentCalls.values()].every((attempts) => attempts === 1),
@@ -157,18 +205,18 @@ test(
       "merge:101:1",
       "merge:101:2",
       "merge:4:1",
-      "merge:5:1",
       "maintenance:create:102",
       "merge:102:1",
+      "merge:5:1",
       "parent:close",
     ]);
     assert.deepEqual(batchBarriers(scenario.operations), [
       "maintenance:create:101",
       "reservation:label:4:1",
       "ticket:close:4",
+      "maintenance:create:102",
       "reservation:label:5:1",
       "ticket:close:5",
-      "maintenance:create:102",
     ]);
     assert.equal(scenario.parent.stateReason, "completed");
     assert.equal(
@@ -201,6 +249,13 @@ test(
           operation.startsWith("push:1:") && operation.includes("/ticket-1"),
       ),
     );
+
+    const configPath = path.join(root, "projects", "demo", "config.json");
+    const config = JSON.parse(await readFile(configPath, "utf8")) as {
+      maxBatchSize: number;
+    };
+    config.maxBatchSize = 2;
+    await writeFile(configPath, JSON.stringify(config));
 
     scenario.resetInterruption();
     restartPoint.current = "integration";
@@ -235,9 +290,9 @@ test("unfinished maintenance is forgotten when disabled and not rediscovered", a
   assert.notEqual(first.summary.outcome, "succeeded");
   const configPath = path.join(root, "projects", "demo", "config.json");
   const config = JSON.parse(await readFile(configPath, "utf8")) as {
-    workflow: { documentationMaintenance: boolean };
+    workflow: { docMaintainTriggerLabel: string };
   };
-  config.workflow.documentationMaintenance = false;
+  config.workflow.docMaintainTriggerLabel = "";
   await writeFile(configPath, JSON.stringify(config));
   const before = scenario.operations.length;
   await executeCli(args, scenario.dependencies);
@@ -246,7 +301,7 @@ test("unfinished maintenance is forgotten when disabled and not rediscovered", a
     scenario.operations.slice(before).some((op) => op.includes("maintenance")),
     false,
   );
-  config.workflow.documentationMaintenance = true;
+  config.workflow.docMaintainTriggerLabel = "documentation";
   await writeFile(configPath, JSON.stringify(config));
   const beforeReenable = scenario.operations.length;
   await executeCli(args, scenario.dependencies);
