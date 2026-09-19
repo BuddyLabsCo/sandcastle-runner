@@ -18,11 +18,67 @@ test("parent and issue selectors are mutually exclusive and required", async () 
   for (const args of [
     ["run", "--project", "demo"],
     ["run", "--project", "demo", "--parent", "8", "--issue", "9"],
+    ["run", "--project", "demo", "--parent", "8", "--issue"],
   ]) {
     const result = await executeCli(args, createCliDependencies(root));
     assert.equal(result.exitCode, 1);
     assert.match(result.summary.reasons[0] ?? "", /usage:/u);
   }
+});
+
+test("value-less issue processes the configured Issue List", async () => {
+  const root = await createProject();
+  const configPath = `${root}/projects/demo/config.json`;
+  const config = JSON.parse(await readFile(configPath, "utf8")) as {
+    issueList: number[];
+  };
+  config.issueList = [41, 42];
+  await writeFile(configPath, JSON.stringify(config));
+  const reads: number[] = [];
+  const completed = {
+    state: "closed" as const,
+    stateReason: "completed" as const,
+  };
+
+  const result = await executeCli(
+    ["run", "--project", "demo", "--issue"],
+    createCliDependencies(root, {
+      tracker: {
+        async getTicket(_repository, ticket) {
+          reads.push(ticket);
+          return { number: ticket, ...completed };
+        },
+      },
+    }),
+  );
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.summary.outcome, "no_work");
+  assert.deepEqual(reads, [41, 42]);
+});
+
+test("value-less issue rejects an empty Issue List before workflow operations", async () => {
+  const root = await createProject();
+  let ticketReads = 0;
+
+  const result = await executeCli(
+    ["run", "--project", "demo", "--issue"],
+    createCliDependencies(root, {
+      tracker: {
+        async getTicket() {
+          ticketReads += 1;
+          throw new Error("workflow must not start");
+        },
+      },
+    }),
+  );
+
+  assert.equal(result.exitCode, 1);
+  assert.equal(
+    result.summary.reasons[0],
+    "issueList must not be empty for value-less --issue",
+  );
+  assert.equal(ticketReads, 0);
 });
 
 test("standalone issue runs without Documentation Maintenance configuration", async () => {
