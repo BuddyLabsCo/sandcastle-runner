@@ -13,11 +13,11 @@ The Project branch against which a Run prepares, validates, and integrates Deliv
 _Avoid_: Main branch, base branch, default branch
 
 **Run**:
-One CLI invocation that processes one Project and one supplied Parent Ticket to a terminal outcome.
+One CLI invocation that processes a delivery scope or performs independent Documentation Maintenance for one Project to a terminal outcome.
 _Avoid_: Job, session
 
 **Recovery Snapshot**:
-The canonical persisted record a Run uses to resume processing its Parent Ticket after an interruption.
+The canonical persisted record a Run uses to resume its delivery scope, including associated automatic Documentation Maintenance, after an interruption.
 _Avoid_: Checkpoint, state file
 
 **Operator Pause**:
@@ -29,7 +29,7 @@ The GitHub issue supplied to a Run as its delivery scope. Only its same-reposito
 _Avoid_: Parent issue, epic
 
 **Batch**:
-Up to the Project-configured maximum number of Delivery Tickets worked concurrently and integrated only after every pull request in that group is ready.
+Up to the Project-configured maximum number of Delivery Tickets or Standalone Issues worked concurrently and integrated only after every pull request in that group is ready.
 _Avoid_: Wave, group
 
 **CI-ready Pull Request**:
@@ -77,8 +77,12 @@ The full commit SHA stored by a documentation surface as the latest revision it 
 _Avoid_: Base commit, last documented commit
 
 **Documentation Maintenance**:
-A between-Batch review that advances each Documentation Base after bringing its documentation surface up to date with the Target Branch.
+A review that brings documentation surfaces up to date with the Target Branch and advances their Documentation Bases. It can follow a completed Batch or be requested independently by an operator.
 _Avoid_: Doc update, documentation task
+
+**Documentation Maintenance Trigger Label**:
+A Project-selected label on a successfully delivered issue that requests automatic Documentation Maintenance for its Batch. It is distinct from the label identifying a Maintenance Ticket.
+_Avoid_: Maintenance Ticket label
 
 **Maintenance Ticket**:
 A standalone tracker item whose pull request delivers one Documentation Maintenance occurrence.
