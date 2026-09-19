@@ -39,7 +39,7 @@ export const validConfig = {
   agentRetry: 4,
   operationRetryDelay: [10, 20, 40, 80],
   agentRetryDelay: [10, 20, 40, 80],
-  workflow: { review: false, documentationMaintenance: true },
+  workflow: { review: false, docMaintainTriggerLabel: "" },
   ticketClosure: "runner",
   maintenanceTicket: {
     title: "Maintain project documentation",
@@ -119,7 +119,7 @@ export async function writePublicationState(
   const project = path.join(root, "projects", "demo");
   const snapshot = recoveryPaths(project, 8).snapshot;
   await writeRecoverySnapshot(snapshot, {
-    schemaVersion: 1,
+    schemaVersion: 2,
     project: "demo",
     repository: "owner/repo",
     checkout: "/tmp/repo",
@@ -147,7 +147,7 @@ export async function recoverySnapshot(
     "issue",
   ).snapshot;
   await writeRecoverySnapshot(snapshot, {
-    schemaVersion: 1,
+    schemaVersion: 2,
     project: "demo",
     repository: "owner/repo",
     checkout: "/tmp/repo",

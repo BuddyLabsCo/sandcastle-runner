@@ -1,4 +1,5 @@
 import type { VerifiedHandoff } from "./attempt.ts";
+import type { CompletedDelivery } from "../recovery.ts";
 import {
   discoverAndReserveStandalone,
   discoverAndReserveStandaloneBatch,
@@ -22,11 +23,13 @@ export interface StandaloneRunContext {
     publication: PublicationResult,
     batchComplete: boolean,
     input: PublicationInput,
+    batchTickets: number[],
   ) => Promise<RunOutcome | null>;
   summary: (outcome: RunOutcome, reasons?: string[]) => RunSummary;
   batches: number[];
   handoffs: VerifiedHandoff[];
   completedTickets: number[];
+  completedDeliveries: CompletedDelivery[];
   reasons: string[];
 }
 
@@ -78,7 +81,7 @@ export async function runStandaloneIssue(
         [...context.reasons, ...discovery.reasons],
       );
     context.batches.push(...discovery.batch);
-    await input.persistBatch?.(discovery.batch, context.completedTickets);
+    await input.persistBatch?.(discovery.batch, context.completedDeliveries);
     const attempts = await implementBatch(
       input,
       context.targetBranch,
@@ -102,6 +105,7 @@ export async function runStandaloneIssue(
       publication,
       batchComplete,
       publicationInputs,
+      discovery.batch,
     );
     if (outcome) return context.summary(outcome);
     if (!input.autoMerge) return context.summary("succeeded");

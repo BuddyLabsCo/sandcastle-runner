@@ -31,6 +31,8 @@ export interface DiscoveryInput {
   hadChildren?: boolean;
   ticketBoundary?: TicketBoundary;
   ticketKind?: "Delivery Ticket" | "Maintenance Ticket";
+  parentScopedMaintenance?: boolean;
+  maintenanceTicketLabel?: string;
   cleanupTerminal?: (ticket: number) => Promise<void>;
 }
 

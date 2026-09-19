@@ -39,7 +39,7 @@ export async function createProject(recovery: boolean): Promise<string> {
       tokenEnv: "TEST_GH_TOKEN",
       adminMerge: false,
     },
-    workflow: { review: false, documentationMaintenance: true },
+    workflow: { review: false, docMaintainTriggerLabel: "documentation" },
     agents: Object.fromEntries(
       ["implement", "ciRepair", "conflictRepair", "documentation"].map(
         (name) => [name, { model: "gpt-5.6-sol", reasoningEffort: "high" }],

@@ -175,12 +175,50 @@ export async function revalidateParentForOperation(
     : { outcome: "ready" };
 }
 
+function maintenanceTicketBoundary(
+  input: DiscoveryInput,
+  ticket: Ticket,
+): MergedDeliveryBoundaryResult {
+  if (ticket.state === "closed") {
+    if (
+      ticket.stateReason === "completed" ||
+      ticket.stateReason === "not_planned"
+    ) {
+      return { outcome: "terminal", ticket };
+    }
+    return {
+      outcome: "stopped",
+      reason: `Maintenance Ticket ${ticket.number} has no confirmed terminal reason`,
+    };
+  }
+  if ((ticket.assignees ?? []).length > 0) {
+    return {
+      outcome: "stopped",
+      reason: `Maintenance Ticket ${ticket.number} became externally owned`,
+    };
+  }
+  if (
+    !(ticket.labels ?? []).includes(
+      input.maintenanceTicketLabel ?? "doc-maintain",
+    ) ||
+    (ticket.labels ?? []).includes(input.reservationLabel)
+  ) {
+    return {
+      outcome: "stopped",
+      reason: `Maintenance Ticket ${ticket.number} lost its standalone markers`,
+    };
+  }
+  return { outcome: "ready", ticket };
+}
+
 export async function revalidateStandaloneMaintenanceTicket(
   input: DiscoveryInput,
   ticketNumber: number,
 ): Promise<MergedDeliveryBoundaryResult> {
-  const parent = await revalidateParentForOperation(input);
-  if (parent.outcome !== "ready") return parent;
+  if (input.parentScopedMaintenance !== false) {
+    const parent = await revalidateParentForOperation(input);
+    if (parent.outcome !== "ready") return parent;
+  }
   const ticket = await externalRead({
     action: () => input.tracker.getTicket(input.repository, ticketNumber),
     parseOverride: (value) =>
@@ -195,42 +233,19 @@ export async function revalidateStandaloneMaintenanceTicket(
     operator: input.operator,
     retryPolicy: input.retryPolicy,
   });
-  if (ticket.state === "closed") {
-    if (
-      ticket.stateReason === "completed" ||
-      ticket.stateReason === "not_planned"
-    ) {
-      await input.cleanupTerminal?.(ticket.number);
-      return { outcome: "terminal", ticket };
-    }
-    return {
-      outcome: "stopped",
-      reason: `Maintenance Ticket ${ticketNumber} has no confirmed terminal reason`,
-    };
+  const boundary = maintenanceTicketBoundary(input, ticket);
+  if (boundary.outcome === "terminal") {
+    await input.cleanupTerminal?.(ticket.number);
+    return boundary;
   }
+  if (boundary.outcome !== "ready") return boundary;
   const blockers = await readBlockers(input, ticketNumber, "maintenance");
-  if (blockers.some(({ state }) => state === "open")) {
-    return {
-      outcome: "stopped",
-      reason: `Maintenance Ticket ${ticketNumber} became blocked`,
-    };
-  }
-  if ((ticket.assignees ?? []).length > 0) {
-    return {
-      outcome: "stopped",
-      reason: `Maintenance Ticket ${ticketNumber} became externally owned`,
-    };
-  }
-  if (
-    !(ticket.labels ?? []).includes("doc-maintain") ||
-    (ticket.labels ?? []).includes(input.reservationLabel)
-  ) {
-    return {
-      outcome: "stopped",
-      reason: `Maintenance Ticket ${ticketNumber} lost its standalone markers`,
-    };
-  }
-  return { outcome: "ready", ticket };
+  return blockers.some(({ state }) => state === "open")
+    ? {
+        outcome: "stopped",
+        reason: `Maintenance Ticket ${ticketNumber} became blocked`,
+      }
+    : boundary;
 }
 
 function reasons(selection: Selection, batch: number[]): string[] {

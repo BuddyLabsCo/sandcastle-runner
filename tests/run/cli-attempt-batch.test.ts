@@ -279,17 +279,22 @@ test("a Batch publishes every PR before merging by creation order", async () => 
   );
 });
 
-test("three completed Delivery Tickets trigger committed Documentation Maintenance before closeout", async () => {
+test("multiple matching Delivery Tickets trigger one committed Documentation Maintenance occurrence", async () => {
   const root = await createProject();
   await writeFile(
     path.join(root, "projects/demo/config.json"),
     JSON.stringify({
       ...validConfig,
-      workflow: { ...validConfig.workflow, review: true },
+      workflow: {
+        ...validConfig.workflow,
+        review: true,
+        docMaintainTriggerLabel: "documentation",
+      },
       ticketClosure: "code_host",
     }),
   );
   const delivery = createCommittedBatch(9, 10, 11);
+  for (const ticket of delivery.tickets) ticket.labels.push("documentation");
   const maintenance = {
     number: 100,
     state: "open" as "open" | "closed",

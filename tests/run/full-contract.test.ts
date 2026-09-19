@@ -90,18 +90,18 @@ test(
       "maintenance:create:101",
       "merge:101:1",
       "merge:4:1",
-      "merge:5:1",
       "maintenance:create:102",
       "merge:102:1",
+      "merge:5:1",
       "parent:close",
     ]);
     assert.deepEqual(batchBarriers(scenario.operations), [
       "maintenance:create:101",
       "reservation:label:4:1",
       "ticket:close:4",
+      "maintenance:create:102",
       "reservation:label:5:1",
       "ticket:close:5",
-      "maintenance:create:102",
     ]);
     assert.equal(
       [...scenario.agentCalls.values()].every((attempts) => attempts === 1),
@@ -205,18 +205,18 @@ test(
       "merge:101:1",
       "merge:101:2",
       "merge:4:1",
-      "merge:5:1",
       "maintenance:create:102",
       "merge:102:1",
+      "merge:5:1",
       "parent:close",
     ]);
     assert.deepEqual(batchBarriers(scenario.operations), [
       "maintenance:create:101",
       "reservation:label:4:1",
       "ticket:close:4",
+      "maintenance:create:102",
       "reservation:label:5:1",
       "ticket:close:5",
-      "maintenance:create:102",
     ]);
     assert.equal(scenario.parent.stateReason, "completed");
     assert.equal(
@@ -290,9 +290,9 @@ test("unfinished maintenance is forgotten when disabled and not rediscovered", a
   assert.notEqual(first.summary.outcome, "succeeded");
   const configPath = path.join(root, "projects", "demo", "config.json");
   const config = JSON.parse(await readFile(configPath, "utf8")) as {
-    workflow: { documentationMaintenance: boolean };
+    workflow: { docMaintainTriggerLabel: string };
   };
-  config.workflow.documentationMaintenance = false;
+  config.workflow.docMaintainTriggerLabel = "";
   await writeFile(configPath, JSON.stringify(config));
   const before = scenario.operations.length;
   await executeCli(args, scenario.dependencies);
@@ -301,7 +301,7 @@ test("unfinished maintenance is forgotten when disabled and not rediscovered", a
     scenario.operations.slice(before).some((op) => op.includes("maintenance")),
     false,
   );
-  config.workflow.documentationMaintenance = true;
+  config.workflow.docMaintainTriggerLabel = "documentation";
   await writeFile(configPath, JSON.stringify(config));
   const beforeReenable = scenario.operations.length;
   await executeCli(args, scenario.dependencies);

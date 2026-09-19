@@ -23,7 +23,7 @@ test("recovery snapshots replace atomically and reject malformed input unchanged
   );
   const filename = recoveryPaths(root, 8).snapshot;
   const snapshot = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     project: "demo",
     repository: "owner/repo",
     checkout: "/tmp/repo",
@@ -55,7 +55,7 @@ test("recovery snapshots retain independent CI and conflict repair budgets", asy
     prBody: "body",
   };
   const snapshot = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     project: "demo",
     repository: "owner/repo",
     checkout: "/tmp/repo",
@@ -119,7 +119,7 @@ test("recovery snapshots reject malformed repair budgets", async () => {
   );
   const filename = recoveryPaths(root, 8).snapshot;
   const snapshot = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     project: "demo",
     repository: "owner/repo",
     checkout: "/tmp/repo",
@@ -170,8 +170,18 @@ test("recovery snapshots reject malformed repair budgets", async () => {
   );
   await assert.rejects(readRecoverySnapshot(filename), InvalidRecoverySnapshot);
   for (const maintenance of [
-    { phase: "completed" as const, credit: 0, barrier: true, ticket: 10 },
-    { phase: "scheduled" as const, credit: 1, barrier: true, ticket: 10 },
+    {
+      phase: "completed" as const,
+      deliveryTickets: [],
+      barrier: true,
+      ticket: 10,
+    },
+    {
+      phase: "scheduled" as const,
+      deliveryTickets: [9],
+      barrier: true,
+      ticket: 10,
+    },
   ]) {
     await writeFile(
       filename,
@@ -191,7 +201,7 @@ test("recovery snapshots reject inconsistent unfinished maintenance state", asyn
   );
   const filename = recoveryPaths(root, 8).snapshot;
   const snapshot = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     project: "demo",
     repository: "owner/repo",
     checkout: "/tmp/repo",
@@ -203,7 +213,7 @@ test("recovery snapshots reject inconsistent unfinished maintenance state", asyn
     updatedAt: "2026-09-11T00:00:00.000Z",
     maintenance: {
       phase: "attempting" as const,
-      credit: 1,
+      deliveryTickets: [9],
       barrier: true,
       ticket: 10,
     },

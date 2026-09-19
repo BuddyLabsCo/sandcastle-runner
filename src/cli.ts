@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* eslint-disable max-lines -- CLI startup and recovery sequencing stay together. */
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 
@@ -51,7 +52,7 @@ export interface CliResult {
 }
 
 const usageMessage =
-  "usage: sandcastle-runner run --project <project-key> (--parent <issue-number> | --issue [<issue-number>])";
+  "usage: sandcastle-runner run --project <project-key> (--parent <issue-number> | --issue [<issue-number>] | --document)";
 
 function parseRunOptions(argv: string[]) {
   const cli = cac("sandcastle-runner");
@@ -60,6 +61,7 @@ function parseRunOptions(argv: string[]) {
     .option("--project <project>", "Project key")
     .option("--parent <ticket>", "Parent Ticket number")
     .option("--issue [ticket]", "Standalone Issue number")
+    .option("--document", "Run Documentation Maintenance")
     .option("--auto-merge", "Request merge after the Pull Request is CI-ready")
     .option("--no-auto-merge", "Stop after the Pull Request is CI-ready")
     .action(() => undefined);
@@ -69,6 +71,7 @@ function parseRunOptions(argv: string[]) {
     project?: unknown;
     parent?: unknown;
     issue?: unknown;
+    document?: unknown;
     autoMerge?: unknown;
   };
 
@@ -113,14 +116,21 @@ function parseTicket(value: unknown): number {
 function parseArguments(argv: string[]): {
   project: string;
   parentTicket?: number;
-  selector: "parent" | "issue";
+  selector: "parent" | "issue" | "document";
   issueTicket?: number;
   autoMerge: boolean;
 } {
   const { project, options, autoMerge } = parseRunOptions(argv);
   const parentSelector = options.parent !== undefined;
   const issueSelector = options.issue !== undefined;
-  if (parentSelector === issueSelector) throw new Error(usageMessage);
+  const documentSelector = options.document === true;
+  if (
+    Number(parentSelector) +
+      Number(issueSelector) +
+      Number(documentSelector) !==
+    1
+  )
+    throw new Error(usageMessage);
 
   const parentTicket = ticketNumber(options.parent);
   const issueTicket = ticketNumber(options.issue);
@@ -128,6 +138,8 @@ function parseArguments(argv: string[]): {
     argv.includes("--auto-merge") || argv.includes("--no-auto-merge");
   if (explicitAutoMerge && issueTicket === undefined)
     throw new Error("auto-merge flags require a value-bearing --issue");
+  if (documentSelector)
+    return { project, selector: "document", autoMerge: false };
   if (parentSelector) {
     if (parentTicket === undefined) throw new Error(usageMessage);
     return {
@@ -147,13 +159,90 @@ function parseArguments(argv: string[]): {
   };
 }
 
+function maintenanceArtifacts(
+  snapshot: RecoverySnapshot,
+  publication: PublicationIntent | undefined,
+): string[] {
+  const ticket = snapshot.maintenance?.ticket;
+  const cleanup =
+    ticket === undefined ? undefined : snapshot.terminalCleanup?.[ticket];
+  return [
+    ticket === undefined ? undefined : `Maintenance Ticket ${ticket}`,
+    publication?.pullRequest?.url,
+    publication?.stableBranch === undefined
+      ? undefined
+      : `branch ${publication.stableBranch}`,
+    typeof publication?.completionEvidence === "object" &&
+    publication.completionEvidence !== null &&
+    "worktree" in publication.completionEvidence &&
+    typeof publication.completionEvidence.worktree === "string"
+      ? `worktree ${publication.completionEvidence.worktree}`
+      : undefined,
+    ...(cleanup?.candidates ?? []).map((candidate) => `worktree ${candidate}`),
+  ].filter((value): value is string => value !== undefined);
+}
+
+function withoutMaintenanceRecovery(
+  snapshot: RecoverySnapshot,
+): RecoverySnapshot {
+  const next = { ...snapshot };
+  const ticket = next.maintenance?.ticket;
+  delete next.maintenance;
+  if (ticket !== undefined && next.terminalCleanup !== undefined) {
+    const terminalCleanup = { ...next.terminalCleanup };
+    delete terminalCleanup[ticket];
+    if (Object.keys(terminalCleanup).length === 0) delete next.terminalCleanup;
+    else next.terminalCleanup = terminalCleanup;
+  }
+  if (next.publications !== undefined) {
+    const publications = next.publications.filter(
+      ({ kind }) => kind !== "maintenance",
+    );
+    if (publications.length === 0) delete next.publications;
+    else next.publications = publications;
+  }
+  return next;
+}
+
+function reconcileMaintenanceRecovery(
+  snapshot: RecoverySnapshot,
+  trigger: string,
+): { snapshot: RecoverySnapshot; reasons: string[] } {
+  const publication = snapshot.publications?.find(
+    ({ kind }) => kind === "maintenance",
+  );
+  if (snapshot.maintenance?.barrier !== true && publication === undefined)
+    return { snapshot, reasons: [] };
+
+  const completed = new Map(
+    (snapshot.completedDeliveries ?? []).map((delivery) => [
+      delivery.ticket,
+      delivery.labels,
+    ]),
+  );
+  const stillRequired =
+    trigger.length > 0 &&
+    (snapshot.maintenance?.deliveryTickets ?? []).some((ticket) =>
+      completed.get(ticket)?.includes(trigger),
+    );
+  if (stillRequired) return { snapshot, reasons: [] };
+
+  const artifacts = maintenanceArtifacts(snapshot, publication);
+  return {
+    snapshot: withoutMaintenanceRecovery(snapshot),
+    reasons: [
+      `Current workflow.docMaintainTriggerLabel stops unfinished automatic Documentation Maintenance; preserved ${artifacts.join(", ") || "recorded artifacts"} for manual handling`,
+    ],
+  };
+}
+
 export async function executeCli(
   argv: string[],
   dependencies: CliDependencies,
 ): Promise<CliResult> {
   let project: string;
   let parentTicket: number | undefined;
-  let selector: "parent" | "issue";
+  let selector: "parent" | "issue" | "document";
   let issueTicket: number | undefined;
   let autoMerge: boolean;
   try {
@@ -175,9 +264,9 @@ export async function executeCli(
   let loaded: Awaited<ReturnType<typeof loadProject>>;
   try {
     loaded = await loadProject(dependencies.root, project, dependencies.env, {
-      ...(selector !== "issue"
-        ? {}
-        : { disableDocumentationMaintenance: true }),
+      ...(selector === "document"
+        ? { requireDocumentationMaintenance: true }
+        : {}),
     });
   } catch (error) {
     const summary: RunSummary = {
@@ -210,18 +299,22 @@ export async function executeCli(
   const effectiveParentTicket = parentTicket ?? standaloneIssueList?.[0] ?? 0;
   const runId = randomUUID();
   const timestamp = dependencies.clock.now().toISOString();
-  const runKind = selector;
+  const runKind = selector === "issue" ? "issue" : "parent";
   const selectionIssueList =
     selector === "parent" ? loaded.config.issueList : standaloneIssueList;
-  const paths = recoveryPaths(
-    loaded.directory,
-    effectiveParentTicket,
-    runKind,
-    selectionIssueList ?? [],
-  );
+  const paths =
+    selector === "document"
+      ? undefined
+      : recoveryPaths(
+          loaded.directory,
+          effectiveParentTicket,
+          runKind,
+          selectionIssueList ?? [],
+        );
   let previous: RecoverySnapshot | null;
   try {
-    previous = await readRecoverySnapshot(paths.snapshot);
+    previous =
+      paths === undefined ? null : await readRecoverySnapshot(paths.snapshot);
     if (
       previous !== null &&
       (previous.project !== project ||
@@ -272,23 +365,17 @@ export async function executeCli(
     createdAt: previous?.createdAt ?? timestamp,
     updatedAt: timestamp,
   };
-  if (
-    !loaded.config.workflow.documentationMaintenance &&
-    (currentSnapshot.maintenance?.barrier === true ||
-      currentSnapshot.publications?.some(({ kind }) => kind === "maintenance"))
-  ) {
-    const next = { ...currentSnapshot };
-    delete next.maintenance;
-    if (next.publications !== undefined) {
-      const publications = next.publications.filter(
-        ({ kind }) => kind !== "maintenance",
-      );
-      if (publications.length === 0) delete next.publications;
-      else next.publications = publications;
-    }
-    currentSnapshot = next;
-  }
-  await writeRecoverySnapshot(paths.snapshot, currentSnapshot);
+  const maintenanceRecovery = reconcileMaintenanceRecovery(
+    currentSnapshot,
+    loaded.config.workflow.docMaintainTriggerLabel,
+  );
+  currentSnapshot = maintenanceRecovery.snapshot;
+  const startupReasons = maintenanceRecovery.reasons;
+  const writeSnapshot = async (snapshot: RecoverySnapshot) => {
+    if (paths !== undefined)
+      await writeRecoverySnapshot(paths.snapshot, snapshot);
+  };
+  await writeSnapshot(currentSnapshot);
   const audit = new AuditLog(
     loaded.directory,
     timestamp,
@@ -326,20 +413,27 @@ export async function executeCli(
         ...next,
         updatedAt: dependencies.clock.now().toISOString(),
       };
-      await writeRecoverySnapshot(paths.snapshot, nextSnapshot);
+      await writeSnapshot(nextSnapshot);
       currentSnapshot = nextSnapshot;
     } finally {
       releaseWrite();
     }
   };
-  const persistBatch = async (batch: number[], completed: number[]) => {
+  const persistBatch = async (
+    batch: number[],
+    completed: NonNullable<RecoverySnapshot["completedDeliveries"]>,
+  ) => {
     const nextSnapshot = {
       ...currentSnapshot,
-      batch: [...batch],
-      completedDeliveries: [...new Set(completed)],
+      batch: [...new Set([...(currentSnapshot.batch ?? []), ...batch])],
+      activeBatch: [...batch],
+      completedDeliveries: completed.map((delivery) => ({
+        ticket: delivery.ticket,
+        labels: [...delivery.labels],
+      })),
       updatedAt: dependencies.clock.now().toISOString(),
     };
-    await writeRecoverySnapshot(paths.snapshot, nextSnapshot);
+    await writeSnapshot(nextSnapshot);
     currentSnapshot = nextSnapshot;
   };
   const persistCleanup = async (ticket: number, record: CleanupRecord) => {
@@ -351,7 +445,7 @@ export async function executeCli(
       },
       updatedAt: dependencies.clock.now().toISOString(),
     };
-    await writeRecoverySnapshot(paths.snapshot, nextSnapshot);
+    await writeSnapshot(nextSnapshot);
     currentSnapshot = nextSnapshot;
   };
   const persistMaintenance = async (state: MaintenanceState) => {
@@ -360,7 +454,7 @@ export async function executeCli(
       maintenance: state,
       updatedAt: dependencies.clock.now().toISOString(),
     };
-    await writeRecoverySnapshot(paths.snapshot, nextSnapshot);
+    await writeSnapshot(nextSnapshot);
     currentSnapshot = nextSnapshot;
   };
   let summary: RunSummary;
@@ -407,9 +501,9 @@ export async function executeCli(
         "conflict-repair.md",
       ),
       conflictRepairAgent: loaded.config.agents.conflictRepair,
-      documentationMaintenance:
-        selector === "parent" &&
-        loaded.config.workflow.documentationMaintenance,
+      docMaintainTriggerLabel: loaded.config.workflow.docMaintainTriggerLabel,
+      ...(selector === "document" ? { documentOnly: true } : {}),
+      ...(startupReasons.length === 0 ? {} : { startupReasons }),
       maintenanceTicket: loaded.config.maintenanceTicket,
       documentationPrompt: path.join(
         loaded.directory,
@@ -433,17 +527,29 @@ export async function executeCli(
       },
       gitWorkspace,
       agentExecutor,
-      persistPublication,
-      persistBatch,
-      persistCleanup,
-      persistMaintenance,
-      recoveredPublications: currentSnapshot.publications ?? [],
+      ...(selector === "document"
+        ? {}
+        : {
+            persistPublication,
+            persistBatch,
+            persistCleanup,
+            persistMaintenance,
+          }),
+      recoveredPublications:
+        selector === "document" ? [] : (currentSnapshot.publications ?? []),
       ...(currentSnapshot.maintenance === undefined
         ? {}
         : { recoveredMaintenance: currentSnapshot.maintenance }),
+      ...(currentSnapshot.activeBatch === undefined &&
+      currentSnapshot.batch === undefined
+        ? {}
+        : {
+            recoveredBatch:
+              currentSnapshot.activeBatch ?? currentSnapshot.batch ?? [],
+          }),
       ...(currentSnapshot.batch === undefined
         ? {}
-        : { recoveredBatch: currentSnapshot.batch }),
+        : { recoveredRunTickets: currentSnapshot.batch }),
       ...(currentSnapshot.completedDeliveries === undefined
         ? {}
         : {
@@ -468,7 +574,7 @@ export async function executeCli(
       ],
     };
   }
-  await writeRecoverySnapshot(paths.snapshot, {
+  await writeSnapshot({
     ...currentSnapshot,
     phase:
       summary.outcome === "succeeded" && !autoMerge

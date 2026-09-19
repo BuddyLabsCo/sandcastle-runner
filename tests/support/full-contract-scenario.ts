@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Full contract fake stays as one scenario. */
 import assert from "node:assert/strict";
 import { SandcastleAgentExecutor } from "../../src/adapters/sandcastle.ts";
 import type { CliDependencies } from "../../src/cli.ts";
@@ -32,7 +33,10 @@ export function createFiveTicketScenario(
         stateReason: null,
         repository: "owner/repo",
         assignees: [],
-        labels: ["ready-for-agent"],
+        labels: [
+          "ready-for-agent",
+          ...(number % 3 === 1 ? ["documentation"] : []),
+        ],
       },
     ]),
   );
