@@ -118,16 +118,17 @@ function parseArguments(argv: string[]): {
   autoMerge: boolean;
 } {
   const { project, options, autoMerge } = parseRunOptions(argv);
+  const parentSelector = options.parent !== undefined;
+  const issueSelector = options.issue !== undefined;
+  if (parentSelector === issueSelector) throw new Error(usageMessage);
+
   const parentTicket = ticketNumber(options.parent);
   const issueTicket = ticketNumber(options.issue);
-  if ((parentTicket === undefined) === (issueTicket === undefined))
-    throw new Error(usageMessage);
-
   const explicitAutoMerge =
     argv.includes("--auto-merge") || argv.includes("--no-auto-merge");
   if (explicitAutoMerge && issueTicket === undefined)
     throw new Error("auto-merge flags require a value-bearing --issue");
-  if (issueTicket === undefined) {
+  if (parentSelector) {
     if (parentTicket === undefined) throw new Error(usageMessage);
     return {
       project,
@@ -138,9 +139,10 @@ function parseArguments(argv: string[]): {
   }
   return {
     project,
-    parentTicket: issueTicket,
+    ...(issueTicket === undefined
+      ? {}
+      : { parentTicket: issueTicket, issueTicket }),
     selector: "issue",
-    issueTicket,
     autoMerge,
   };
 }
