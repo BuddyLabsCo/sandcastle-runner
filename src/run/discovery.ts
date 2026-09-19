@@ -10,11 +10,13 @@ import {
   revalidateTicket,
   readyForAgentLabel,
   type DiscoveryInput,
+  type BatchDiscoveryInput,
   type Selection,
   type DeliveryBoundaryResult,
   type MergedDeliveryBoundaryResult,
 } from "./discovery-state.ts";
 export type {
+  BatchDiscoveryInput,
   DiscoveryInput,
   DeliveryBoundaryResult,
   MergedDeliveryBoundaryResult,
@@ -386,7 +388,7 @@ async function reserve(
 }
 
 async function finalScan(
-  input: DiscoveryInput,
+  input: BatchDiscoveryInput,
   excluded: Set<number>,
 ): Promise<DiscoveryResult | { outcome: "eligible"; selection: Selection }> {
   const parent = await readParent(input);
@@ -419,7 +421,7 @@ async function finalScan(
 }
 
 export async function discoverAndReserve(
-  input: DiscoveryInput,
+  input: BatchDiscoveryInput,
 ): Promise<DiscoveryResult> {
   const parent = await readParent(input);
   if (parent.state === "closed" && parent.stateReason === "not_planned") {

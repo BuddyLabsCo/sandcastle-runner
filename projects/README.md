@@ -42,6 +42,8 @@ permanent cross-platform CI are unsupported; see the root contract for details.
 
 - `repository`: GitHub repository in `owner/name` form.
 - `checkout`: absolute path to that repository.
+- `issueList`: unique positive issue numbers used to limit Parent Runs or drive value-less Standalone Runs.
+- `maxBatchSize`: required positive safe integer limiting newly discovered Parent and Standalone Batches.
 - `targetBranch`: branch to update.
 - `tracker`: GitHub settings: `tokenEnv` names the credential variable; `runnerAccount` is the bot/user; `reservationLabel` marks reserved tickets.
 - `codeHost`: GitHub settings; `tokenEnv` names the credential variable and `adminMerge` controls administrative merge requests.

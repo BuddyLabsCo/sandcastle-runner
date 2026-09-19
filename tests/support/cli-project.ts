@@ -12,6 +12,7 @@ export const validConfig = {
   repository: "owner/repo",
   checkout: "/tmp/repo",
   issueList: [],
+  maxBatchSize: 3,
   targetBranch: "main",
   tracker: {
     type: "github",

@@ -21,6 +21,7 @@ export function createFiveTicketScenario(
   root: string,
   recovery: boolean,
   restartPoint: { current: RestartPoint } = { current: null },
+  maxBatchSize = 3,
 ) {
   const parent: Ticket = { number: 8, state: "open", stateReason: null };
   const tickets = new Map<number, Ticket>(
@@ -225,13 +226,14 @@ export function createFiveTicketScenario(
               ? "maintenance"
               : "implement";
         const attempt = call(`${purpose}:${input.ticket}`);
+        const inFirstBatch = input.ticket <= maxBatchSize;
         operations.push(`agent:${purpose}:${input.ticket}:${attempt}`);
         activeAgents += 1;
         maxActiveAgents = Math.max(maxActiveAgents, activeAgents);
         try {
-          if (purpose === "implement" && input.ticket <= 3 && attempt === 1) {
+          if (purpose === "implement" && inFirstBatch && attempt === 1) {
             firstBatchStarted.add(input.ticket);
-            if (firstBatchStarted.size === 3) releaseFirstBatch();
+            if (firstBatchStarted.size === maxBatchSize) releaseFirstBatch();
             await firstBatchBarrier;
           }
           if (

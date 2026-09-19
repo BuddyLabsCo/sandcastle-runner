@@ -54,3 +54,29 @@ test("loadProject rejects missing and malformed retry fields", async () => {
     );
   }
 });
+
+test("loadProject requires maxBatchSize to be a positive safe integer", async () => {
+  const invalid = [
+    undefined,
+    0,
+    -1,
+    1.5,
+    Number.MAX_SAFE_INTEGER + 1,
+    "3",
+  ] as const;
+
+  for (const value of invalid) {
+    const root = await createProject();
+    const config = structuredClone(validConfig) as Record<string, unknown>;
+    if (value === undefined) delete config.maxBatchSize;
+    else config.maxBatchSize = value;
+    await writeFile(
+      path.join(root, "projects", "demo", "config.json"),
+      JSON.stringify(config),
+    );
+    await assert.rejects(
+      loadProject(root, "demo", { TEST_GH_TOKEN: "token" }),
+      /maxBatchSize/u,
+    );
+  }
+});

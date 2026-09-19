@@ -464,6 +464,7 @@ export async function executeCli(
       project,
       parentTicket: effectiveParentTicket,
       issueList: loaded.config.issueList,
+      maxBatchSize: loaded.config.maxBatchSize,
       ...(issueTicket === undefined ? {} : { issueTicket }),
       ...(standaloneIssueList === undefined ? {} : { standaloneIssueList }),
       autoMerge,

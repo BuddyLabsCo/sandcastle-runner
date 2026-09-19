@@ -39,6 +39,7 @@ export interface RunInput {
   project: string;
   parentTicket: number;
   issueList: number[];
+  maxBatchSize: number;
   issueTicket?: number;
   standaloneIssueList?: number[];
   autoMerge: boolean;

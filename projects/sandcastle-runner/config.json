@@ -3,6 +3,7 @@
   "repository": "BuddyLabsCo/sandcastle-runner",
   "checkout": "/home/xiakeng/Desktop/workspace/sandcastle-runner-checkout/",
   "issueList": [],
+  "maxBatchSize": 3,
   "targetBranch": "main",
   "operationRetry": 4,
   "agentRetry": 1,

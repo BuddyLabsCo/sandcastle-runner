@@ -18,6 +18,7 @@ export interface ProjectConfig {
   repository: string;
   checkout: string;
   issueList: number[];
+  maxBatchSize: number;
   targetBranch?: string;
   tracker: {
     type: "github";
@@ -150,6 +151,9 @@ function parseConfig(
   };
   const repository = text(input.repository, "repository");
   const configuredIssueList = issueList(input.issueList);
+  const maxBatchSize = nonNegativeInteger(input.maxBatchSize, "maxBatchSize");
+  if (maxBatchSize === 0)
+    throw new Error("maxBatchSize must be a positive safe integer");
   if (!/^[^/\s]+\/[^/\s]+$/u.test(repository))
     throw new Error("repository must be owner/repo");
   const checkout = text(input.checkout, "checkout");
@@ -204,6 +208,7 @@ function parseConfig(
     repository,
     checkout,
     issueList: configuredIssueList,
+    maxBatchSize,
     ...(input.targetBranch === undefined
       ? {}
       : { targetBranch: text(input.targetBranch, "targetBranch") }),
