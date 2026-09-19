@@ -26,6 +26,7 @@ export async function createProject(recovery: boolean): Promise<string> {
     repository: "owner/repo",
     checkout: "/tmp/repo",
     issueList: [],
+    maxBatchSize: 3,
     ...(!recovery && { targetBranch: "main" }),
     tracker: {
       type: "github",

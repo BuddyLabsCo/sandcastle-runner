@@ -45,6 +45,7 @@ export async function runStandaloneIssue(
           repository: input.repository,
           parentTicket: input.parentTicket,
           standaloneIssues: remaining,
+          maxBatchSize: input.maxBatchSize,
           tracker: input.tracker,
           audit: input.audit,
           clock: input.clock,

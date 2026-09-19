@@ -3,6 +3,7 @@ import {
   revalidateTicket,
   releaseReservation,
   readyForAgentLabel,
+  type BatchDiscoveryInput,
   type DiscoveryInput,
 } from "./discovery-state.ts";
 import type { DiscoveryResult } from "./discovery.ts";
@@ -149,7 +150,7 @@ export async function discoverAndReserveStandalone(
 }
 
 export async function discoverAndReserveStandaloneBatch(
-  input: DiscoveryInput & { standaloneIssues: number[] },
+  input: BatchDiscoveryInput & { standaloneIssues: number[] },
 ): Promise<DiscoveryResult> {
   const eligible: number[] = [];
   const reasons: string[] = [];
@@ -191,7 +192,7 @@ export async function discoverAndReserveStandaloneBatch(
   }
   if (reasons.length > 0) return { outcome: "incomplete", batch: [], reasons };
   const reserved: number[] = [];
-  for (const issue of eligible.slice(0, 3)) {
+  for (const issue of eligible.slice(0, input.maxBatchSize)) {
     const result = await discoverAndReserveStandalone({
       ...input,
       standaloneIssue: issue,

@@ -3,6 +3,7 @@
   "repository": "BuddyLabsCo/helm-gateway",
   "checkout": "/home/xiakeng/Desktop/workspace/helm-gateway-checkout/",
   "issueList": [],
+  "maxBatchSize": 3,
   "targetBranch": "main",
   "operationRetry": 4,
   "agentRetry": 1,

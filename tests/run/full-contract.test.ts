@@ -18,6 +18,54 @@ import {
 test.afterEach(cleanupTempRoots);
 
 test(
+  "configured maxBatchSize controls Parent and standalone Batches",
+  { timeout: 10_000 },
+  async () => {
+    for (const selector of ["parent", "issue"] as const) {
+      const root = await createProject(false);
+      const configPath = path.join(root, "projects", "demo", "config.json");
+      const config = JSON.parse(await readFile(configPath, "utf8")) as {
+        issueList: number[];
+        maxBatchSize: number;
+      };
+      config.maxBatchSize = 2;
+      config.issueList = selector === "issue" ? [4, 3, 2, 1] : [];
+      await writeFile(configPath, JSON.stringify(config));
+      const scenario = createFiveTicketScenario(
+        root,
+        false,
+        { current: null },
+        2,
+      );
+
+      const result = await executeCli(
+        selector === "parent"
+          ? ["run", "--project", "demo", "--parent", "8"]
+          : ["run", "--project", "demo", "--issue"],
+        scenario.dependencies,
+      );
+
+      assert.equal(result.exitCode, 0);
+      assert.deepEqual(
+        result.summary.completedTickets,
+        selector === "parent" ? [1, 2, 3, 4, 5] : [1, 2, 3, 4],
+      );
+      assert.equal(scenario.maxActiveAgents, 2);
+      assert.ok(
+        scenario.operations.indexOf("reservation:label:3:1") >
+          scenario.operations.indexOf("agent:implement:1:1"),
+      );
+      assert.deepEqual(
+        scenario.operations
+          .filter((operation) => /^reservation:label:[1-5]:1$/u.test(operation))
+          .map((operation) => Number(operation.split(":")[2])),
+        selector === "parent" ? [1, 2, 3, 4, 5] : [1, 2, 3, 4],
+      );
+    }
+  },
+);
+
+test(
   "five Delivery Tickets complete through both maintenance barriers on the first try",
   { timeout: 5_000 },
   async () => {
@@ -201,6 +249,13 @@ test(
           operation.startsWith("push:1:") && operation.includes("/ticket-1"),
       ),
     );
+
+    const configPath = path.join(root, "projects", "demo", "config.json");
+    const config = JSON.parse(await readFile(configPath, "utf8")) as {
+      maxBatchSize: number;
+    };
+    config.maxBatchSize = 2;
+    await writeFile(configPath, JSON.stringify(config));
 
     scenario.resetInterruption();
     restartPoint.current = "integration";

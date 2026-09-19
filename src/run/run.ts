@@ -447,6 +447,7 @@ export async function runProject(input: RunInput): Promise<RunSummary> {
     const discovery = await discoverAndReserve({
       repository: input.repository,
       parentTicket: input.parentTicket,
+      maxBatchSize: input.maxBatchSize,
       tracker: input.tracker,
       audit: input.audit,
       clock: input.clock,
