@@ -6,8 +6,18 @@
   "targetBranch": "main",
   "operationRetry": 4,
   "agentRetry": 1,
-  "operationRetryDelay": [10, 20, 40, 80],
-  "agentRetryDelay": [10, 20, 40, 80],
+  "operationRetryDelay": [
+    10,
+    20,
+    40,
+    80
+  ],
+  "agentRetryDelay": [
+    10,
+    20,
+    40,
+    80
+  ],
   "ticketClosure": "runner",
   "maintenanceTicket": {
     "title": "Maintain project documentation",
@@ -15,9 +25,9 @@
     "label": "doc-maintain"
   },
   "workflow": {
-    "$comment": "Both nodes default to true when omitted and can be disabled independently.",
+    "$comment": "Review defaults to true; an empty documentation trigger label disables automatic maintenance.",
     "review": true,
-    "documentationMaintenance": false
+    "docMaintainTriggerLabel": ""
   },
   "tracker": {
     "$comment": "GitHub tracker settings. tokenEnv names an environment variable; reservationLabel marks Runner-owned Delivery Tickets.",

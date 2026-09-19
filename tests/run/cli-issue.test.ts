@@ -13,12 +13,14 @@ import { createProject } from "../support/cli-project.ts";
 
 test.afterEach(cleanupTempRoots);
 
-test("parent and issue selectors are mutually exclusive and required", async () => {
+test("delivery and document selectors are mutually exclusive and required", async () => {
   const root = await createProject();
   for (const args of [
     ["run", "--project", "demo"],
     ["run", "--project", "demo", "--parent", "8", "--issue", "9"],
     ["run", "--project", "demo", "--parent", "8", "--issue"],
+    ["run", "--project", "demo", "--document", "--parent", "8"],
+    ["run", "--project", "demo", "--document", "--issue", "9"],
   ]) {
     const result = await executeCli(args, createCliDependencies(root));
     assert.equal(result.exitCode, 1);
@@ -85,10 +87,10 @@ test("standalone issue runs without Documentation Maintenance configuration", as
   const root = await createProject();
   const configPath = `${root}/projects/demo/config.json`;
   const config = JSON.parse(await readFile(configPath, "utf8")) as {
-    workflow: { documentationMaintenance: boolean };
+    workflow: { docMaintainTriggerLabel: string };
     agents: Record<string, unknown>;
   };
-  config.workflow.documentationMaintenance = true;
+  config.workflow.docMaintainTriggerLabel = "";
   delete config.agents.documentation;
   await writeFile(configPath, JSON.stringify(config));
   await rm(`${root}/projects/demo/prompts/documentation.md`);
@@ -163,9 +165,9 @@ test("standalone issue uses the selected issue as the Review specification", asy
   const root = await createProject();
   const configPath = `${root}/projects/demo/config.json`;
   const config = JSON.parse(await readFile(configPath, "utf8")) as {
-    workflow: { review: boolean; documentationMaintenance: boolean };
+    workflow: { review: boolean; docMaintainTriggerLabel: string };
   };
-  config.workflow.documentationMaintenance = false;
+  config.workflow.docMaintainTriggerLabel = "";
   config.workflow.review = true;
   await writeFile(configPath, JSON.stringify(config));
   const delivery = createCommittedDelivery(9);

@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename } from "node:fs/promises";
 import path from "node:path";
 
-export const recoverySchemaVersion = 1;
+export const recoverySchemaVersion = 2;
 
 export type MaintenancePhase =
   | "scheduled"
@@ -15,10 +15,15 @@ export type MaintenancePhase =
   | "paused"
   | "completed";
 
+export interface CompletedDelivery {
+  ticket: number;
+  labels: string[];
+}
+
 export interface MaintenanceState {
   phase: MaintenancePhase;
-  credit: number;
   barrier: boolean;
+  deliveryTickets: number[];
   ticket?: number;
 }
 
@@ -168,7 +173,8 @@ export interface RecoverySnapshot {
   createdAt: string;
   updatedAt: string;
   batch?: number[];
-  completedDeliveries?: number[];
+  activeBatch?: number[];
+  completedDeliveries?: CompletedDelivery[];
   terminalCleanup?: Record<
     string,
     {
@@ -302,9 +308,13 @@ function parseSnapshot(value: unknown): RecoverySnapshot {
         "paused",
         "completed",
       ].includes(String(maintenance.phase)) ||
-      !Number.isSafeInteger(maintenance.credit) ||
-      (maintenance.credit as number) < 0 ||
       typeof maintenance.barrier !== "boolean" ||
+      !Array.isArray(maintenance.deliveryTickets) ||
+      maintenance.deliveryTickets.some(
+        (ticket) => !Number.isSafeInteger(ticket) || ticket <= 0,
+      ) ||
+      new Set(maintenance.deliveryTickets).size !==
+        maintenance.deliveryTickets.length ||
       (maintenance.ticket !== undefined &&
         (!Number.isSafeInteger(maintenance.ticket) ||
           (maintenance.ticket as number) <= 0))
@@ -334,7 +344,7 @@ function parseSnapshot(value: unknown): RecoverySnapshot {
       );
     }
   }
-  for (const field of ["batch", "completedDeliveries"] as const) {
+  for (const field of ["batch", "activeBatch"] as const) {
     const value = snapshot[field];
     if (
       value !== undefined &&
@@ -342,6 +352,33 @@ function parseSnapshot(value: unknown): RecoverySnapshot {
         value.some((ticket) => !Number.isSafeInteger(ticket) || ticket <= 0))
     ) {
       throw new InvalidRecoverySnapshot(`snapshot has invalid ${field}`);
+    }
+  }
+  if (snapshot.completedDeliveries !== undefined) {
+    if (!Array.isArray(snapshot.completedDeliveries)) {
+      throw new InvalidRecoverySnapshot(
+        "snapshot has invalid completedDeliveries",
+      );
+    }
+    const tickets = new Set<number>();
+    for (const delivery of snapshot.completedDeliveries) {
+      if (
+        typeof delivery !== "object" ||
+        delivery === null ||
+        Array.isArray(delivery) ||
+        !Number.isSafeInteger((delivery as Record<string, unknown>).ticket) ||
+        Number((delivery as Record<string, unknown>).ticket) <= 0 ||
+        !Array.isArray((delivery as Record<string, unknown>).labels) ||
+        ((delivery as Record<string, unknown>).labels as unknown[]).some(
+          (label) => typeof label !== "string",
+        ) ||
+        tickets.has(Number((delivery as Record<string, unknown>).ticket))
+      ) {
+        throw new InvalidRecoverySnapshot(
+          "snapshot has invalid completedDeliveries",
+        );
+      }
+      tickets.add(Number((delivery as Record<string, unknown>).ticket));
     }
   }
   if (snapshot.terminalCleanup !== undefined) {

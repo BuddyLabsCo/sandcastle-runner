@@ -26,7 +26,7 @@ export interface ProjectConfig {
     reservationLabel: string;
   };
   codeHost: { type: "github"; tokenEnv: string; adminMerge: boolean };
-  workflow: { review: boolean; documentationMaintenance: boolean };
+  workflow: { review: boolean; docMaintainTriggerLabel: string };
   agents: {
     implement: AgentConfig;
     review?: AgentConfig;
@@ -124,7 +124,7 @@ function agent(value: unknown, name: string): AgentConfig {
 
 function parseConfig(
   value: unknown,
-  options: { disableDocumentationMaintenance?: boolean } = {},
+  options: { requireDocumentationMaintenance?: boolean } = {},
 ): ProjectConfig {
   const input = record(value, "config");
   const tracker = record(input.tracker, "tracker");
@@ -133,8 +133,7 @@ function parseConfig(
   const workflow =
     input.workflow === undefined ? {} : record(input.workflow, "workflow");
   const unknownWorkflowField = Object.keys(workflow).find(
-    (name) =>
-      !["$comment", "review", "documentationMaintenance"].includes(name),
+    (name) => !["$comment", "review", "docMaintainTriggerLabel"].includes(name),
   );
   if (unknownWorkflowField) {
     throw new Error(`workflow contains unknown field ${unknownWorkflowField}`);
@@ -163,12 +162,19 @@ function parseConfig(
   if (input.ticketClosure !== "runner" && input.ticketClosure !== "code_host") {
     throw new Error("ticketClosure is unsupported");
   }
-  const documentationMaintenance = options.disableDocumentationMaintenance
-    ? false
-    : switchValue(
-        workflow.documentationMaintenance,
-        "workflow.documentationMaintenance",
-      );
+  if (
+    workflow.docMaintainTriggerLabel !== undefined &&
+    typeof workflow.docMaintainTriggerLabel !== "string"
+  ) {
+    throw new Error("workflow.docMaintainTriggerLabel must be a string");
+  }
+  const docMaintainTriggerLabel =
+    typeof workflow.docMaintainTriggerLabel === "string"
+      ? workflow.docMaintainTriggerLabel.trim()
+      : "";
+  const documentationRequired =
+    options.requireDocumentationMaintenance === true ||
+    docMaintainTriggerLabel.length > 0;
   const documentation =
     agents.documentation === undefined
       ? undefined
@@ -181,14 +187,14 @@ function parseConfig(
   if (reviewEnabled && review === undefined) {
     throw new Error(reviewConfigurationError);
   }
-  if (documentationMaintenance && documentation === undefined) {
+  if (documentationRequired && documentation === undefined) {
     throw new Error(documentationConfigurationError);
   }
   const maintenanceTicket =
     input.maintenanceTicket === undefined
       ? {}
       : record(input.maintenanceTicket, "maintenanceTicket");
-  if (documentationMaintenance) {
+  if (documentationRequired) {
     text(maintenanceTicket.title, "maintenanceTicket.title");
     text(maintenanceTicket.body, "maintenanceTicket.body");
     text(maintenanceTicket.label, "maintenanceTicket.label");
@@ -217,7 +223,7 @@ function parseConfig(
     },
     workflow: {
       review: reviewEnabled,
-      documentationMaintenance,
+      docMaintainTriggerLabel,
     },
     agents: {
       implement: agent(agents.implement, "agents.implement"),
@@ -240,13 +246,13 @@ function parseConfig(
     ticketClosure: input.ticketClosure,
     ...retryPolicy,
     maintenanceTicket: {
-      title: documentationMaintenance
+      title: documentationRequired
         ? text(maintenanceTicket.title, "maintenanceTicket.title")
         : "",
-      body: documentationMaintenance
+      body: documentationRequired
         ? text(maintenanceTicket.body, "maintenanceTicket.body")
         : "",
-      label: documentationMaintenance
+      label: documentationRequired
         ? text(maintenanceTicket.label, "maintenanceTicket.label")
         : "",
     },
@@ -257,7 +263,7 @@ export async function loadProject(
   root: string,
   projectKey: string,
   env: Record<string, string | undefined>,
-  options: { disableDocumentationMaintenance?: boolean } = {},
+  options: { requireDocumentationMaintenance?: boolean } = {},
 ): Promise<LoadedProject> {
   if (!/^[A-Za-z0-9._-]+$/u.test(projectKey))
     throw new Error("invalid project key");
@@ -278,7 +284,10 @@ export async function loadProject(
       }
     }),
   );
-  if (config.workflow.documentationMaintenance) {
+  if (
+    options.requireDocumentationMaintenance === true ||
+    config.workflow.docMaintainTriggerLabel.length > 0
+  ) {
     try {
       if (
         (

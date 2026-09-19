@@ -41,7 +41,7 @@ Place these modules under `src/run/`. Each owns a cohesive workflow responsibili
 | `attempt.ts` / `agent-operation.ts` / `review-attempt.ts` | Worktree preparation, per-Attempt Git configuration, prompt metadata, Agent and Review Attempt execution, and Verified Handoff decisions using observed Git state. Reused for implementation, repairs, and maintenance. |
 | `pull-request.ts` / `pull-request-core.ts` | Publication/readiness, integration, merge confirmation, and Ticket Closure Policy. It never decides Batch order. |
 | `pull-request-recovery.ts` / `pull-request-repair.ts` | Durable publication recovery, required-check polling, and CI/conflict repair budgets. |
-| `maintenance.ts` | One maintenance occurrence: ticket creation, documentation attempt, ordinary PR lifecycle reuse, or direct no-change closure. Scheduling and completion credit stay in `run.ts`. |
+| `maintenance.ts` | One maintenance occurrence: ticket creation, documentation attempt, ordinary PR lifecycle reuse, or direct no-change closure. Label-trigger scheduling stays in `run.ts`. |
 | `cleanup.ts` | Terminal Worktree enumeration, exact ownership matching, removal, and retry evidence. |
 | `operations.ts` | Shared external-read retry, safe state-confirmed workflow-write retry, and Operator Pause control, cancellation, and operation audit events. Preserve separate normal-result validation and trusted-override handling. |
 | `standalone-discovery.ts` | Direct issue eligibility, Reservation, and terminal handling without Parent or child discovery. |

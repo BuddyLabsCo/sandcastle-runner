@@ -352,7 +352,7 @@ test("an explicit merge conflict is repaired on the original branch and Pull Req
 
   assert.equal(result.summary.outcome, "succeeded");
   assert.deepEqual(result.summary.completedTickets, [9]);
-  assert.equal(fetches, 3);
+  assert.equal(fetches, 2);
   assert.equal(pushes, 3);
   assert.equal(pullRequests, 1);
   assert.equal(mergeRequests, 2);

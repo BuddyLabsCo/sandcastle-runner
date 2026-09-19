@@ -24,7 +24,7 @@ test.afterEach(cleanupTempRoots);
 test("restart adopts an exact published Pull Request without rerunning implementation", async () => {
   const root = await createProject();
   const config = structuredClone(validConfig);
-  config.workflow.documentationMaintenance = false;
+  config.workflow.docMaintainTriggerLabel = "";
   await writeFile(
     path.join(root, "projects", "demo", "config.json"),
     JSON.stringify(config),
@@ -87,7 +87,12 @@ test("restart adopts an exact published Pull Request without rerunning implement
   assert.deepEqual(result.summary.completedTickets, [9]);
   assert.equal(forbiddenCalls, 0);
   const recovered = await readRecoverySnapshot(snapshot);
-  assert.deepEqual(recovered?.completedDeliveries, [9]);
+  assert.deepEqual(recovered?.completedDeliveries, [
+    {
+      ticket: 9,
+      labels: ["ready-for-agent", "sandcastle:reserved"],
+    },
+  ]);
   assert.deepEqual(
     recovered?.publications?.map(({ ticket }) => ticket),
     [9],
@@ -97,7 +102,7 @@ test("restart adopts an exact published Pull Request without rerunning implement
 test("restart abandons an absent pending push and creates fresh work", async () => {
   const root = await createProject();
   const config = structuredClone(validConfig);
-  config.workflow.documentationMaintenance = false;
+  config.workflow.docMaintainTriggerLabel = "";
   await writeFile(
     path.join(root, "projects", "demo", "config.json"),
     JSON.stringify(config),
@@ -175,7 +180,7 @@ test("restart pauses on an unexpected remote branch head", async () => {
 test("restart creates one absent Pull Request after rechecking the remote head", async () => {
   const root = await createProject();
   const config = structuredClone(validConfig);
-  config.workflow.documentationMaintenance = false;
+  config.workflow.docMaintainTriggerLabel = "";
   await writeFile(
     path.join(root, "projects", "demo", "config.json"),
     JSON.stringify(config),
@@ -325,7 +330,7 @@ test("a recorded Pull Request resumes through ordinary reads without rediscovery
 test("an interrupted Batch retains every pending publication", async () => {
   const root = await createProject();
   const config = structuredClone(validConfig);
-  config.workflow.documentationMaintenance = false;
+  config.workflow.docMaintainTriggerLabel = "";
   await writeFile(
     path.join(root, "projects", "demo", "config.json"),
     JSON.stringify(config),

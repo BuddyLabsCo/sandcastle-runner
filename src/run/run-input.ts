@@ -12,7 +12,11 @@ import type {
   Tracker,
 } from "./contracts.ts";
 import type { PullRequestObservation } from "./pull-request.ts";
-import type { MaintenanceState, PublicationIntent } from "../recovery.ts";
+import type {
+  CompletedDelivery,
+  MaintenanceState,
+  PublicationIntent,
+} from "../recovery.ts";
 import type { CleanupRecord } from "./cleanup.ts";
 
 export type RunOutcome =
@@ -59,7 +63,9 @@ export interface RunInput {
   ciRepairAgent: AgentConfig;
   conflictRepairPrompt: string;
   conflictRepairAgent: AgentConfig;
-  documentationMaintenance: boolean;
+  docMaintainTriggerLabel: string;
+  documentOnly?: boolean;
+  startupReasons?: string[];
   documentationPrompt: string;
   documentationAgent?: AgentConfig;
   maintenanceTicket: { title: string; body: string; label: string };
@@ -75,10 +81,14 @@ export interface RunInput {
     ticket: number,
     intent: PublicationIntent | null,
   ) => Promise<void>;
-  persistBatch?: (batch: number[], completed: number[]) => Promise<void>;
+  persistBatch?: (
+    batch: number[],
+    completed: CompletedDelivery[],
+  ) => Promise<void>;
   recoveredPublications?: PublicationIntent[];
   recoveredBatch?: number[];
-  recoveredCompletedDeliveries?: number[];
+  recoveredRunTickets?: number[];
+  recoveredCompletedDeliveries?: CompletedDelivery[];
   persistCleanup?: (ticket: number, record: CleanupRecord) => Promise<void>;
   recoveredCleanup?: Record<string, CleanupRecord>;
   persistMaintenance?: (state: MaintenanceState) => Promise<void>;

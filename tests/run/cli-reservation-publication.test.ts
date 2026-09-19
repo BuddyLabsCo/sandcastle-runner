@@ -363,7 +363,6 @@ test("a Verified Handoff is published unchanged and becomes CI-ready after check
     "checks:owner/repo:41",
     "sleep:10000",
     "checks:owner/repo:41",
-    "fetch:/tmp/repo:main",
   ]);
 });
 
