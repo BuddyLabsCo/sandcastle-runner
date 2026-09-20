@@ -3,10 +3,10 @@
   "repository": "xiakeng/trickplay-cropper",
   "checkout": "/home/xiakeng/Desktop/workspace/trickplay-cropper/",
   "issueList": [],
-  "maxBatchSize": 3,
+  "maxBatchSize": 2,
   "targetBranch": "main",
   "operationRetry": 4,
-  "agentRetry": 4,
+  "agentRetry": 2,
   "operationRetryDelay": [
     10,
     20,
@@ -14,10 +14,8 @@
     80
   ],
   "agentRetryDelay": [
-    10,
-    20,
-    40,
-    80
+    300,
+    300
   ],
   "ticketClosure": "runner",
   "maintenanceTicket": {
@@ -53,17 +51,17 @@
     "review": {
       "$comment": "Fresh-context Standards and Spec review.",
       "model": "gpt-5.6-sol",
-      "reasoningEffort": "high"
+      "reasoningEffort": "medium"
     },
     "ciRepair": {
       "$comment": "Repair of failed required CI checks.",
       "model": "gpt-5.6-sol",
-      "reasoningEffort": "high"
+      "reasoningEffort": "medium"
     },
     "conflictRepair": {
       "$comment": "Repair of an explicit merge conflict.",
       "model": "gpt-5.6-sol",
-      "reasoningEffort": "high"
+      "reasoningEffort": "medium"
     },
     "documentation": {
       "$comment": "Documentation Maintenance.",
