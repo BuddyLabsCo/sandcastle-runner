@@ -2,7 +2,7 @@
   "$comment": "Replace repository, checkout, runnerAccount, and targetBranch for your Project. checkout must be absolute. ticketClosure is runner or code_host.",
   "repository": "BuddyLabsCo/helm-gateway",
   "checkout": "/home/xiakeng/Desktop/workspace/helm-gateway-checkout/",
-  "disableWebSearch": false,
+  "disableWebSearch": true,
   "issueList": [],
   "maxBatchSize": 2,
   "targetBranch": "main",
@@ -46,27 +46,27 @@
     "$comment": "Each Agent Attempt selects a supported model and low, medium, high, or xhigh reasoning. Review and documentation profiles are required only while their workflow nodes are enabled.",
     "implement": {
       "$comment": "Initial Delivery Ticket implementation.",
-      "model": "gpt-5.6-sol",
+      "model": "gpt-6-astra",
       "reasoningEffort": "high"
     },
     "review": {
       "$comment": "Fresh-context Standards and Spec review.",
-      "model": "gpt-5.6-sol",
-      "reasoningEffort": "medium"
+      "model": "gpt-6-sol",
+      "reasoningEffort": "high"
     },
     "ciRepair": {
       "$comment": "Repair of failed required CI checks.",
-      "model": "gpt-5.6-sol",
+      "model": "gpt-6-sol",
       "reasoningEffort": "medium"
     },
     "conflictRepair": {
       "$comment": "Repair of an explicit merge conflict.",
-      "model": "gpt-5.6-sol",
+      "model": "gpt-6-sol",
       "reasoningEffort": "medium"
     },
     "documentation": {
       "$comment": "Documentation Maintenance.",
-      "model": "gpt-5.6-sol",
+      "model": "gpt-6-astra",
       "reasoningEffort": "high"
     }
   },
