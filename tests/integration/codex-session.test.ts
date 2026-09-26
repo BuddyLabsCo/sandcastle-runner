@@ -23,9 +23,6 @@ test(
     const logFile = path.join(root, "probe.log");
     await mkdir(codexHome, { recursive: true });
     await writeFile(gitConfigGlobal, "", "utf8");
-    const previousCodexHome = process.env.CODEX_HOME;
-    process.env.CODEX_HOME = codexHome;
-
     try {
       const taskPrompt = path.join(root, "task.md");
       await writeFile(
@@ -39,6 +36,7 @@ test(
         worktree: process.cwd(),
         promptFile: taskPrompt,
         gitConfigGlobal,
+        codexHome,
         logFile,
         sessionName: "integration session name",
       });
@@ -65,8 +63,6 @@ test(
       const result = read.result as { thread?: { name?: unknown } };
       assert.equal(result.thread?.name, "integration session name");
     } finally {
-      if (previousCodexHome === undefined) delete process.env.CODEX_HOME;
-      else process.env.CODEX_HOME = previousCodexHome;
       await rm(root, {
         recursive: true,
         force: true,
@@ -174,23 +170,30 @@ function waitForResponse(
   id: number,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => finish(new Error("Codex initialize timed out")),
+      10_000,
+    );
     const onLine = (line: string) => {
       try {
         const message = JSON.parse(line) as { id?: unknown; error?: unknown };
-        if (message.id === id) {
-          lines.off("line", onLine);
-          if (message.error !== undefined)
-            reject(
-              new Error(
-                `Codex initialize failed: ${JSON.stringify(message.error)}`,
-              ),
-            );
-          else resolve();
-        }
+        if (message.id !== id) return;
+        if (message.error !== undefined)
+          finish(
+            new Error(
+              `Codex initialize failed: ${JSON.stringify(message.error)}`,
+            ),
+          );
+        else finish();
       } catch (error) {
-        lines.off("line", onLine);
-        reject(error instanceof Error ? error : new Error(String(error)));
+        finish(error instanceof Error ? error : new Error(String(error)));
       }
+    };
+    const finish = (error?: Error) => {
+      clearTimeout(timer);
+      lines.off("line", onLine);
+      if (error === undefined) resolve();
+      else reject(error);
     };
     lines.on("line", onLine);
   });

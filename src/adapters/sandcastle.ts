@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 import {
   Output,
   StructuredOutputError,
@@ -7,7 +8,6 @@ import {
 } from "@ai-hero/sandcastle";
 import { appendFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
-
 import {
   formatStructuredCause,
   pullRequestMetadataRule,
@@ -25,25 +25,21 @@ import type {
 import { codexWithRunnerEffort } from "./codex-agent.ts";
 import { OperatorCancelled } from "../run/operations.ts";
 import { noShellSandbox } from "./no-shell-sandbox.ts";
+import { codexEnvironment } from "./codex-session.ts";
 import { renameCodexSession, type SessionRenamer } from "./codex-session.ts";
-
 type SandcastleRun = (
   options: RunOptions,
 ) => Promise<RunResult & { output: unknown }>;
-
 class AgentOutputError extends Error {
   readonly diagnostics: AgentDiagnostics;
-
   constructor(message: string, diagnostics: AgentDiagnostics) {
     super(message);
     this.diagnostics = diagnostics;
   }
 }
-
 type Delay = (milliseconds: number, signal: AbortSignal) => Promise<void>;
 type PromptLogger = (logFile: string, prompt: string) => Promise<void>;
 type StatusLogger = (logFile: string, message: string) => Promise<void>;
-
 const delay: Delay = (milliseconds, signal) =>
   new Promise((resolve, reject) => {
     const timer = setTimeout(resolve, milliseconds);
@@ -56,14 +52,12 @@ const delay: Delay = (milliseconds, signal) =>
     if (signal.aborted) abort();
     else signal.addEventListener("abort", abort, { once: true });
   });
-
 const runnerPromptDirectory = join(import.meta.dirname, "../prompts");
 const promptSeparator = "===================================";
 const logPrompt: PromptLogger = (logFile, prompt) =>
   appendFile(logFile, `${promptSeparator}\n${prompt}\n`, "utf8");
 const logStatus: StatusLogger = (logFile, message) =>
   appendFile(logFile, `${message}\n`, "utf8");
-
 function isAgentProcessFailure(error: unknown): boolean {
   return (
     error instanceof Error &&
@@ -186,7 +180,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
         const result = await this.run({
           agent: codexWithRunnerEffort(input.model, input.effort),
           sandbox: noShellSandbox({
-            env: { GIT_CONFIG_GLOBAL: input.gitConfigGlobal },
+            env: codexEnvironment(input),
           }),
           cwd: input.worktree,
           prompt: "Reply with exactly: SESSION_READY",
@@ -302,7 +296,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
           result = await this.run({
             agent: codexWithRunnerEffort(input.model, input.effort),
             sandbox: noShellSandbox({
-              env: { GIT_CONFIG_GLOBAL: input.gitConfigGlobal },
+              env: codexEnvironment(input),
             }),
             cwd: input.worktree,
             prompt: runPrompt,

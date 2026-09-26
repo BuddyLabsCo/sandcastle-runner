@@ -269,6 +269,7 @@ export interface AgentAttemptInput {
   model: string;
   effort: string;
   gitConfigGlobal: string;
+  codexHome?: string;
   logFile: string;
   timeoutMs: number;
   retryPolicy: RetryPolicy;

@@ -8,6 +8,15 @@ export type SessionRenamer = (
   sessionId: string,
 ) => Promise<void>;
 
+export function codexEnvironment(
+  input: Pick<ReviewAttemptInput, "gitConfigGlobal" | "codexHome">,
+) {
+  return {
+    GIT_CONFIG_GLOBAL: input.gitConfigGlobal,
+    ...(input.codexHome === undefined ? {} : { CODEX_HOME: input.codexHome }),
+  };
+}
+
 function protocolError(value: unknown): string {
   if (typeof value === "string") return value;
   if (typeof value === "object" && value !== null) {
@@ -21,7 +30,13 @@ export const renameCodexSession: SessionRenamer = (input, sessionId) =>
   new Promise((resolve, reject) => {
     const child = spawn("codex", ["app-server", "--stdio"], {
       cwd: input.worktree,
-      env: { ...process.env, GIT_CONFIG_GLOBAL: input.gitConfigGlobal },
+      env: {
+        ...process.env,
+        GIT_CONFIG_GLOBAL: input.gitConfigGlobal,
+        ...(input.codexHome === undefined
+          ? {}
+          : { CODEX_HOME: input.codexHome }),
+      },
       stdio: ["pipe", "pipe", "pipe"],
     });
     const lines = createInterface({ input: child.stdout });
