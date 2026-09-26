@@ -17,6 +17,7 @@ export interface AgentConfig {
 export interface ProjectConfig {
   repository: string;
   checkout: string;
+  disableWebSearch: boolean;
   issueList: number[];
   maxBatchSize: number;
   targetBranch?: string;
@@ -110,8 +111,12 @@ function retryDelays(value: unknown, name: string): number[] {
   return delays.map((item) => item as number);
 }
 
-function switchValue(value: unknown, name: string): boolean {
-  if (value === undefined) return true;
+function switchValue(
+  value: unknown,
+  name: string,
+  defaultValue = true,
+): boolean {
+  if (value === undefined) return defaultValue;
   if (typeof value !== "boolean") throw new Error(`${name} must be a boolean`);
   return value;
 }
@@ -207,6 +212,11 @@ function parseConfig(
   return {
     repository,
     checkout,
+    disableWebSearch: switchValue(
+      input.disableWebSearch,
+      "disableWebSearch",
+      false,
+    ),
     issueList: configuredIssueList,
     maxBatchSize,
     ...(input.targetBranch === undefined

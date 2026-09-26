@@ -8,9 +8,21 @@ type SandcastleEffort = Exclude<
 export function codexWithRunnerEffort(
   model: string,
   effort: string,
+  disableWebSearch = false,
 ): ReturnType<typeof codex> {
-  return codex(model, {
+  const provider = codex(model, {
     // The dependency's runtime forwards any effort string; its type is narrower.
     effort: effort as SandcastleEffort,
   });
+  if (!disableWebSearch) return provider;
+  return {
+    ...provider,
+    buildPrintCommand(input) {
+      const command = provider.buildPrintCommand(input);
+      return {
+        ...command,
+        command: `${command.command} -c 'web_search="disabled"'`,
+      };
+    },
+  };
 }
