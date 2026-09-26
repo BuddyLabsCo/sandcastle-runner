@@ -30,6 +30,7 @@ export const committed: AgentAttemptResult = {
 export function input() {
   return {
     ticket: 9,
+    sessionName: "implement issue 9",
     worktree: "/repo/worktree",
     branch: "sandcastle/run-id/ticket-9",
     base: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -62,6 +63,7 @@ export function reviewInput() {
   void pullRequestMetadata;
   return {
     ...review,
+    sessionName: "review issue 9",
     promptFile: path.resolve("projects/trickplay-cropper/prompts/review.md"),
     promptArgs: { REVIEW_HANDOFF: "{}" },
   };
@@ -87,6 +89,8 @@ export function createExecutor(run: FakeRun): SandcastleAgentExecutor {
     },
     async () => {},
     async () => {},
+    async () => {},
+    undefined,
     async () => {},
   );
 }

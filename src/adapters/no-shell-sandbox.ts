@@ -106,7 +106,7 @@ function resolveWindowsCommand(
   return file;
 }
 
-function spawnCommand(
+export function spawnCommand(
   file: string,
   args: string[],
   env: Record<string, string | undefined>,

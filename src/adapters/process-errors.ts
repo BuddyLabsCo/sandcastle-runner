@@ -1,3 +1,5 @@
+import type { AgentDiagnostics } from "../run/contracts.ts";
+
 export function formatToolError(command: string, error: unknown): string {
   const original = error instanceof Error ? error.message : String(error);
   const code =
@@ -8,4 +10,20 @@ export function formatToolError(command: string, error: unknown): string {
     return `${command} could not be started: ${original}. Install ${command} and ensure it is available on PATH; see README prerequisites.`;
   }
   return original;
+}
+
+export class AgentOutputError extends Error {
+  readonly diagnostics: AgentDiagnostics;
+
+  constructor(message: string, diagnostics: AgentDiagnostics) {
+    super(message);
+    this.diagnostics = diagnostics;
+  }
+}
+
+export function isAgentProcessFailure(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    /^codex exited with code \d+(?::|$)/u.test(error.message)
+  );
 }

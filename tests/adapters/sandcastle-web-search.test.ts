@@ -46,6 +46,7 @@ for (const disableWebSearch of [true, false, undefined]) {
       async () => {},
       async () => {},
       disableWebSearch,
+      async () => {},
     );
 
     assert.deepEqual(await executor.execute(input()), committed);

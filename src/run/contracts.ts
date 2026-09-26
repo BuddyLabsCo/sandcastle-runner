@@ -257,6 +257,7 @@ export interface AgentDiagnostics {
 }
 
 export interface AgentAttemptInput {
+  sessionName: string;
   ticket: number;
   worktree: string;
   branch: string;

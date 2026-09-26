@@ -23,21 +23,14 @@ import type {
   ReviewAttemptInput,
 } from "../run/contracts.ts";
 import { codexWithRunnerEffort } from "./codex-agent.ts";
+import { renameCodexSession } from "./codex-session-name.ts";
+import { AgentOutputError, isAgentProcessFailure } from "./process-errors.ts";
 import { OperatorCancelled } from "../run/operations.ts";
 import { noShellSandbox } from "./no-shell-sandbox.ts";
 
 type SandcastleRun = (
   options: RunOptions,
 ) => Promise<RunResult & { output: unknown }>;
-
-class AgentOutputError extends Error {
-  readonly diagnostics: AgentDiagnostics;
-
-  constructor(message: string, diagnostics: AgentDiagnostics) {
-    super(message);
-    this.diagnostics = diagnostics;
-  }
-}
 
 type Delay = (milliseconds: number, signal: AbortSignal) => Promise<void>;
 type PromptLogger = (logFile: string, prompt: string) => Promise<void>;
@@ -63,19 +56,13 @@ const logPrompt: PromptLogger = (logFile, prompt) =>
 const logStatus: StatusLogger = (logFile, message) =>
   appendFile(logFile, `${message}\n`, "utf8");
 
-function isAgentProcessFailure(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    /^codex exited with code \d+(?::|$)/u.test(error.message)
-  );
-}
-
 export class SandcastleAgentExecutor implements AgentExecutor {
   private readonly disableWebSearch: boolean;
   private readonly run: SandcastleRun;
   private readonly wait: Delay;
   private readonly logPrompt: PromptLogger;
   private readonly logStatus: StatusLogger;
+  private readonly renameSession: typeof renameCodexSession;
   private readonly sessions = new Map<string, string>();
   private readonly replies = new Map<string, string>();
 
@@ -85,8 +72,10 @@ export class SandcastleAgentExecutor implements AgentExecutor {
     promptLogger: PromptLogger = logPrompt,
     statusLogger: StatusLogger = logStatus,
     disableWebSearch = false,
+    renameSession: typeof renameCodexSession = renameCodexSession,
   ) {
     this.disableWebSearch = disableWebSearch;
+    this.renameSession = renameSession;
     this.run = run;
     this.wait = wait;
     this.logPrompt = promptLogger;
@@ -240,7 +229,18 @@ export class SandcastleAgentExecutor implements AgentExecutor {
       },
     ).trim();
     if (prompt === undefined) {
-      resumeSession ??= await this.prepareSession(input);
+      if (resumeSession === undefined) {
+        resumeSession = await this.prepareSession(input);
+        try {
+          await this.renameSession(resumeSession, input.sessionName, input);
+        } catch (error) {
+          input.signal.throwIfAborted();
+          await this.logStatus(
+            input.logFile,
+            `Warning: could not name Codex session ${resumeSession}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
       const template = replacePromptPlaceholders(
         await readFile(input.promptFile, "utf8"),
         {

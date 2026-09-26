@@ -52,6 +52,7 @@ test("disabled review does not read its prompt", async () => {
 });
 
 test("a clean fresh-context review gates publication and preserves implementation metadata", async () => {
+  const sessionNames: string[] = [];
   const root = await createProject();
   const config = structuredClone(validConfig);
   config.workflow.review = true;
@@ -131,6 +132,7 @@ test("a clean fresh-context review gates publication and preserves implementatio
           return delivery.agentExecutor.execute!(input);
         },
         async executeReview(input) {
+          sessionNames.push(input.sessionName);
           operations.push("review");
           reviewInput = input;
           return {
@@ -186,6 +188,7 @@ test("a clean fresh-context review gates publication and preserves implementatio
     false,
   );
   assert.deepEqual(result.summary.handoffs?.[0]?.reviewCommits, []);
+  assert.deepEqual(sessionNames, ["review issue 9"]);
 });
 
 test("review fix commits become part of the complete delivery without replacing implementation identity", async () => {

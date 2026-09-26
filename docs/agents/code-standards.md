@@ -65,6 +65,8 @@ Under `src/adapters/`, implement only operations the current implementation need
 | `git-workspace.ts` / `GitWorkspace` | Fetch, Worktree creation/inspection/closure, commits, working-tree evidence, and push. |
 | `sandcastle.ts` / `AgentExecutor` | Sandcastle invocation, streaming, session continuation, timeout/abort, and settlement. Delegate process lifecycle to Sandcastle. |
 | `codex-agent.ts` | Codex provider construction. Forwards configured model and effort verbatim, applies the optional web-search override, and isolates the Sandcastle dependency's provider typing. |
+| `codex-session-name.ts` | Names an already-probed Codex session through the app-server handshake and `thread/name/set`; owns the short-lived protocol process and its timeout/cancellation cleanup. |
+| `process-errors.ts` | External command startup diagnostics, Agent Attempt output errors, and Codex process-failure classification. |
 | `sandcastle-output.ts` | Agent and Review Attempt output schemas, validation, and prompt placeholder replacement. |
 | `clock.ts` / `Clock` | Time, delays, and timeouts. |
 | `terminal.ts` / `OperatorIO` | Display and input/EOF; workflow code interprets operator decisions. |
