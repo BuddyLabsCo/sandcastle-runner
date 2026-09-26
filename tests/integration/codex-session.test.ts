@@ -135,13 +135,18 @@ async function request(
     await waitForResponse(lines, 1);
     child.stdin.write('{"method":"initialized"}\n');
     child.stdin.write(`${JSON.stringify(message)}\n`);
-    const deadline = new Promise<never>((_, reject) =>
-      setTimeout(
+    let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      deadlineTimer = setTimeout(
         () => reject(new Error("Codex app-server request timed out")),
         10_000,
-      ),
-    );
-    return await Promise.race([response, deadline]);
+      );
+    });
+    try {
+      return await Promise.race([response, deadline]);
+    } finally {
+      if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
+    }
   } finally {
     await stopChild(child, lines);
   }
