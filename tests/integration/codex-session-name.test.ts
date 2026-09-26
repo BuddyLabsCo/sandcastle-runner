@@ -27,12 +27,12 @@ test(
         await closed;
       }
     });
-    const launch = (args: string[]) => {
+    const launch = (args: string[], launchSignal = signal) => {
       const command = spawnCommand("codex", args, process.env);
       const child = spawn(command.file, command.args, {
         cwd: worktree,
         stdio: ["pipe", "pipe", "ignore"],
-        signal,
+        signal: launchSignal,
         killSignal: "SIGKILL",
       });
       children.push({
@@ -42,6 +42,80 @@ test(
         ),
       });
       return child;
+    };
+
+    const useServer = async (
+      serverSignal: AbortSignal,
+      action: (
+        request: (method: string, params: object) => Promise<unknown>,
+      ) => Promise<void>,
+    ) => {
+      const server = launch(["app-server"], serverSignal);
+      const lines = createInterface({ input: server.stdout });
+      const closed = new Promise<void>((resolve) =>
+        server.once("close", () => resolve()),
+      );
+      let nextId = 0;
+      const pending = new Map<
+        number,
+        { resolve: (result: unknown) => void; reject: (error: Error) => void }
+      >();
+      const fail = (error: Error) => {
+        for (const request of pending.values()) request.reject(error);
+        pending.clear();
+      };
+      server.once("error", () =>
+        fail(new Error("Codex readback server failed or timed out")),
+      );
+      server.once("close", () =>
+        fail(new Error("Codex readback server closed")),
+      );
+      server.stdin.on("error", () =>
+        fail(new Error("Codex readback input failed")),
+      );
+      lines.on("line", (line) => {
+        try {
+          const message = JSON.parse(line) as {
+            id?: number;
+            result?: unknown;
+            error?: { code: number };
+          };
+          if (message.id === undefined) return;
+          const request = pending.get(message.id);
+          if (!request) return;
+          pending.delete(message.id);
+          if (message.error)
+            request.reject(
+              new Error(`Codex readback RPC failed (${message.error.code})`),
+            );
+          else request.resolve(message.result);
+        } catch {
+          fail(new Error("Invalid Codex readback JSON output"));
+        }
+      });
+      const request = (method: string, params: object) =>
+        new Promise<unknown>((resolve, reject) => {
+          const id = nextId++;
+          pending.set(id, { resolve, reject });
+          server.stdin.write(`${JSON.stringify({ id, method, params })}\n`);
+        });
+      try {
+        await request("initialize", {
+          clientInfo: {
+            name: "sandcastle_runner_integration",
+            version: "1.0.0",
+          },
+        });
+        server.stdin.write(
+          `${JSON.stringify({ method: "initialized", params: {} })}\n`,
+        );
+        await action(request);
+      } finally {
+        lines.close();
+        if (server.exitCode === null && server.signalCode === null)
+          server.kill("SIGKILL");
+        await closed;
+      }
     };
 
     // No --ephemeral: the production helper must find this persisted session.
@@ -54,6 +128,14 @@ test(
     ]);
     const probeLines = createInterface({ input: probe.stdout });
     let sessionId: string | undefined;
+    t.after(async () => {
+      if (sessionId === undefined) return;
+      // Cleanup remains available even if the probe or rename exhausted its signal.
+      await useServer(AbortSignal.timeout(15_000), async (request) => {
+        await request("thread/archive", { threadId: sessionId });
+        t.diagnostic(`Archived disposable probe: ${sessionId}`);
+      });
+    });
     let reply: string | undefined;
     await new Promise<void>((resolve, reject) => {
       probe.once("error", () =>
@@ -101,58 +183,7 @@ test(
     });
 
     // A fresh app server proves persistence, rather than a cached notification.
-    const server = launch(["app-server"]);
-    const lines = createInterface({ input: server.stdout });
-    t.after(() => lines.close());
-    let nextId = 0;
-    const pending = new Map<
-      number,
-      { resolve: (result: unknown) => void; reject: (error: Error) => void }
-    >();
-    const fail = (error: Error) => {
-      for (const request of pending.values()) request.reject(error);
-      pending.clear();
-    };
-    server.once("error", () =>
-      fail(new Error("Codex readback server failed or timed out")),
-    );
-    server.once("close", () => fail(new Error("Codex readback server closed")));
-    server.stdin.on("error", () =>
-      fail(new Error("Codex readback input failed")),
-    );
-    lines.on("line", (line) => {
-      try {
-        const message = JSON.parse(line) as {
-          id?: number;
-          result?: unknown;
-          error?: { code: number };
-        };
-        if (message.id === undefined) return;
-        const request = pending.get(message.id);
-        if (!request) return;
-        pending.delete(message.id);
-        if (message.error)
-          request.reject(
-            new Error(`Codex readback RPC failed (${message.error.code})`),
-          );
-        else request.resolve(message.result);
-      } catch {
-        fail(new Error("Invalid Codex readback JSON output"));
-      }
-    });
-    const request = (method: string, params: object) =>
-      new Promise<unknown>((resolve, reject) => {
-        const id = nextId++;
-        pending.set(id, { resolve, reject });
-        server.stdin.write(`${JSON.stringify({ id, method, params })}\n`);
-      });
-    await request("initialize", {
-      clientInfo: { name: "sandcastle_runner_integration", version: "1.0.0" },
-    });
-    server.stdin.write(
-      `${JSON.stringify({ method: "initialized", params: {} })}\n`,
-    );
-    try {
+    await useServer(signal, async (request) => {
       const result = (await request("thread/read", {
         threadId: sessionId,
         includeTurns: false,
@@ -162,9 +193,6 @@ test(
       t.diagnostic(
         JSON.stringify({ sessionId, reply, nameReadback: result.thread.name }),
       );
-    } finally {
-      await request("thread/archive", { threadId: sessionId });
-      t.diagnostic(`Archived disposable probe: ${sessionId}`);
-    }
+    });
   },
 );
