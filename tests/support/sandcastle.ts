@@ -34,6 +34,7 @@ export function input() {
     branch: "sandcastle/run-id/ticket-9",
     base: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     targetBranch: "main",
+    sessionName: "implement issue 9",
     promptFile: path.resolve("projects/trickplay-cropper/prompts/implement.md"),
     promptArgs: {
       TICKET_NUMBER: 9,
@@ -62,6 +63,7 @@ export function reviewInput() {
   void pullRequestMetadata;
   return {
     ...review,
+    sessionName: "review issue 9",
     promptFile: path.resolve("projects/trickplay-cropper/prompts/review.md"),
     promptArgs: { REVIEW_HANDOFF: "{}" },
   };

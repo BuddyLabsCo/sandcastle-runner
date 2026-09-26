@@ -170,6 +170,7 @@ export async function reviewHandoff(
           branch: handoff.branch,
           base: handoff.base,
           targetBranch: input.targetBranch,
+          sessionName: `review issue ${handoff.ticket}`,
           promptFile: input.reviewPrompt,
           promptArgs: {
             REVIEW_HANDOFF: JSON.stringify({

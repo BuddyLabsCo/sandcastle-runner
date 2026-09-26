@@ -170,6 +170,7 @@ test("a clean fresh-context review gates publication and preserves implementatio
     path.join(root, "projects/demo/prompts/review.md"),
   );
   assert.equal(reviewInput.base, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+  assert.equal(reviewInput.sessionName, "review issue 9");
   assert.equal(reviewInput.branch, branch);
   assert.deepEqual(reviewHandoff.deliveryTicket, {
     source: "https://github.com/owner/repo/issues/9",

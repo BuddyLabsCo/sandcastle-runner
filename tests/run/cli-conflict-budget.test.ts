@@ -17,6 +17,7 @@ test("cancelling an exhausted conflict budget stops before republishing or remer
   const root = await createProject();
   const delivery = createCommittedDelivery();
   let agentCalls = 0;
+  const sessionNames: string[] = [];
   let pushes = 0;
   let mergeRequests = 0;
 
@@ -39,6 +40,7 @@ test("cancelling an exhausted conflict budget stops before republishing or remer
       },
       agentExecutor: {
         async execute(input) {
+          sessionNames.push(input.sessionName);
           agentCalls += 1;
           if (agentCalls === 2) {
             return {
@@ -90,6 +92,10 @@ test("cancelling an exhausted conflict budget stops before republishing or remer
 
   assert.equal(result.summary.outcome, "cancelled");
   assert.equal(agentCalls, 2);
+  assert.deepEqual(sessionNames, [
+    "implement issue 9",
+    "resolve conflict for pr 1",
+  ]);
   assert.equal(pushes, 1);
   assert.equal(mergeRequests, 1);
 });

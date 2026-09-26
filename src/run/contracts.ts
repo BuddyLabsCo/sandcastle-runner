@@ -262,6 +262,7 @@ export interface AgentAttemptInput {
   branch: string;
   base: string;
   targetBranch: string;
+  sessionName: string;
   promptFile: string;
   promptArgs: Record<string, string | number>;
   pullRequestMetadata: "required" | "required_for_committed" | "ignored";

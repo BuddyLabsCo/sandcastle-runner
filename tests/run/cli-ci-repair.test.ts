@@ -30,6 +30,7 @@ test("Parent cancellation during a failed repair push prevents retry", async () 
   };
   let branch = "";
   let agentCalls = 0;
+  const sessionNames: string[] = [];
   let pushCalls = 0;
   let parentCancelled = false;
 
@@ -66,7 +67,8 @@ test("Parent cancellation during a failed repair push prevents retry", async () 
         },
       },
       agentExecutor: {
-        async execute() {
+        async execute(input) {
+          sessionNames.push(input.sessionName);
           agentCalls += 1;
           const commit = agentCalls === 1 ? implementation : repair;
           return {
@@ -114,6 +116,7 @@ test("Parent cancellation during a failed repair push prevents retry", async () 
 
   assert.equal(result.summary.outcome, "cancelled");
   assert.equal(pushCalls, 2);
+  assert.deepEqual(sessionNames, ["implement issue 9", "fix ci for pr 41"]);
   assert.deepEqual(ticket.labels, ["ready-for-agent", "sandcastle:reserved"]);
   assert.deepEqual(ticket.assignees, ["runner"]);
 });

@@ -215,6 +215,7 @@ export async function runAgentOperation(
   operation: {
     phase: "implement" | "ci_repair" | "conflict_repair" | "maintenance";
     ticket: number;
+    sessionName: string;
     worktree: string;
     branch: string;
     base: string;
@@ -268,6 +269,7 @@ export async function runAgentOperation(
           branch: operation.branch,
           base: operation.base,
           targetBranch: input.targetBranch,
+          sessionName: operation.sessionName,
           promptFile: operation.promptFile,
           promptArgs: operation.promptArgs,
           pullRequestMetadata: operation.pullRequestMetadata,

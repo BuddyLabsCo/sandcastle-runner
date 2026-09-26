@@ -25,6 +25,7 @@ import type {
 import { codexWithRunnerEffort } from "./codex-agent.ts";
 import { OperatorCancelled } from "../run/operations.ts";
 import { noShellSandbox } from "./no-shell-sandbox.ts";
+import { renameCodexSession, type SessionRenamer } from "./codex-session.ts";
 
 type SandcastleRun = (
   options: RunOptions,
@@ -77,17 +78,22 @@ export class SandcastleAgentExecutor implements AgentExecutor {
   private readonly logStatus: StatusLogger;
   private readonly sessions = new Map<string, string>();
   private readonly replies = new Map<string, string>();
+  private readonly renameSession: SessionRenamer;
 
   constructor(
     run: SandcastleRun = runSandcastle as SandcastleRun,
     wait: Delay = delay,
     promptLogger: PromptLogger = logPrompt,
     statusLogger: StatusLogger = logStatus,
+    renameSession: SessionRenamer = run === (runSandcastle as SandcastleRun)
+      ? renameCodexSession
+      : () => Promise.resolve(),
   ) {
     this.run = run;
     this.wait = wait;
     this.logPrompt = promptLogger;
     this.logStatus = statusLogger;
+    this.renameSession = renameSession;
   }
 
   private async waitForContinuation(
@@ -151,6 +157,20 @@ export class SandcastleAgentExecutor implements AgentExecutor {
     );
   }
 
+  private async renameSessionAfterProbe(
+    input: ReviewAttemptInput,
+    sessionId: string,
+  ): Promise<void> {
+    try {
+      await this.renameSession(input, sessionId);
+    } catch (error) {
+      await this.logStatus(
+        input.logFile,
+        `Session rename failed for "${input.sessionName}"; continuing with session ${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
   private async prepareSession(input: ReviewAttemptInput): Promise<string> {
     const existing = this.sessions.get(input.logFile);
     if (existing !== undefined) return existing;
@@ -181,6 +201,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
         if (sessionId === undefined)
           throw new Error("session probe returned no session ID");
         this.sessions.set(input.logFile, sessionId);
+        await this.renameSessionAfterProbe(input, sessionId);
         return sessionId;
       } catch (error) {
         lastError = error;

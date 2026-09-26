@@ -367,6 +367,7 @@ test("multiple matching Delivery Tickets trigger one committed Documentation Mai
           if (input.ticket !== maintenance.number)
             return delivery.agentExecutor.execute(input);
           operations.push("maintenance:agent");
+          assert.equal(input.sessionName, "document maintain issue 100");
           assert.match(input.promptFile, /prompts\/documentation\.md$/u);
           assert.deepEqual(Object.keys(input.promptArgs).sort(), [
             "BASE_SHA",
