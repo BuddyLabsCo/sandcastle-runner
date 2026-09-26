@@ -294,41 +294,49 @@ export function createFiveTicketScenario(
           }
           const attemptResult = makeAttemptResult(input, commit);
           if (recovery && purpose === "implement" && input.ticket === 2) {
-            ticket2Executor ??= new SandcastleAgentExecutor(async (options) => {
-              if (options.prompt === "Reply with exactly: SESSION_READY") {
+            ticket2Executor ??= new SandcastleAgentExecutor(
+              async (options) => {
+                if (options.prompt === "Reply with exactly: SESSION_READY") {
+                  return {
+                    iterations: [{ sessionId: "ticket-2-probe-session" }],
+                    stdout: "SESSION_READY",
+                    commits: [],
+                    branch: input.branch,
+                    output: undefined,
+                  };
+                }
+                correctionSessions += 1;
+                const definition = object(options.output);
+                assert.equal(definition.maxRetries, 0);
+                const standard = object(object(definition.schema)["~standard"]);
+                const validate = standard.validate;
+                if (typeof validate !== "function")
+                  assert.fail("result schema must validate");
+                const validateSchema = validate as (value: unknown) => unknown;
+                operations.push("agent:malformed:2");
+                assert.ok(
+                  object(
+                    await validateSchema({ ...attemptResult, summary: "" }),
+                  ).issues,
+                );
+                operations.push("agent:corrected-in-session:2");
+                assert.deepEqual(await validateSchema(attemptResult), {
+                  value: attemptResult,
+                });
                 return {
-                  iterations: [{ sessionId: "ticket-2-probe-session" }],
-                  stdout: "SESSION_READY",
-                  commits: [],
+                  iterations: [{ sessionId: "ticket-2-session" }],
+                  stdout: `<agent_attempt_result>${JSON.stringify(attemptResult)}</agent_attempt_result>`,
+                  commits: attemptResult.commits,
                   branch: input.branch,
-                  output: undefined,
+                  output: attemptResult,
                 };
-              }
-              correctionSessions += 1;
-              const definition = object(options.output);
-              assert.equal(definition.maxRetries, 0);
-              const standard = object(object(definition.schema)["~standard"]);
-              const validate = standard.validate;
-              if (typeof validate !== "function")
-                assert.fail("result schema must validate");
-              const validateSchema = validate as (value: unknown) => unknown;
-              operations.push("agent:malformed:2");
-              assert.ok(
-                object(await validateSchema({ ...attemptResult, summary: "" }))
-                  .issues,
-              );
-              operations.push("agent:corrected-in-session:2");
-              assert.deepEqual(await validateSchema(attemptResult), {
-                value: attemptResult,
-              });
-              return {
-                iterations: [{ sessionId: "ticket-2-session" }],
-                stdout: `<agent_attempt_result>${JSON.stringify(attemptResult)}</agent_attempt_result>`,
-                commits: attemptResult.commits,
-                branch: input.branch,
-                output: attemptResult,
-              };
-            });
+              },
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              async () => {},
+            );
             return ticket2Executor.execute(input);
           }
           return attemptResult;
