@@ -55,6 +55,7 @@ test(
           }
           if (options.resumeSession === undefined)
             throw new Error("task did not receive the probe session ID");
+          assert.equal(options.resumeSession, renamedSessionId);
           return {
             iterations: [{ sessionId: options.resumeSession }],
             stdout: `<agent_attempt_result>${JSON.stringify(committed)}</agent_attempt_result>`,
