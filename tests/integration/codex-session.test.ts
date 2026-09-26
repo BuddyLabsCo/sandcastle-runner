@@ -6,13 +6,17 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import { run as runSandcastle } from "@ai-hero/sandcastle";
+
+import { codexWithRunnerEffort } from "../../src/adapters/codex-agent.ts";
 import { renameCodexSession } from "../../src/adapters/codex-session.ts";
+import { noShellSandbox } from "../../src/adapters/no-shell-sandbox.ts";
 import { input } from "../support/sandcastle.ts";
 
 const enabled = process.env.CODEX_SESSION_INTEGRATION === "1";
 
 test(
-  "renames and reads back a persisted Codex session",
+  "renames and reads back a probe-created persisted Codex session",
   { skip: !enabled },
   async () => {
     const root = await mkdtemp(
@@ -20,31 +24,36 @@ test(
     );
     const codexHome = path.join(root, "codex-home");
     const gitConfigGlobal = path.join(root, "git-config");
+    const logFile = path.join(root, "probe.log");
     await mkdir(codexHome, { recursive: true });
     await writeFile(gitConfigGlobal, "", "utf8");
     const previousCodexHome = process.env.CODEX_HOME;
     process.env.CODEX_HOME = codexHome;
 
     try {
-      const sessionId = await request(codexHome, {
-        id: 2,
-        method: "thread/start",
-        params: { cwd: input().worktree },
-      }).then((message) => {
-        const result = message.result as {
-          thread?: { id?: unknown };
-          threadId?: unknown;
-        };
-        const id = result.thread?.id ?? result.threadId;
-        if (typeof id !== "string")
-          throw new Error("thread/start returned no thread ID");
-        return id;
+      const probe = await runSandcastle({
+        agent: codexWithRunnerEffort(input().model, input().effort),
+        sandbox: noShellSandbox({
+          env: { GIT_CONFIG_GLOBAL: gitConfigGlobal },
+        }),
+        cwd: process.cwd(),
+        prompt: "Reply with exactly: SESSION_READY",
+        maxIterations: 1,
+        completionSignal: ["SESSION_READY"],
+        idleTimeoutSeconds: 120,
+        branchStrategy: { type: "head" },
+        logging: { type: "file", path: logFile },
       });
+      const sessionId = probe.iterations.at(-1)?.sessionId;
+      if (sessionId === undefined)
+        throw new Error("probe returned no session ID");
 
       await renameCodexSession(
         {
           ...input(),
+          worktree: process.cwd(),
           gitConfigGlobal,
+          logFile,
           sessionName: "integration session name",
         },
         sessionId,
@@ -84,45 +93,55 @@ async function request(
   child.stderr.on("data", (chunk) => {
     stderr += chunk;
   });
-  const response = new Promise<Record<string, unknown>>((resolve, reject) => {
-    lines.on("line", (line) => {
-      try {
-        const parsed = JSON.parse(line) as Record<string, unknown>;
-        if (parsed.id === message.id) resolve(parsed);
-      } catch (error) {
-        reject(error instanceof Error ? error : new Error(String(error)));
-      }
-    });
-    child.once("error", reject);
-    child.once("close", (code) =>
-      reject(
-        new Error(
-          `Codex app-server exited with code ${code ?? "unknown"}: ${stderr.trim()}`,
+
+  try {
+    const response = new Promise<Record<string, unknown>>((resolve, reject) => {
+      lines.on("line", (line) => {
+        try {
+          const parsed = JSON.parse(line) as Record<string, unknown>;
+          if (parsed.id === message.id) {
+            if (parsed.error !== undefined)
+              reject(
+                new Error(
+                  `Codex request failed: ${JSON.stringify(parsed.error)}`,
+                ),
+              );
+            else resolve(parsed);
+          }
+        } catch (error) {
+          reject(error instanceof Error ? error : new Error(String(error)));
+        }
+      });
+      child.once("error", (error) => reject(error));
+      child.once("close", (code) =>
+        reject(
+          new Error(
+            `Codex app-server exited with code ${code ?? "unknown"}: ${stderr.trim()}`,
+          ),
         ),
-      ),
-    );
-  });
-  child.stderr.resume();
-  child.stdin.write(
-    `${JSON.stringify({
-      id: 1,
-      method: "initialize",
-      params: {
-        clientInfo: {
-          name: "sandcastle-runner-integration-test",
-          title: "Sandcastle Runner Integration Test",
-          version: "0.1.0",
+      );
+    });
+    child.stdin.write(
+      `${JSON.stringify({
+        id: 1,
+        method: "initialize",
+        params: {
+          clientInfo: {
+            name: "sandcastle-runner-integration-test",
+            title: "Sandcastle Runner Integration Test",
+            version: "0.1.0",
+          },
         },
-      },
-    })}\n`,
-  );
-  await waitForResponse(lines, 1);
-  child.stdin.write('{"method":"initialized"}\n');
-  child.stdin.write(`${JSON.stringify(message)}\n`);
-  const result = await response;
-  lines.close();
-  child.kill();
-  return result;
+      })}\n`,
+    );
+    await waitForResponse(lines, 1);
+    child.stdin.write('{"method":"initialized"}\n');
+    child.stdin.write(`${JSON.stringify(message)}\n`);
+    return await response;
+  } finally {
+    lines.close();
+    child.kill();
+  }
 }
 
 function waitForResponse(
@@ -132,10 +151,16 @@ function waitForResponse(
   return new Promise((resolve, reject) => {
     const onLine = (line: string) => {
       try {
-        const message = JSON.parse(line) as { id?: unknown };
+        const message = JSON.parse(line) as { id?: unknown; error?: unknown };
         if (message.id === id) {
           lines.off("line", onLine);
-          resolve();
+          if (message.error !== undefined)
+            reject(
+              new Error(
+                `Codex initialize failed: ${JSON.stringify(message.error)}`,
+              ),
+            );
+          else resolve();
         }
       } catch (error) {
         lines.off("line", onLine);
