@@ -38,20 +38,27 @@ test(
       const executor = new SandcastleAgentExecutor(
         async (options) => {
           if (options.prompt === "Reply with exactly: SESSION_READY") {
-            const probe = await runSandcastle({
-              agent: codexWithRunnerEffort(input().model, input().effort),
-              sandbox: noShellSandbox({
-                env: { GIT_CONFIG_GLOBAL: gitConfigGlobal },
-              }),
-              cwd: process.cwd(),
-              prompt: options.prompt,
-              maxIterations: 1,
-              completionSignal: ["SESSION_READY"],
-              idleTimeoutSeconds: 120,
-              branchStrategy: { type: "head" },
-              logging: { type: "file", path: logFile },
-            });
-            return { ...probe, output: undefined };
+            const probeAbort = new AbortController();
+            const probeTimeout = setTimeout(() => probeAbort.abort(), 10_000);
+            try {
+              const probe = await runSandcastle({
+                agent: codexWithRunnerEffort(input().model, input().effort),
+                sandbox: noShellSandbox({
+                  env: { GIT_CONFIG_GLOBAL: gitConfigGlobal },
+                }),
+                cwd: process.cwd(),
+                prompt: options.prompt,
+                maxIterations: 1,
+                completionSignal: ["SESSION_READY"],
+                idleTimeoutSeconds: 120,
+                branchStrategy: { type: "head" },
+                logging: { type: "file", path: logFile },
+                signal: probeAbort.signal,
+              });
+              return { ...probe, output: undefined };
+            } finally {
+              clearTimeout(probeTimeout);
+            }
           }
           if (options.resumeSession === undefined)
             throw new Error("task did not receive the probe session ID");
@@ -118,6 +125,7 @@ async function request(
     stderr += chunk;
   });
 
+  const timeout = setTimeout(() => child.kill(), 10_000);
   try {
     const response = new Promise<Record<string, unknown>>((resolve, reject) => {
       lines.on("line", (line) => {
@@ -163,9 +171,26 @@ async function request(
     child.stdin.write(`${JSON.stringify(message)}\n`);
     return await response;
   } finally {
-    lines.close();
-    child.kill();
+    clearTimeout(timeout);
+    await stopChild(child, lines);
   }
+}
+
+async function stopChild(
+  child: ReturnType<typeof spawn>,
+  lines: ReturnType<typeof createInterface>,
+): Promise<void> {
+  lines.close();
+  child.stdin?.destroy();
+  if (child.exitCode !== null) return;
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, 1_000);
+    child.once("close", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+    child.kill();
+  });
 }
 
 function waitForResponse(
