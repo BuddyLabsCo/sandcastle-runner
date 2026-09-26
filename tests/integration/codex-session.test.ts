@@ -13,7 +13,7 @@ const enabled = process.env.CODEX_SESSION_INTEGRATION === "1";
 
 test(
   "renames and reads back a probe-created persisted Codex session",
-  { skip: !enabled },
+  { skip: !enabled, timeout: 150_000 },
   async () => {
     const root = await mkdtemp(
       path.join(tmpdir(), "sandcastle-codex-session-"),
@@ -156,9 +156,11 @@ async function stopChild(
   child.stdin?.destroy();
   if (child.exitCode !== null) return;
   await new Promise<void>((resolve) => {
-    const timer = setTimeout(resolve, 1_000);
+    const forceKill = setTimeout(() => child.kill("SIGKILL"), 1_000);
+    const deadline = setTimeout(resolve, 2_000);
     child.once("close", () => {
-      clearTimeout(timer);
+      clearTimeout(forceKill);
+      clearTimeout(deadline);
       resolve();
     });
     child.kill();

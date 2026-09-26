@@ -26,16 +26,29 @@ function protocolError(value: unknown): string {
   return JSON.stringify(value);
 }
 
+export async function renameSessionAfterProbe(
+  input: ReviewAttemptInput,
+  sessionId: string,
+  renameSession: SessionRenamer,
+  logStatus: (logFile: string, message: string) => Promise<void>,
+): Promise<void> {
+  try {
+    await renameSession(input, sessionId);
+  } catch (error) {
+    await logStatus(
+      input.logFile,
+      `Session rename failed for "${input.sessionName}"; continuing with session ${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 export const renameCodexSession: SessionRenamer = (input, sessionId) =>
   new Promise((resolve, reject) => {
     const child = spawn("codex", ["app-server", "--stdio"], {
       cwd: input.worktree,
       env: {
         ...process.env,
-        GIT_CONFIG_GLOBAL: input.gitConfigGlobal,
-        ...(input.codexHome === undefined
-          ? {}
-          : { CODEX_HOME: input.codexHome }),
+        ...codexEnvironment(input),
       },
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -58,9 +71,11 @@ export const renameCodexSession: SessionRenamer = (input, sessionId) =>
       };
       if (child.exitCode !== null) settle();
       else {
-        const deadline = setTimeout(settle, 1_000);
+        const deadline = setTimeout(() => child.kill("SIGKILL"), 1_000);
+        const hardDeadline = setTimeout(settle, 2_000);
         child.once("close", () => {
           clearTimeout(deadline);
+          clearTimeout(hardDeadline);
           settle();
         });
         child.kill();

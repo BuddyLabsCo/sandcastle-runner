@@ -1,4 +1,3 @@
-/* eslint-disable max-lines */
 import {
   Output,
   StructuredOutputError,
@@ -25,8 +24,7 @@ import type {
 import { codexWithRunnerEffort } from "./codex-agent.ts";
 import { OperatorCancelled } from "../run/operations.ts";
 import { noShellSandbox } from "./no-shell-sandbox.ts";
-import { codexEnvironment } from "./codex-session.ts";
-import { renameCodexSession, type SessionRenamer } from "./codex-session.ts";
+import * as codexSession from "./codex-session.ts";
 type SandcastleRun = (
   options: RunOptions,
 ) => Promise<RunResult & { output: unknown }>;
@@ -72,15 +70,16 @@ export class SandcastleAgentExecutor implements AgentExecutor {
   private readonly logStatus: StatusLogger;
   private readonly sessions = new Map<string, string>();
   private readonly replies = new Map<string, string>();
-  private readonly renameSession: SessionRenamer;
+  private readonly renameSession: typeof codexSession.renameCodexSession;
 
   constructor(
     run: SandcastleRun = runSandcastle as SandcastleRun,
     wait: Delay = delay,
     promptLogger: PromptLogger = logPrompt,
     statusLogger: StatusLogger = logStatus,
-    renameSession: SessionRenamer = run === (runSandcastle as SandcastleRun)
-      ? renameCodexSession
+    renameSession: typeof codexSession.renameCodexSession = run ===
+    (runSandcastle as SandcastleRun)
+      ? codexSession.renameCodexSession
       : () => Promise.resolve(),
   ) {
     this.run = run;
@@ -151,20 +150,6 @@ export class SandcastleAgentExecutor implements AgentExecutor {
     );
   }
 
-  private async renameSessionAfterProbe(
-    input: ReviewAttemptInput,
-    sessionId: string,
-  ): Promise<void> {
-    try {
-      await this.renameSession(input, sessionId);
-    } catch (error) {
-      await this.logStatus(
-        input.logFile,
-        `Session rename failed for "${input.sessionName}"; continuing with session ${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  }
-
   private async prepareSession(input: ReviewAttemptInput): Promise<string> {
     const existing = this.sessions.get(input.logFile);
     if (existing !== undefined) return existing;
@@ -180,7 +165,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
         const result = await this.run({
           agent: codexWithRunnerEffort(input.model, input.effort),
           sandbox: noShellSandbox({
-            env: codexEnvironment(input),
+            env: codexSession.codexEnvironment(input),
           }),
           cwd: input.worktree,
           prompt: "Reply with exactly: SESSION_READY",
@@ -195,7 +180,12 @@ export class SandcastleAgentExecutor implements AgentExecutor {
         if (sessionId === undefined)
           throw new Error("session probe returned no session ID");
         this.sessions.set(input.logFile, sessionId);
-        await this.renameSessionAfterProbe(input, sessionId);
+        await codexSession.renameSessionAfterProbe(
+          input,
+          sessionId,
+          this.renameSession,
+          this.logStatus,
+        );
         return sessionId;
       } catch (error) {
         lastError = error;
@@ -296,7 +286,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
           result = await this.run({
             agent: codexWithRunnerEffort(input.model, input.effort),
             sandbox: noShellSandbox({
-              env: codexEnvironment(input),
+              env: codexSession.codexEnvironment(input),
             }),
             cwd: input.worktree,
             prompt: runPrompt,
