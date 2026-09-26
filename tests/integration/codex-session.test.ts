@@ -11,7 +11,8 @@ import { run as runSandcastle } from "@ai-hero/sandcastle";
 import { codexWithRunnerEffort } from "../../src/adapters/codex-agent.ts";
 import { renameCodexSession } from "../../src/adapters/codex-session.ts";
 import { noShellSandbox } from "../../src/adapters/no-shell-sandbox.ts";
-import { input } from "../support/sandcastle.ts";
+import { SandcastleAgentExecutor } from "../../src/adapters/sandcastle.ts";
+import { committed, input } from "../support/sandcastle.ts";
 
 const enabled = process.env.CODEX_SESSION_INTEGRATION === "1";
 
@@ -31,38 +32,60 @@ test(
     process.env.CODEX_HOME = codexHome;
 
     try {
-      const probe = await runSandcastle({
-        agent: codexWithRunnerEffort(input().model, input().effort),
-        sandbox: noShellSandbox({
-          env: { GIT_CONFIG_GLOBAL: gitConfigGlobal },
-        }),
-        cwd: process.cwd(),
-        prompt: "Reply with exactly: SESSION_READY",
-        maxIterations: 1,
-        completionSignal: ["SESSION_READY"],
-        idleTimeoutSeconds: 120,
-        branchStrategy: { type: "head" },
-        logging: { type: "file", path: logFile },
-      });
-      const sessionId = probe.iterations.at(-1)?.sessionId;
-      if (sessionId === undefined)
-        throw new Error("probe returned no session ID");
-
-      await renameCodexSession(
-        {
-          ...input(),
-          worktree: process.cwd(),
-          gitConfigGlobal,
-          logFile,
-          sessionName: "integration session name",
+      const taskPrompt = path.join(root, "task.md");
+      await writeFile(taskPrompt, "Complete the integration task.", "utf8");
+      let renamedSessionId = "";
+      const executor = new SandcastleAgentExecutor(
+        async (options) => {
+          if (options.prompt === "Reply with exactly: SESSION_READY") {
+            const probe = await runSandcastle({
+              agent: codexWithRunnerEffort(input().model, input().effort),
+              sandbox: noShellSandbox({
+                env: { GIT_CONFIG_GLOBAL: gitConfigGlobal },
+              }),
+              cwd: process.cwd(),
+              prompt: options.prompt,
+              maxIterations: 1,
+              completionSignal: ["SESSION_READY"],
+              idleTimeoutSeconds: 120,
+              branchStrategy: { type: "head" },
+              logging: { type: "file", path: logFile },
+            });
+            return { ...probe, output: undefined };
+          }
+          if (options.resumeSession === undefined)
+            throw new Error("task did not receive the probe session ID");
+          return {
+            iterations: [{ sessionId: options.resumeSession }],
+            stdout: `<agent_attempt_result>${JSON.stringify(committed)}</agent_attempt_result>`,
+            commits: [],
+            branch: input().branch,
+            output: committed,
+          };
         },
-        sessionId,
+        async () => {},
+        async () => {},
+        async () => {},
+        async (renameInput, sessionId) => {
+          renamedSessionId = sessionId;
+          await renameCodexSession(renameInput, sessionId);
+        },
       );
+
+      await executor.execute({
+        ...input(),
+        worktree: process.cwd(),
+        promptFile: taskPrompt,
+        gitConfigGlobal,
+        logFile,
+        sessionName: "integration session name",
+      });
+      if (renamedSessionId === "") throw new Error("session was not renamed");
 
       const read = await request(codexHome, {
         id: 2,
         method: "thread/read",
-        params: { threadId: sessionId, includeTurns: false },
+        params: { threadId: renamedSessionId, includeTurns: false },
       });
       const result = read.result as { thread?: { name?: unknown } };
       assert.equal(result.thread?.name, "integration session name");

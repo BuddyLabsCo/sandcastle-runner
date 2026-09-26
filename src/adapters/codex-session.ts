@@ -37,9 +37,15 @@ export const renameCodexSession: SessionRenamer = (input, sessionId) =>
       clearTimeout(timeout);
       input.signal.removeEventListener("abort", onAbort);
       lines.close();
-      child.kill();
-      if (error === undefined) resolve();
-      else reject(error);
+      const settle = () => {
+        if (error === undefined) resolve();
+        else reject(error);
+      };
+      if (child.exitCode !== null) settle();
+      else {
+        child.once("close", settle);
+        child.kill();
+      }
     };
 
     const send = (message: Record<string, unknown>) => {
