@@ -49,6 +49,7 @@ permanent cross-platform CI are unsupported; see the root contract for details.
 - `codeHost`: GitHub settings; `tokenEnv` names the credential variable and `adminMerge` controls administrative merge requests.
 - `workflow.review`: enable or disable the review attempt.
 - `workflow.docMaintainTriggerLabel`: exact, case-sensitive label that triggers automatic Documentation Maintenance after a successful Batch. Omitted, empty, or whitespace-only values disable automatic maintenance.
+- `disableWebSearch`: optional boolean, default `false`. When `true`, every Runner-created Codex session (including probes and resumed sessions) passes `-c 'web_search="disabled"'`. When `false` or omitted, the Runner does not override local web-search settings. This does not change approval/sandbox flags or MCP configuration.
 - `agents`: model and reasoning effort for `implement`, `review`, `ciRepair`, `conflictRepair`, and `documentation` attempts. `review` is needed when enabled; `documentation` is needed for a nonempty trigger label or `--document`.
 - `timeouts`: positive minute limits for agent attempts, required checks, and merge queue confirmation.
 - `operationRetry` and `agentRetry`: non-negative automatic retry counts; the corresponding `*Delay` arrays are positive delays in seconds.

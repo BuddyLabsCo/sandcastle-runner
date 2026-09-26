@@ -71,6 +71,7 @@ function isAgentProcessFailure(error: unknown): boolean {
 }
 
 export class SandcastleAgentExecutor implements AgentExecutor {
+  private readonly disableWebSearch: boolean;
   private readonly run: SandcastleRun;
   private readonly wait: Delay;
   private readonly logPrompt: PromptLogger;
@@ -83,7 +84,9 @@ export class SandcastleAgentExecutor implements AgentExecutor {
     wait: Delay = delay,
     promptLogger: PromptLogger = logPrompt,
     statusLogger: StatusLogger = logStatus,
+    disableWebSearch = false,
   ) {
+    this.disableWebSearch = disableWebSearch;
     this.run = run;
     this.wait = wait;
     this.logPrompt = promptLogger;
@@ -164,7 +167,11 @@ export class SandcastleAgentExecutor implements AgentExecutor {
           "Reply with exactly: SESSION_READY",
         );
         const result = await this.run({
-          agent: codexWithRunnerEffort(input.model, input.effort),
+          agent: codexWithRunnerEffort(
+            input.model,
+            input.effort,
+            this.disableWebSearch,
+          ),
           sandbox: noShellSandbox({
             env: { GIT_CONFIG_GLOBAL: input.gitConfigGlobal },
           }),
@@ -279,7 +286,11 @@ export class SandcastleAgentExecutor implements AgentExecutor {
         await this.logPrompt(input.logFile, runPrompt);
         try {
           result = await this.run({
-            agent: codexWithRunnerEffort(input.model, input.effort),
+            agent: codexWithRunnerEffort(
+              input.model,
+              input.effort,
+              this.disableWebSearch,
+            ),
             sandbox: noShellSandbox({
               env: { GIT_CONFIG_GLOBAL: input.gitConfigGlobal },
             }),
