@@ -43,7 +43,11 @@ export const renameCodexSession: SessionRenamer = (input, sessionId) =>
       };
       if (child.exitCode !== null) settle();
       else {
-        child.once("close", settle);
+        const deadline = setTimeout(settle, 1_000);
+        child.once("close", () => {
+          clearTimeout(deadline);
+          settle();
+        });
         child.kill();
       }
     };

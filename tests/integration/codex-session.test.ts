@@ -6,13 +6,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { run as runSandcastle } from "@ai-hero/sandcastle";
-
-import { codexWithRunnerEffort } from "../../src/adapters/codex-agent.ts";
-import { renameCodexSession } from "../../src/adapters/codex-session.ts";
-import { noShellSandbox } from "../../src/adapters/no-shell-sandbox.ts";
 import { SandcastleAgentExecutor } from "../../src/adapters/sandcastle.ts";
-import { committed, input } from "../support/sandcastle.ts";
+import { input } from "../support/sandcastle.ts";
 
 const enabled = process.env.CODEX_SESSION_INTEGRATION === "1";
 
@@ -33,53 +28,12 @@ test(
 
     try {
       const taskPrompt = path.join(root, "task.md");
-      await writeFile(taskPrompt, "Complete the integration task.", "utf8");
-      let renamedSessionId = "";
-      const executor = new SandcastleAgentExecutor(
-        async (options) => {
-          if (options.prompt === "Reply with exactly: SESSION_READY") {
-            const probeAbort = new AbortController();
-            const probeTimeout = setTimeout(() => probeAbort.abort(), 10_000);
-            try {
-              const probe = await runSandcastle({
-                agent: codexWithRunnerEffort(input().model, input().effort),
-                sandbox: noShellSandbox({
-                  env: { GIT_CONFIG_GLOBAL: gitConfigGlobal },
-                }),
-                cwd: process.cwd(),
-                prompt: options.prompt,
-                maxIterations: 1,
-                completionSignal: ["SESSION_READY"],
-                idleTimeoutSeconds: 120,
-                branchStrategy: { type: "head" },
-                logging: { type: "file", path: logFile },
-                signal: probeAbort.signal,
-              });
-              return { ...probe, output: undefined };
-            } finally {
-              clearTimeout(probeTimeout);
-            }
-          }
-          if (options.resumeSession === undefined)
-            throw new Error("task did not receive the probe session ID");
-          assert.equal(options.resumeSession, renamedSessionId);
-          return {
-            iterations: [{ sessionId: options.resumeSession }],
-            stdout: `<agent_attempt_result>${JSON.stringify(committed)}</agent_attempt_result>`,
-            commits: [],
-            branch: input().branch,
-            output: committed,
-          };
-        },
-        async () => {},
-        async () => {},
-        async () => {},
-        async (renameInput, sessionId) => {
-          renamedSessionId = sessionId;
-          await renameCodexSession(renameInput, sessionId);
-        },
+      await writeFile(
+        taskPrompt,
+        'Do not modify files. Return a no_change result with summary "integration check".',
+        "utf8",
       );
-
+      const executor = new SandcastleAgentExecutor();
       await executor.execute({
         ...input(),
         worktree: process.cwd(),
@@ -88,12 +42,25 @@ test(
         logFile,
         sessionName: "integration session name",
       });
-      if (renamedSessionId === "") throw new Error("session was not renamed");
+      const listed = await request(codexHome, {
+        id: 2,
+        method: "thread/list",
+        params: { limit: 20 },
+      });
+      const threads = (listed.result as { data?: unknown[] }).data ?? [];
+      const session = threads.find(
+        (thread): thread is { id?: unknown; name?: unknown } =>
+          typeof thread === "object" &&
+          thread !== null &&
+          (thread as { name?: unknown }).name === "integration session name",
+      );
+      if (session === undefined || typeof session.id !== "string")
+        throw new Error("renamed integration session was not listed");
 
       const read = await request(codexHome, {
         id: 2,
         method: "thread/read",
-        params: { threadId: renamedSessionId, includeTurns: false },
+        params: { threadId: session.id, includeTurns: false },
       });
       const result = read.result as { thread?: { name?: unknown } };
       assert.equal(result.thread?.name, "integration session name");
@@ -125,7 +92,6 @@ async function request(
     stderr += chunk;
   });
 
-  const timeout = setTimeout(() => child.kill(), 10_000);
   try {
     const response = new Promise<Record<string, unknown>>((resolve, reject) => {
       lines.on("line", (line) => {
@@ -169,9 +135,14 @@ async function request(
     await waitForResponse(lines, 1);
     child.stdin.write('{"method":"initialized"}\n');
     child.stdin.write(`${JSON.stringify(message)}\n`);
-    return await response;
+    const deadline = new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error("Codex app-server request timed out")),
+        10_000,
+      ),
+    );
+    return await Promise.race([response, deadline]);
   } finally {
-    clearTimeout(timeout);
     await stopChild(child, lines);
   }
 }
