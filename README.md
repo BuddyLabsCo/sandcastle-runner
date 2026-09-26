@@ -185,9 +185,3 @@ npm run format           # format source files
 ```
 
 The test suite uses scripted tracker, code-host, Git, agent, clock, and terminal boundaries. It does not call authenticated Codex/Sandcastle services or mutate a remote GitHub repository.
-
-The opt-in `CODEX_SESSION_NAME_INTEGRATION=1` check creates and archives one
-disposable Codex probe session and verifies its persisted name through
-`thread/read` on a new app-server connection. It does not test session-list
-refresh in an already-open client: immediate UI refresh remains unverified
-and must not be inferred from successful persisted-name readback.
