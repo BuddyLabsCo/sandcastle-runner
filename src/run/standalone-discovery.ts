@@ -190,7 +190,10 @@ export async function discoverAndReserveStandaloneBatch(
       else eligible.push(issue);
     }
   }
-  if (reasons.length > 0) return { outcome: "incomplete", batch: [], reasons };
+  if (eligible.length === 0)
+    return reasons.length > 0
+      ? { outcome: "incomplete", batch: [], reasons }
+      : { outcome: "no_work", reasons: [] };
   const reserved: number[] = [];
   for (const issue of eligible.slice(0, input.maxBatchSize)) {
     const result = await discoverAndReserveStandalone({
@@ -209,11 +212,9 @@ export async function discoverAndReserveStandaloneBatch(
     }
     reserved.push(...result.batch);
   }
-  return reserved.length === 0
-    ? { outcome: "no_work", reasons: [] }
-    : {
-        outcome: "incomplete",
-        batch: reserved,
-        reasons: [`reserved Delivery Tickets: ${reserved.join(", ")}`],
-      };
+  return {
+    outcome: "incomplete",
+    batch: reserved,
+    reasons: [...reasons, `reserved Delivery Tickets: ${reserved.join(", ")}`],
+  };
 }
