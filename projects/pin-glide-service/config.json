@@ -1,0 +1,71 @@
+{
+  "$comment": "Replace repository, checkout, runnerAccount, and targetBranch for your Project. checkout must be absolute. ticketClosure is runner or code_host.",
+  "repository": "BuddyLabsCo/pin-glide-service",
+  "checkout": "/home/xiakeng/Desktop/workspace/pin-glide-service-checkout/",
+  "disableWebSearch": false,
+  "issueList": [39, 40],
+  "maxBatchSize": 2,
+  "targetBranch": "main",
+  "operationRetry": 4,
+  "agentRetry": 4,
+  "operationRetryDelay": [10, 20, 40, 80],
+  "agentRetryDelay": [300, 300, 300, 300],
+  "ticketClosure": "runner",
+  "maintenanceTicket": {
+    "title": "Maintain project documentation",
+    "body": "Sync project document `code-architecture.md` up to the latest code changes.",
+    "label": "doc-maintain"
+  },
+  "workflow": {
+    "$comment": "Review defaults to true; an empty documentation trigger label disables automatic maintenance.",
+    "review": true,
+    "docMaintainTriggerLabel": "doc-check"
+  },
+  "tracker": {
+    "$comment": "GitHub tracker settings. tokenEnv names an environment variable; reservationLabel marks Runner-owned Delivery Tickets.",
+    "type": "github",
+    "tokenEnv": "GH_TOKEN",
+    "runnerAccount": "xiakeng",
+    "reservationLabel": "sandcastle:reserved"
+  },
+  "codeHost": {
+    "$comment": "GitHub Pull Request settings. adminMerge allows or forbids administrative squash merge requests.",
+    "type": "github",
+    "tokenEnv": "GH_TOKEN",
+    "adminMerge": true
+  },
+  "agents": {
+    "$comment": "Each Agent Attempt selects a supported model and low, medium, high, or xhigh reasoning. Review and documentation profiles are required only while their workflow nodes are enabled.",
+    "implement": {
+      "$comment": "Initial Delivery Ticket implementation.",
+      "model": "group/deepseek-v4.1-flash",
+      "reasoningEffort": "max"
+    },
+    "review": {
+      "$comment": "Fresh-context Standards and Spec review.",
+      "model": "group/deepseek-v4.1-flash",
+      "reasoningEffort": "max"
+    },
+    "ciRepair": {
+      "$comment": "Repair of failed required CI checks.",
+      "model": "group/deepseek-v4.1-flash",
+      "reasoningEffort": "max"
+    },
+    "conflictRepair": {
+      "$comment": "Repair of an explicit merge conflict.",
+      "model": "group/deepseek-v4.1-flash",
+      "reasoningEffort": "max"
+    },
+    "documentation": {
+      "$comment": "Documentation Maintenance.",
+      "model": "group/deepseek-v4.1-flash",
+      "reasoningEffort": "max"
+    }
+  },
+  "timeouts": {
+    "$comment": "Positive minute limits for Agent Attempts, required-check readiness, and merge-queue confirmation.",
+    "agentMinutes": 120,
+    "requiredChecksMinutes": 60,
+    "mergeQueueMinutes": 60
+  }
+}

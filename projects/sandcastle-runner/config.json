@@ -9,7 +9,7 @@
   "operationRetry": 4,
   "agentRetry": 2,
   "operationRetryDelay": [10, 20, 40, 80],
-  "agentRetryDelay": [300, 300],
+  "agentRetryDelay": [300, 18000],
   "ticketClosure": "runner",
   "maintenanceTicket": {
     "title": "Maintain project documentation",
