@@ -90,7 +90,6 @@ export function createExecutor(run: FakeRun): SandcastleAgentExecutor {
     async () => {},
     async () => {},
     async () => {},
-    undefined,
     async () => {},
   );
 }

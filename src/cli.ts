@@ -389,14 +389,7 @@ export async function executeCli(
   const gitWorkspace =
     dependencies.gitWorkspace ?? new LocalGitWorkspace(loaded.codeHostToken);
   const agentExecutor =
-    dependencies.agentExecutor ??
-    new SandcastleAgentExecutor(
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      loaded.config.disableWebSearch,
-    );
+    dependencies.agentExecutor ?? new SandcastleAgentExecutor();
   let publicationWrite = Promise.resolve();
   const persistPublication = async (
     ticket: number,
