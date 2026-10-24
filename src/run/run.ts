@@ -32,7 +32,7 @@ import {
   type TicketReport,
   type TicketReportStatus,
 } from "./run-input.ts";
-import { implementBatch } from "./run-batch.ts";
+import { batchBarrierResolved, implementBatch } from "./run-batch.ts";
 import { createPublicationInput } from "./publication-input.ts";
 import { runStandaloneIssue } from "./standalone-run.ts";
 import { parentClosureReconciliation } from "./write-reconciliation.ts";
@@ -116,6 +116,7 @@ async function runProjectInternal(
 
   let hadChildren = false;
   const batches: number[] = [...(input.recoveredRunTickets ?? [])];
+  const skippedTickets = new Set<number>();
   const handoffs: VerifiedHandoff[] = [];
   const pullRequests: PullRequestObservation[] = [];
   const completedDeliveries: CompletedDelivery[] = [
@@ -248,7 +249,10 @@ async function runProjectInternal(
     gitWorkspace: trackedGitWorkspace,
     persistBatch: async (batch, completed) => {
       recordBatch(batch);
-      await sourcePersistBatch?.(batch, completed);
+      await sourcePersistBatch?.(
+        batch.filter((ticket) => !skippedTickets.has(ticket)),
+        completed,
+      );
     },
     persistMaintenance: async (state) => {
       if (state.ticket !== undefined) recordTicket(state.ticket, "maintenance");
@@ -316,18 +320,29 @@ async function runProjectInternal(
         updateTicket(report.ticket, { detail: reason });
     return summary(outcome);
   };
-  const applyAttempts = (
+  const applyAttempts = async (
     attempts: Awaited<ReturnType<typeof implementBatch>>,
-  ): void => {
+  ): Promise<void> => {
     for (const result of attempts.tickets) {
+      if (result.outcome === "skipped") skippedTickets.add(result.ticket);
       updateTicket(result.ticket, {
-        status: result.outcome === "handoff" ? "pending" : result.outcome,
+        status:
+          result.outcome === "handoff"
+            ? "pending"
+            : result.outcome === "skipped"
+              ? "failed"
+              : result.outcome,
         detail:
           result.outcome === "handoff"
             ? "Implementation completed; publication pending"
             : result.detail,
       });
     }
+    if (attempts.tickets.some(({ outcome }) => outcome === "skipped"))
+      await input.persistBatch?.(
+        attempts.tickets.map(({ ticket }) => ticket),
+        completedDeliveries,
+      );
   };
   const applyPublication = (publication: PublicationResult): void => {
     for (const { observation } of publication.published) {
@@ -728,18 +743,21 @@ async function runProjectInternal(
         event,
         recoveredPublication.restarted,
       );
-      applyAttempts(attempts);
+      await applyAttempts(attempts);
       handoffs.push(...attempts.handoffs);
-      batchComplete =
-        attempts.handoffs.length === recoveredPublication.restarted.length &&
-        attempts.reasons.length === 0;
+      batchComplete = batchBarrierResolved(
+        attempts,
+        recoveredPublication.restarted,
+      );
       inputs = publicationInput(attempts.handoffs);
       const restartedPublication =
         attempts.handoffs.length === 0
           ? null
           : await publishVerifiedHandoffs(inputs);
       publication = {
-        outcome: restartedPublication?.outcome ?? attempts.outcome,
+        outcome:
+          restartedPublication?.outcome ??
+          (batchComplete ? recoveredPublication.outcome : attempts.outcome),
         reasons: [
           ...recoveredPublication.reasons,
           ...attempts.reasons,
@@ -762,7 +780,8 @@ async function runProjectInternal(
       input.recoveredBatch ?? recovered.map(({ ticket }) => ticket),
     );
     if (outcome) return summary(outcome);
-    if (!input.autoMerge) return summary("succeeded");
+    if (!input.autoMerge)
+      return summary(skippedTickets.size > 0 ? "incomplete" : "succeeded");
   }
 
   if (input.issueTicket !== undefined) {
@@ -781,6 +800,7 @@ async function runProjectInternal(
       completedDeliveries,
       reasons,
       applyAttempts,
+      skippedTickets,
     });
   }
 
@@ -800,6 +820,7 @@ async function runProjectInternal(
       completedDeliveries,
       reasons,
       applyAttempts,
+      skippedTickets,
     });
   }
 
@@ -819,10 +840,12 @@ async function runProjectInternal(
       issueList: input.issueList,
       hadChildren,
       cleanupTerminal,
+      excludedTickets: skippedTickets,
     });
     if (discovery.outcome === "incomplete") hasBatchState = true;
     if (discovery.outcome === "close_parent") {
       reasons.push(...discovery.reasons);
+      if (skippedTickets.size > 0) return summary("incomplete");
       await workflowWrite({
         action: () =>
           input.tracker.closeParent(input.repository, input.parentTicket),
@@ -855,18 +878,19 @@ async function runProjectInternal(
       event,
       discovery.batch,
     );
-    applyAttempts(attempts);
+    await applyAttempts(attempts);
     handoffs.push(...attempts.handoffs);
-    const batchComplete =
-      attempts.handoffs.length === discovery.batch.length &&
-      attempts.reasons.length === 0;
+    const batchComplete = batchBarrierResolved(attempts, discovery.batch);
     const publicationInputs = publicationInput(attempts.handoffs);
     const publication =
       attempts.handoffs.length === 0
         ? null
         : await publishVerifiedHandoffs(publicationInputs);
     reasons.push(...discovery.reasons, ...attempts.reasons);
-    if (!publication) return summary(attempts.outcome);
+    if (!publication) {
+      if (batchComplete) continue;
+      return summary(attempts.outcome);
+    }
     const outcome = await integratePublication(
       publication,
       batchComplete,

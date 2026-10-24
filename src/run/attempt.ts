@@ -2,7 +2,10 @@ import path from "node:path";
 
 import type { AgentConfig } from "../config.ts";
 import type { PullRequestIdentity, RequiredCheck } from "./contracts.ts";
-import { type DeliveryBoundaryResult } from "./discovery.ts";
+import {
+  releasePrePublicationReservation,
+  type DeliveryBoundaryResult,
+} from "./discovery.ts";
 import {
   externalRead,
   OperatorCancelled,
@@ -20,12 +23,13 @@ import {
   type MaintenanceAttemptResult,
   type TicketAttemptOutcome,
 } from "./agent-operation.ts";
+import { TicketSkipped } from "./agent-pause.ts";
 import { reviewHandoff } from "./review-attempt.ts";
 export type {
   AttemptBatchResult,
   MaintenanceAttemptResult,
+  VerifiedHandoff,
 } from "./agent-operation.ts";
-export type { VerifiedHandoff } from "./agent-operation.ts";
 
 function fullSha(value: unknown): string {
   if (typeof value !== "string" || !/^[0-9a-f]{40,64}$/u.test(value))
@@ -103,6 +107,14 @@ async function implementTicket(
       handoff,
     };
   } catch (error) {
+    if (error instanceof TicketSkipped) {
+      await releasePrePublicationReservation(ticketInput, ticket);
+      return {
+        ticket,
+        outcome: "skipped",
+        detail: `skipped Delivery Ticket ${ticket}: ${error.reason}`,
+      };
+    }
     if (error instanceof BoundaryStop && error.result.outcome === "stopped")
       return { ticket, outcome: "blocked", detail: error.result.reason };
     throw error;

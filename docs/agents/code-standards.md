@@ -40,6 +40,7 @@ Place these modules under `src/run/`. Each owns a cohesive workflow responsibili
 | `run-input.ts` / `run-batch.ts` | Run contracts and the wiring from a reserved Batch into Agent Attempts. |
 | `discovery.ts` / `discovery-state.ts` | Eligibility, Reservations, Parent/child/blocker reads and revalidation, exhaustion, and Parent closeout eligibility. |
 | `attempt.ts` / `agent-operation.ts` / `review-attempt.ts` | Worktree preparation, per-Attempt Git configuration, prompt metadata, Agent and Review Attempt execution, and Verified Handoff decisions using observed Git state. Reused for implementation, repairs, and maintenance. |
+| `agent-pause.ts` | Agent Pause presentation, ticket-bound skip decisions, and audit-only disposal of skipped Agent logs. |
 | `agent-logs.ts` | Stage-specific Agent Attempt log naming, owned-stage cleanup, and deletion-failure evidence. |
 | `operation-audit.ts` | Workflow operation audit appends and audit-only Agent log cleanup failures. |
 | `pull-request.ts` / `pull-request-core.ts` | Publication/readiness, integration, merge confirmation, and Ticket Closure Policy. It never decides Batch order. |
