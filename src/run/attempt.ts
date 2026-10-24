@@ -336,6 +336,8 @@ export async function implementReservedBatch(
 ): Promise<AttemptBatchResult> {
   const candidates: number[] = [];
   const tickets: TicketAttemptOutcome[] = [];
+  const controller = new AbortController();
+  let attempts: Promise<TicketAttemptOutcome>[] = [];
   try {
     for (const ticket of input.batch) {
       try {
@@ -390,63 +392,69 @@ export async function implementReservedBatch(
       operator: input.operator,
       retryPolicy: input.retryPolicy,
     });
-    const controller = new AbortController();
     const concurrentInput = {
       ...input,
       operator: serializeOperator(input.operator, controller),
     };
-    const attempts = candidates.map((ticket) =>
-      implementTicket(concurrentInput, ticket, base, controller),
+    attempts = candidates.map((ticket) =>
+      implementTicket(concurrentInput, ticket, base, controller).then(
+        (result) => {
+          tickets.push(result);
+          return result;
+        },
+      ),
     );
-    try {
-      const settled = await Promise.all(attempts);
-      const byTicket = new Map(
-        [...tickets, ...settled].map((result) => [result.ticket, result]),
-      );
-      const ordered = input.batch.flatMap((ticket) => {
-        const result = byTicket.get(ticket);
-        return result ? [result] : [];
-      });
-      const handoffs = ordered.flatMap(({ handoff }) =>
-        handoff === undefined ? [] : [handoff],
-      );
-      const terminal = ordered.find(
-        ({ outcome }) => outcome === "cancelled" || outcome === "failed",
-      );
-      return {
-        outcome:
-          terminal?.outcome === "cancelled"
-            ? "cancelled"
-            : terminal?.outcome === "failed"
-              ? "failed"
-              : "incomplete",
-        handoffs: terminal === undefined ? handoffs : [],
-        reasons: ordered
-          .filter(({ outcome }) => outcome !== "handoff")
-          .map(({ detail }) => detail),
-        tickets: ordered,
-      };
-    } catch (error) {
-      controller.abort(error);
-      await Promise.allSettled(attempts);
-      throw error;
-    }
+    await Promise.all(attempts);
+    const byTicket = new Map(tickets.map((result) => [result.ticket, result]));
+    const ordered = input.batch.flatMap((ticket) => {
+      const result = byTicket.get(ticket);
+      return result ? [result] : [];
+    });
+    const handoffs = ordered.flatMap(({ handoff }) =>
+      handoff === undefined ? [] : [handoff],
+    );
+    const terminal = ordered.find(
+      ({ outcome }) => outcome === "cancelled" || outcome === "failed",
+    );
+    return {
+      outcome:
+        terminal?.outcome === "cancelled"
+          ? "cancelled"
+          : terminal?.outcome === "failed"
+            ? "failed"
+            : "incomplete",
+      handoffs: terminal === undefined ? handoffs : [],
+      reasons: ordered
+        .filter(({ outcome }) => outcome !== "handoff")
+        .map(({ detail }) => detail),
+      tickets: ordered,
+    };
   } catch (error) {
-    if (error instanceof BoundaryStop) {
-      const outcome =
-        error.result.outcome === "cancelled" ? "cancelled" : "failed";
-      return {
-        outcome,
-        reasons: [error.result.reason],
-        handoffs: [],
-        tickets: candidates.map((ticket) => ({
-          ticket,
-          outcome,
-          detail: error.result.reason,
-        })),
-      };
-    }
-    if (error instanceof OperatorCancelled) throw error;
-    throw error;
+    controller.abort(error);
+    await Promise.allSettled(attempts);
+    const outcome =
+      error instanceof OperatorCancelled ||
+      (error instanceof BoundaryStop && error.result.outcome === "cancelled")
+        ? "cancelled"
+        : "failed";
+    const detail =
+      error instanceof BoundaryStop
+        ? error.result.reason
+        : error instanceof Error
+          ? error.message
+          : "Agent Attempt failed";
+    return {
+      outcome,
+      reasons: [detail],
+      handoffs: [],
+      tickets: input.batch.map(
+        (ticket) =>
+          tickets.find((result) => result.ticket === ticket) ?? {
+            ticket,
+            outcome,
+            detail,
+          },
+      ),
+    };
   }
 }

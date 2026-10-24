@@ -237,6 +237,7 @@ async function runProjectInternal(
   });
   const sourcePersistBatch = input.persistBatch;
   const sourcePersistMaintenance = input.persistMaintenance;
+  const sourcePersistPublication = input.persistPublication;
   input = {
     ...input,
     gitWorkspace: trackedGitWorkspace,
@@ -247,6 +248,11 @@ async function runProjectInternal(
     persistMaintenance: async (state) => {
       if (state.ticket !== undefined) recordTicket(state.ticket, "maintenance");
       await sourcePersistMaintenance?.(state);
+    },
+    persistPublication: async (ticket, intent) => {
+      if (intent?.pullRequest !== undefined)
+        updateTicket(ticket, { pullRequest: intent.pullRequest.number });
+      await sourcePersistPublication?.(ticket, intent);
     },
   };
   const summary = (
