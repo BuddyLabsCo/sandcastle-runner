@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- repair transitions remain explicit at each persisted step. */
 import { randomUUID } from "node:crypto";
 import {
   runCiRepairAttempt,
@@ -18,7 +19,9 @@ import {
   externalRead,
   pauseForOperator,
   recordOperatorOverride,
+  workflowWrite,
 } from "./operations.ts";
+import { removeReplacedWorkspace } from "./cleanup.ts";
 import {
   freshRepairHandoff,
   observePullRequestForIntegration,
@@ -51,6 +54,77 @@ function checkResult(
   if (checks.some(({ bucket }) => bucket === "pending"))
     return { readiness: "pending", failedChecks: [] };
   return { readiness: "ready", failedChecks: [] };
+}
+
+function replacedWorkspaceCleanup(input: PublicationInput) {
+  return (input.replacedWorkspaceCleanup ??= {
+    removedWorktrees: new Set<string>(),
+    deletedBranches: new Set<string>(),
+  });
+}
+
+export function currentRepairHandoff(
+  input: PublicationInput,
+  handoff: VerifiedHandoff,
+): VerifiedHandoff {
+  const handoffs = (input.repairHandoffs ??= new Map());
+  const current = handoffs.get(handoff.ticket);
+  if (current) return current;
+  const repair = input.publicationIntents?.get(handoff.ticket)?.repairState;
+  if (!repair?.head || !repair.worktree || !repair.branch || !repair.base)
+    return handoff;
+  return {
+    ...handoff,
+    worktree: repair.worktree,
+    branch: repair.branch,
+    base: repair.base,
+    commits: [],
+    remoteBranch: handoff.remoteBranch ?? handoff.branch,
+  };
+}
+
+export async function retireReplacedWorkspace(
+  input: PublicationInput,
+  phase: "ci_repair" | "conflict_repair",
+  workspace: VerifiedHandoff,
+): Promise<void> {
+  const cleanup = replacedWorkspaceCleanup(input);
+  if (
+    cleanup.removedWorktrees.has(workspace.worktree) &&
+    cleanup.deletedBranches.has(workspace.branch)
+  ) {
+    return;
+  }
+  await workflowWrite({
+    action: async () => {
+      await input.recordReplacementCleanup?.(
+        workspace.ticket,
+        workspace,
+        "pending",
+      );
+      await removeReplacedWorkspace(
+        input.gitWorkspace,
+        input.checkout,
+        workspace,
+        cleanup,
+      );
+      await input.recordReplacementCleanup?.(
+        workspace.ticket,
+        workspace,
+        "cleaned",
+      );
+    },
+    audit: input.audit,
+    clock: input.clock,
+    event: (attempt) =>
+      input.event(
+        phase,
+        "remove_replaced_workspace",
+        `ticket:${workspace.ticket}`,
+      )(attempt),
+    operator: input.operator,
+    retryPolicy: input.retryPolicy,
+  });
 }
 
 export async function observeRequiredChecks(
@@ -122,6 +196,7 @@ export async function repairRequiredChecks(
   | Exclude<DeliveryBoundaryResult, { outcome: "ready" }>
 > {
   let failedChecks = initialFailedChecks;
+  let currentHandoff = currentRepairHandoff(input, handoff);
   const budget = input.ciRepairBudgets.get(handoff.ticket) ?? {
     consumed: 0,
     generation: 0,
@@ -143,11 +218,15 @@ export async function repairRequiredChecks(
       );
       if (pullRequestState.merged)
         return { readiness: "ready", failedChecks: [] };
-      const preparedRepair = await freshRepairHandoff(input, handoff, "ci");
-      const repairHandoff =
-        preparedRepair === handoff
-          ? { ...handoff, base: pullRequestState.headSha }
-          : preparedRepair;
+      const preparedRepair = await freshRepairHandoff(
+        input,
+        currentHandoff,
+        "ci",
+      );
+      const replaced = preparedRepair !== currentHandoff;
+      const repairHandoff = replaced
+        ? preparedRepair
+        : { ...currentHandoff, base: pullRequestState.headSha };
       const attemptId = randomUUID();
       await repairIntent(input, handoff.ticket, "ci", {
         consumed: budget.consumed,
@@ -214,18 +293,33 @@ export async function repairRequiredChecks(
         budget.consumed,
       );
       if (boundary) return boundary;
-      await repairIntent(input, handoff.ticket, "ci", {
-        consumed: budget.consumed,
-        generation: budget.generation,
-        attempt: budget.attempts.value,
-        ...(repair.handoff.commits.at(-1)?.sha === undefined
-          ? {}
-          : { head: repair.handoff.commits.at(-1)!.sha }),
-        pendingPush: null,
-      });
+      if (replaced)
+        await input.recordReplacementCleanup?.(
+          handoff.ticket,
+          currentHandoff,
+          "pending",
+        );
+      await repairIntent(
+        input,
+        handoff.ticket,
+        "ci",
+        {
+          consumed: budget.consumed,
+          generation: budget.generation,
+          attempt: budget.attempts.value,
+          head: repair.handoff.commits.at(-1)?.sha ?? repair.handoff.base,
+          pendingPush: null,
+        },
+        "accepted",
+      );
+      if (replaced) {
+        await retireReplacedWorkspace(input, "ci_repair", currentHandoff);
+      }
+      currentHandoff = repair.handoff;
+      input.repairHandoffs!.set(handoff.ticket, currentHandoff);
       const readiness = await observeRequiredChecks(
         input,
-        repair.handoff,
+        currentHandoff,
         pullRequest,
       );
       if ("outcome" in readiness || readiness.readiness === "ready") {
@@ -255,7 +349,7 @@ export async function repairRequiredChecks(
       });
       continue;
     }
-    const boundary = await revalidateActiveTicket(input, handoff.ticket);
+    const boundary = await revalidateActiveTicket(input, currentHandoff.ticket);
     if (boundary.outcome !== "ready") return boundary;
     await recordOperatorOverride(input.audit, event, input.operator);
     return { readiness: "ready", failedChecks: [] };
@@ -273,9 +367,13 @@ export async function repairMergeConflict(
   | Exclude<DeliveryBoundaryResult, { outcome: "ready" }>
 > {
   const controller = new AbortController();
+  let currentHandoff = currentRepairHandoff(input, handoff);
   for (;;) {
     while (budget.consumed < 2) {
-      const beforeRepair = await revalidateActiveTicket(input, handoff.ticket);
+      const beforeRepair = await revalidateActiveTicket(
+        input,
+        currentHandoff.ticket,
+      );
       if (beforeRepair.outcome !== "ready") return beforeRepair;
       const state = await observePullRequestForIntegration(
         input,
@@ -311,13 +409,13 @@ export async function repairMergeConflict(
       });
       const preparedRepair = await freshRepairHandoff(
         input,
-        handoff,
+        currentHandoff,
         "conflict",
       );
-      const repairHandoff =
-        preparedRepair === handoff
-          ? { ...handoff, base: state.headSha }
-          : preparedRepair;
+      const replaced = preparedRepair !== currentHandoff;
+      const repairHandoff = replaced
+        ? preparedRepair
+        : { ...currentHandoff, base: state.headSha };
       const attemptId = randomUUID();
       await repairIntent(input, handoff.ticket, "conflict", {
         consumed: budget.consumed,
@@ -387,25 +485,40 @@ export async function repairMergeConflict(
         budget.consumed,
       );
       if (boundary) return boundary;
-      await repairIntent(input, handoff.ticket, "conflict", {
-        consumed: budget.consumed,
-        generation: budget.generation,
-        attempt: budget.attempts.value,
-        ...(repair.handoff.commits.at(-1)?.sha === undefined
-          ? {}
-          : { head: repair.handoff.commits.at(-1)!.sha }),
-        targetBase,
-        pendingPush: null,
-      });
+      if (replaced)
+        await input.recordReplacementCleanup?.(
+          handoff.ticket,
+          currentHandoff,
+          "pending",
+        );
+      await repairIntent(
+        input,
+        handoff.ticket,
+        "conflict",
+        {
+          consumed: budget.consumed,
+          generation: budget.generation,
+          attempt: budget.attempts.value,
+          head: repair.handoff.commits.at(-1)?.sha ?? repair.handoff.base,
+          targetBase,
+          pendingPush: null,
+        },
+        "accepted",
+      );
+      if (replaced) {
+        await retireReplacedWorkspace(input, "conflict_repair", currentHandoff);
+      }
+      currentHandoff = repair.handoff;
+      input.repairHandoffs!.set(handoff.ticket, currentHandoff);
       let readiness = await observeRequiredChecks(
         input,
-        repair.handoff,
+        currentHandoff,
         pullRequest,
       );
       if (!("outcome" in readiness) && readiness.readiness === "failed") {
         readiness = await repairRequiredChecks(
           input,
-          repair.handoff,
+          currentHandoff,
           pullRequest,
           readiness.failedChecks,
           controller.signal,
@@ -444,14 +557,18 @@ export async function repairMergeConflict(
       });
       continue;
     }
-    const boundary = await revalidateActiveTicket(input, handoff.ticket);
+    const boundary = await revalidateActiveTicket(input, currentHandoff.ticket);
     if (boundary.outcome !== "ready") return boundary;
     await recordOperatorOverride(input.audit, event, input.operator);
-    let readiness = await observeRequiredChecks(input, handoff, pullRequest);
+    let readiness = await observeRequiredChecks(
+      input,
+      currentHandoff,
+      pullRequest,
+    );
     if (!("outcome" in readiness) && readiness.readiness === "failed") {
       readiness = await repairRequiredChecks(
         input,
-        handoff,
+        currentHandoff,
         pullRequest,
         readiness.failedChecks,
         controller.signal,

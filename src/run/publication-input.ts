@@ -9,7 +9,9 @@ export function createPublicationInput(
   targetBranch: string,
   event: ReturnType<typeof createEvent>,
   publicationIntents: Map<number, PublicationIntent>,
-  cleanupTerminal: (ticket: number) => Promise<void>,
+  recordReplacementCleanup: NonNullable<
+    PublicationInput["recordReplacementCleanup"]
+  >,
 ): (batchHandoffs: VerifiedHandoff[]) => PublicationInput {
   return (batchHandoffs) => ({
     repository: input.repository,
@@ -43,11 +45,11 @@ export function createPublicationInput(
     ticketClosure: input.ticketClosure,
     ciRepairBudgets: new Map(),
     publicationIntents,
+    recordReplacementCleanup,
     handoffs: batchHandoffs,
     gitWorkspace: input.gitWorkspace,
     codeHost: input.codeHost,
     agentExecutor: input.agentExecutor,
-    cleanupTerminal,
     ...(input.persistPublication === undefined
       ? {}
       : { persistPublication: input.persistPublication }),

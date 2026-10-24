@@ -167,6 +167,12 @@ async function runProjectInternal(
   const clearWorktrees = (ticket: number): void => {
     updateTicket(ticket, { retainedWorktrees: [] });
   };
+  const forgetWorktree = (worktree: string): void => {
+    for (const report of ticketReports)
+      report.retainedWorktrees = report.retainedWorktrees.filter(
+        (candidate) => candidate !== worktree,
+      );
+  };
   const publicationIntents = new Map<number, PublicationIntent>();
   for (const intent of input.recoveredPublications ?? [])
     publicationIntents.set(intent.ticket, intent);
@@ -233,6 +239,15 @@ async function runProjectInternal(
               match[1] === "maintenance" ? "maintenance" : "delivery",
               worktreeInput.worktree,
             );
+        };
+      }
+      if (
+        property === "removeWorktree" &&
+        typeof target.removeWorktree === "function"
+      ) {
+        return async (checkout: string, worktree: string) => {
+          await target.removeWorktree!(checkout, worktree);
+          forgetWorktree(worktree);
         };
       }
       const value: unknown = Reflect.get(target, property, target);
@@ -370,11 +385,26 @@ async function runProjectInternal(
           });
   };
 
+  const recordReplacementCleanup: NonNullable<
+    PublicationInput["recordReplacementCleanup"]
+  > = async (ticket, workspace, status) => {
+    const candidate = `${workspace.worktree}:${workspace.branch}`;
+    const candidates = new Set(cleanupRecords.get(ticket)?.candidates ?? []);
+    if (status === "pending") candidates.add(candidate);
+    else candidates.delete(candidate);
+    const record: CleanupRecord = {
+      status: "pending",
+      candidates: [...candidates],
+    };
+    await input.persistCleanup?.(ticket, record);
+    cleanupRecords.set(ticket, record);
+  };
+
   const cleanupTerminal = async (ticket: number): Promise<void> => {
-    const previous = cleanupRecords.get(ticket);
-    if (previous?.status === "cleaned" || previous?.status === "accepted")
-      return;
     for (;;) {
+      const previous = cleanupRecords.get(ticket);
+      if (previous?.status === "cleaned" || previous?.status === "accepted")
+        return;
       const pending: CleanupRecord = {
         status: "pending",
         candidates: previous?.candidates ?? [],
@@ -430,7 +460,15 @@ async function runProjectInternal(
   };
 
   for (const [ticket, record] of cleanupRecords) {
-    if (record.status === "pending") await cleanupTerminal(ticket);
+    if (
+      record.status === "pending" &&
+      (input.recoveredCompletedDeliveries?.some(
+        (delivery) => delivery.ticket === ticket,
+      ) ||
+        (input.recoveredMaintenance?.phase === "completed" &&
+          input.recoveredMaintenance.ticket === ticket))
+    )
+      await cleanupTerminal(ticket);
   }
   let maintainedDeliveryTickets = new Set(
     input.recoveredMaintenance?.phase === "completed"
@@ -493,10 +531,10 @@ async function runProjectInternal(
       gitWorkspace: input.gitWorkspace,
       codeHost: input.codeHost,
       agentExecutor: input.agentExecutor,
+      recordReplacementCleanup,
       ...(input.persistPublication === undefined
         ? {}
         : { persistPublication: input.persistPublication }),
-      cleanupTerminal,
     }).catch((error: unknown) => {
       if (!(error instanceof OperatorCancelled)) throw error;
       return null;
@@ -547,7 +585,7 @@ async function runProjectInternal(
     targetBranch,
     event,
     publicationIntents,
-    cleanupTerminal,
+    recordReplacementCleanup,
   );
 
   const integratePublication = async (
@@ -790,7 +828,6 @@ async function runProjectInternal(
       input,
       targetBranch,
       event,
-      cleanupTerminal,
       publicationInput,
       integratePublication,
       summary,
@@ -810,7 +847,6 @@ async function runProjectInternal(
       input,
       targetBranch,
       event,
-      cleanupTerminal,
       publicationInput,
       integratePublication,
       summary,
@@ -839,7 +875,6 @@ async function runProjectInternal(
       reservationLabel: input.reservationLabel,
       issueList: input.issueList,
       hadChildren,
-      cleanupTerminal,
       excludedTickets: skippedTickets,
     });
     if (discovery.outcome === "incomplete") hasBatchState = true;

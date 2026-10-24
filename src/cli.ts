@@ -405,27 +405,19 @@ export async function executeCli(
     dependencies.gitWorkspace ?? new LocalGitWorkspace(loaded.codeHostToken);
   const agentExecutor =
     dependencies.agentExecutor ?? new SandcastleAgentExecutor();
-  let publicationWrite = Promise.resolve();
-  const persistPublication = async (
-    ticket: number,
-    intent: PublicationIntent | null,
+  let snapshotWrite = Promise.resolve();
+  const persistSnapshotUpdate = async (
+    update: (snapshot: RecoverySnapshot) => RecoverySnapshot,
   ) => {
-    const previousWrite = publicationWrite;
+    const previousWrite = snapshotWrite;
     let releaseWrite!: () => void;
-    publicationWrite = new Promise<void>((resolve) => {
+    snapshotWrite = new Promise<void>((resolve) => {
       releaseWrite = resolve;
     });
     await previousWrite;
     try {
-      const publications = (currentSnapshot.publications ?? []).filter(
-        (publication) => publication.ticket !== ticket,
-      );
-      if (intent !== null) publications.push(intent);
-      const next = { ...currentSnapshot };
-      if (publications.length === 0) delete next.publications;
-      else next.publications = publications;
       const nextSnapshot = {
-        ...next,
+        ...update(currentSnapshot),
         updatedAt: dependencies.clock.now().toISOString(),
       };
       await writeSnapshot(nextSnapshot);
@@ -434,6 +426,20 @@ export async function executeCli(
       releaseWrite();
     }
   };
+  const persistPublication = (
+    ticket: number,
+    intent: PublicationIntent | null,
+  ) =>
+    persistSnapshotUpdate((snapshot) => {
+      const publications = (snapshot.publications ?? []).filter(
+        (publication) => publication.ticket !== ticket,
+      );
+      if (intent !== null) publications.push(intent);
+      const next = { ...snapshot };
+      if (publications.length === 0) delete next.publications;
+      else next.publications = publications;
+      return next;
+    });
   const persistBatch = async (
     batch: number[],
     completed: NonNullable<RecoverySnapshot["completedDeliveries"]>,
@@ -451,18 +457,14 @@ export async function executeCli(
     await writeSnapshot(nextSnapshot);
     currentSnapshot = nextSnapshot;
   };
-  const persistCleanup = async (ticket: number, record: CleanupRecord) => {
-    const nextSnapshot = {
-      ...currentSnapshot,
+  const persistCleanup = (ticket: number, record: CleanupRecord) =>
+    persistSnapshotUpdate((snapshot) => ({
+      ...snapshot,
       terminalCleanup: {
-        ...(currentSnapshot.terminalCleanup ?? {}),
+        ...(snapshot.terminalCleanup ?? {}),
         [ticket]: record,
       },
-      updatedAt: dependencies.clock.now().toISOString(),
-    };
-    await writeSnapshot(nextSnapshot);
-    currentSnapshot = nextSnapshot;
-  };
+    }));
   const persistMaintenance = async (state: MaintenanceState) => {
     const nextSnapshot = {
       ...currentSnapshot,

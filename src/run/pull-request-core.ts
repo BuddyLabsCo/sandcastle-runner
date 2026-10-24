@@ -32,6 +32,7 @@ import {
   remoteHeadOverride,
 } from "./write-reconciliation.ts";
 import { type RepairState, type PublicationIntent } from "../recovery.ts";
+import type { ReplacedWorkspaceCleanup } from "./cleanup.ts";
 
 export interface PullRequestObservation extends PullRequestIdentity {
   ticket: number;
@@ -73,6 +74,13 @@ export interface PublicationInput extends ReadinessInput {
     intent: PublicationIntent | null,
   ) => Promise<void>;
   publicationIntents?: Map<number, PublicationIntent>;
+  replacedWorkspaceCleanup?: ReplacedWorkspaceCleanup;
+  repairHandoffs?: Map<number, VerifiedHandoff>;
+  recordReplacementCleanup?: (
+    ticket: number,
+    workspace: Pick<VerifiedHandoff, "worktree" | "branch">,
+    status: "pending" | "cleaned",
+  ) => Promise<void>;
 }
 
 export interface RepairBudget {
@@ -91,11 +99,13 @@ export function repairIntent(
     NonNullable<PublicationIntent["repairState"]>,
     "pendingPush"
   > & { pendingPush?: string | null },
+  status: "attempt" | "accepted" = "attempt",
 ): Promise<void> {
   const current = input.publicationIntents?.get(ticket);
   if (!current || !input.persistPublication) return Promise.resolve();
   repairState = {
-    ...(current.repairState?.purpose === purpose ? current.repairState : {}),
+    ...(current.repairBudgets?.[purpose] ??
+      (current.repairState?.purpose === purpose ? current.repairState : {})),
     ...repairState,
   };
   repairState.purpose = purpose;
@@ -105,12 +115,13 @@ export function repairIntent(
   >;
   const next = {
     ...current,
-    repairState: persistedRepairState,
+    ...(status === "accepted" ? { repairState: persistedRepairState } : {}),
     repairBudgets: {
       ...current.repairBudgets,
       [purpose]: persistedRepairState,
     },
-    ...(persistedRepairState.head === undefined ||
+    ...(status !== "accepted" ||
+    persistedRepairState.head === undefined ||
     current.pullRequest === undefined
       ? {}
       : {

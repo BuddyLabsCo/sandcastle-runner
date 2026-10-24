@@ -10,7 +10,11 @@ import {
   reconcilePullRequest,
   type PublicationIntent,
 } from "../recovery.ts";
-import { observeRequiredChecks } from "./pull-request-repair.ts";
+import {
+  currentRepairHandoff,
+  observeRequiredChecks,
+  retireReplacedWorkspace,
+} from "./pull-request-repair.ts";
 import {
   pullRequestOverride,
   stopped,
@@ -150,13 +154,16 @@ export async function recoverPublishedHandoffs(
         retryPolicy: input.retryPolicy,
       });
     const remoteHead = await readRemoteHead();
-    const pendingRepair = intent.repairState?.pendingPush;
+    const activeRepair =
+      Object.values(intent.repairBudgets ?? {}).find(
+        (repair) => repair.pendingPush !== undefined,
+      ) ?? intent.repairState;
+    const pendingRepair = activeRepair?.pendingPush;
     const push =
-      pendingRepair === undefined && intent.repairState?.head === undefined
+      pendingRepair === undefined && activeRepair?.head === undefined
         ? reconcileInitialPush(intent, remoteHead)
-        : remoteHead === (pendingRepair ?? intent.repairState?.head) ||
-            (pendingRepair !== undefined &&
-              remoteHead === intent.repairState?.base)
+        : remoteHead === (pendingRepair ?? activeRepair?.head) ||
+            (pendingRepair !== undefined && remoteHead === activeRepair?.base)
           ? {
               outcome: "adopt" as const,
               reason: "repair push can be reconciled",
@@ -270,11 +277,11 @@ export async function recoverPublishedHandoffs(
       phase: "pr_created",
       pullRequest: { ...pullRequest, headSha: recordedHead },
     });
-    if (intent.repairState?.pendingPush) {
+    if (activeRepair?.pendingPush) {
       const repairHead = await readRemoteHead();
       if (
-        repairHead !== intent.repairState.pendingPush &&
-        repairHead !== intent.repairState.base
+        repairHead !== activeRepair.pendingPush &&
+        repairHead !== activeRepair.base
       ) {
         await pauseRecoveredPublication(
           input,
@@ -289,7 +296,7 @@ export async function recoverPublishedHandoffs(
           restarted,
         };
       }
-      if (repairHead === intent.repairState.base) {
+      if (repairHead === activeRepair.base) {
         await pauseRecoveredPublication(
           input,
           intent,
@@ -303,21 +310,38 @@ export async function recoverPublishedHandoffs(
           restarted,
         };
       }
-      const repairState = { ...intent.repairState };
+      const predecessor = currentRepairHandoff(input, handoff);
+      await input.recordReplacementCleanup?.(
+        handoff.ticket,
+        predecessor,
+        "pending",
+      );
+      const repairState = { ...activeRepair, head: repairHead };
       delete repairState.pendingPush;
       const repairedIntent = {
         ...intent,
-        repairState: {
-          ...repairState,
-          ...(repairHead === intent.repairState.pendingPush
-            ? { head: repairHead }
-            : {}),
-        },
+        repairState,
+        ...(repairState.purpose === undefined
+          ? {}
+          : {
+              repairBudgets: {
+                ...intent.repairBudgets,
+                [repairState.purpose]: repairState,
+              },
+            }),
         pullRequest: { ...pullRequest, headSha: repairHead },
       };
       await input.persistPublication?.(intent.ticket, repairedIntent);
       input.publicationIntents?.set(intent.ticket, repairedIntent);
+      input.repairHandoffs?.delete(intent.ticket);
       pullRequest = repairedIntent.pullRequest;
+      if (predecessor.worktree !== repairState.worktree) {
+        await retireReplacedWorkspace(
+          input,
+          repairState.purpose === "conflict" ? "conflict_repair" : "ci_repair",
+          predecessor,
+        );
+      }
     }
     const readiness = merged
       ? { readiness: "ready" as const, failedChecks: [] }

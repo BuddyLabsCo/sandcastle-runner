@@ -69,6 +69,7 @@ test("a clean fresh-context review gates publication and preserves implementatio
     sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     message: "feat: implementation",
   };
+  let implementationInput: Parameters<AgentExecutor["execute"]>[0] | undefined;
   let reviewInput: Parameters<AgentExecutor["executeReview"]>[0] | undefined;
   let branch = "";
   const operations: string[] = [];
@@ -133,6 +134,7 @@ test("a clean fresh-context review gates publication and preserves implementatio
       },
       agentExecutor: {
         async execute(input) {
+          implementationInput = input;
           return delivery.agentExecutor.execute!(input);
         },
         async executeReview(input) {
@@ -177,6 +179,7 @@ test("a clean fresh-context review gates publication and preserves implementatio
   );
   assert.equal(reviewInput.base, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
   assert.equal(reviewInput.branch, branch);
+  assert.equal(reviewInput.worktree, implementationInput?.worktree);
   assert.deepEqual(reviewHandoff.deliveryTicket, {
     source: "https://github.com/owner/repo/issues/9",
     title: "Delivery ticket",
