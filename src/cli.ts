@@ -104,6 +104,11 @@ function startupProject(argv: string[]): string {
     : "unknown";
 }
 
+function startupFailureMessage(reason: string | undefined): string {
+  const line = (reason ?? "startup failed").replace(/\s+/gu, " ").trim();
+  return `Startup failed: ${line || "startup failed"}`;
+}
+
 function parseTicket(value: unknown): number {
   const ticket = Number(value);
   if (!Number.isSafeInteger(ticket) || ticket <= 0)
@@ -258,7 +263,7 @@ export async function executeCli(
         error instanceof Error ? error.message : "invalid CLI arguments",
       ],
     };
-    dependencies.operator.write(JSON.stringify(summary));
+    dependencies.operator.write(startupFailureMessage(summary.reasons[0]));
     return { exitCode: 1, summary, logPath: null };
   }
   let loaded: Awaited<ReturnType<typeof loadProject>>;
@@ -278,7 +283,7 @@ export async function executeCli(
         error instanceof Error ? error.message : "startup validation failed",
       ],
     };
-    dependencies.operator.write(JSON.stringify(summary));
+    dependencies.operator.write(startupFailureMessage(summary.reasons[0]));
     return { exitCode: 1, summary, logPath: null };
   }
   const standaloneIssueList =
@@ -293,7 +298,7 @@ export async function executeCli(
       targetBranch: "unresolved",
       reasons: ["issueList must not be empty for value-less --issue"],
     };
-    dependencies.operator.write(JSON.stringify(summary));
+    dependencies.operator.write(startupFailureMessage(summary.reasons[0]));
     return { exitCode: 1, summary, logPath: null };
   }
   const effectiveParentTicket = parentTicket ?? standaloneIssueList?.[0] ?? 0;
@@ -330,11 +335,6 @@ export async function executeCli(
       );
     }
   } catch (error) {
-    if (error instanceof InvalidRecoverySnapshot) {
-      await dependencies.operator.pause(
-        `Recovery state is invalid: ${error.message}. Fix the snapshot and retry.`,
-      );
-    }
     const summary: RunSummary = {
       outcome: "failed",
       project,
@@ -344,7 +344,7 @@ export async function executeCli(
         error instanceof Error ? error.message : "recovery startup failed",
       ],
     };
-    dependencies.operator.write(JSON.stringify(summary));
+    dependencies.operator.write(startupFailureMessage(summary.reasons[0]));
     return { exitCode: 1, summary, logPath: null };
   }
   let currentSnapshot: RecoverySnapshot = {

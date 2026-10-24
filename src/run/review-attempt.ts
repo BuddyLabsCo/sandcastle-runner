@@ -218,17 +218,10 @@ export async function reviewHandoff(
           input.audit,
           event,
           input.operator,
-          agentPauseMessage(
-            "Review Agent Attempt blocked",
-            result.diagnostics,
-            {
-              outcome: result.outcome,
-              summary: result.summary,
-              blocker: result.blocker,
-              commits: [],
-              checks: result.checks,
-            },
-          ),
+          agentPauseMessage("blocked", result.diagnostics, handoff.worktree, {
+            summary: result.summary,
+            blocker: result.blocker,
+          }),
         );
         continuationPrompt = response === "" ? "continue" : response;
         continue;
@@ -283,7 +276,7 @@ export async function reviewHandoff(
           input.audit,
           event,
           input.operator,
-          agentPauseMessage("Review Agent Attempt failed", diagnostics),
+          agentPauseMessage("failed", diagnostics, handoff.worktree),
         );
         continuationPrompt = response === "" ? "continue" : response;
         break;

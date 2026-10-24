@@ -243,7 +243,7 @@ test("blocked CI repairs pause without consuming the repair budget", async () =>
   assert.equal(result.summary.outcome, "cancelled");
   assert.equal(agentCalls, 2);
   assert.equal(pushCalls, 1);
-  assert.match(pauses[0]!, /Agent Attempt blocked/u);
+  assert.match(pauses[0]!, /^Outcome: blocked$/mu);
   assert.ok(result.logPath);
   const repairAttemptNumbers = (await readFile(result.logPath, "utf8"))
     .trim()
@@ -383,7 +383,7 @@ test("repair execution and invalid handoff failures do not consume the budget", 
   assert.equal(pushCalls, 1);
   assert.deepEqual(
     pauses.map((message) =>
-      message.startsWith("Agent Attempt failed")
+      message.startsWith("Outcome: failed")
         ? "agent failure"
         : "budget exhausted",
     ),

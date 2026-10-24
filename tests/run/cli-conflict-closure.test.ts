@@ -130,7 +130,7 @@ test("invalid conflict-repair handoffs do not consume the automatic budget", asy
   assert.equal(agentCalls, 4);
   assert.equal(mergeRequests, 3);
   assert.equal(pauses.length, 1);
-  assert.match(pauses[0]!, /Agent Attempt failed/u);
+  assert.match(pauses[0]!, /^Outcome: failed$/mu);
 });
 
 test("Parent cancellation during a merge rejection pause prevents the authorized retry", async () => {
