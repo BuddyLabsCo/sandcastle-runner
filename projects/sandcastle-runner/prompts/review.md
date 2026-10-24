@@ -8,7 +8,5 @@ Work only in the Worktree and delivery branch named by the handoff.
 
 **DO NOT** try to pull latest code from `main` or `{{PROJECT_TARGET_BRANCH}}`.  
 
-
-Use the `/code-review` skill to review the works  
-If the review reports actionable findings, fix them in the Worktree, commit the fixes, and invoke `/code-review` again. Continue this review-and-fix cycle until the review reports no actionable findings.
+Use the `/code-review` skill to review the works, and fix actionable findings.
 
