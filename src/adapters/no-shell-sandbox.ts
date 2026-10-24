@@ -1,6 +1,8 @@
-import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
-import { delimiter, join } from "node:path";
+import {
+  type ChildProcess,
+  type ChildProcessWithoutNullStreams,
+  type SpawnOptions,
+} from "node:child_process";
 import { createInterface } from "node:readline";
 
 import type {
@@ -8,8 +10,10 @@ import type {
   SandboxExecOptions,
   InteractiveExecOptions,
 } from "@ai-hero/sandcastle";
+import crossSpawn from "cross-spawn";
 
 import { formatToolError } from "./process-errors.ts";
+import { terminateProcessTree } from "./process-tree.ts";
 
 function commandArgs(command: string): [string, ...string[]] {
   const trimmed = command.trim();
@@ -18,10 +22,19 @@ function commandArgs(command: string): [string, ...string[]] {
   let quote = "";
   let escaped = false;
   let windowsPath = false;
-  for (const character of trimmed) {
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const character = trimmed[index]!;
     if (escaped) {
       value += character;
       escaped = false;
+    } else if (
+      quote === '"' &&
+      value === "" &&
+      character === "\\" &&
+      trimmed[index + 1] === "\\"
+    ) {
+      windowsPath = true;
+      value += character;
     } else if (character === "\\" && quote !== "'") {
       if (windowsPath) {
         value += "\\";
@@ -54,72 +67,43 @@ function commandArgs(command: string): [string, ...string[]] {
   return args as [string, ...string[]];
 }
 
-function isWindowsShim(file: string): boolean {
-  return /\.(?:bat|cmd)$/iu.test(file);
+interface OwnedProcess {
+  child: ChildProcess;
+  done: Promise<void>;
 }
 
-function quoteWindowsCommandArg(value: string): string {
-  if (/["%!\r\n]/u.test(value))
-    throw new Error("unsupported Windows shim argument");
-  let result = '"';
-  let backslashes = 0;
-  for (const character of value) {
-    if (character === "\\") {
-      backslashes += 1;
-    } else if (character === '"') {
-      result += "\\".repeat(backslashes * 2 + 1) + '"';
-      backslashes = 0;
-    } else {
-      result += "\\".repeat(backslashes) + character;
-      backslashes = 0;
-    }
-  }
-  return result + "\\".repeat(backslashes * 2) + '"';
+function pipedChild(child: ChildProcess): ChildProcessWithoutNullStreams {
+  if (!child.stdin || !child.stdout || !child.stderr)
+    throw new Error("no-sandbox child process does not expose piped stdio");
+  return child as ChildProcessWithoutNullStreams;
 }
 
-function environmentValue(
-  env: Record<string, string | undefined>,
-  name: string,
-): string | undefined {
-  const entries = Object.entries(env);
-  for (const [key, value] of entries.reverse()) {
-    if (key.toLowerCase() === name.toLowerCase()) return value;
-  }
-  return undefined;
-}
-
-function resolveWindowsCommand(
-  file: string,
-  env: Record<string, string | undefined>,
-): string {
-  if (/[\\/]/u.test(file) || /\.[^\\/]+$/u.test(file)) return file;
-  const path = environmentValue(env, "PATH") ?? "";
-  const extensions = (environmentValue(env, "PATHEXT") ?? ".COM;.EXE;.BAT;.CMD")
-    .split(";")
-    .filter((extension) => extension !== "");
-  for (const directory of path.split(delimiter)) {
-    for (const extension of extensions) {
-      const candidate = join(directory, `${file}${extension}`);
-      if (existsSync(candidate)) return candidate;
-    }
-  }
-  return file;
-}
-
-export function spawnCommand(
+function startProcess(
   file: string,
   args: string[],
-  env: Record<string, string | undefined>,
-): { file: string; args: string[] } {
-  if (process.platform !== "win32") return { file, args };
-  const executable = resolveWindowsCommand(file, env);
-  if (!isWindowsShim(executable)) return { file: executable, args };
-  const comspec = environmentValue(env, "COMSPEC") ?? "cmd.exe";
-  const command = [executable, ...args].map(quoteWindowsCommandArg).join(" ");
-  return {
-    file: comspec,
-    args: ["/d", "/s", "/c", command],
+  options: SpawnOptions,
+  owned: Set<OwnedProcess>,
+): { child: ChildProcess; done: Promise<void> } {
+  const child = crossSpawn(file, args, options);
+  let finish!: () => void;
+  const done = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const ownedProcess: OwnedProcess = { child, done };
+  owned.add(ownedProcess);
+  const settle = () => {
+    owned.delete(ownedProcess);
+    finish();
   };
+  child.once("close", settle);
+  child.once("error", settle);
+  return ownedProcess;
+}
+
+async function stopProcess(ownedProcess: OwnedProcess): Promise<void> {
+  const { child, done } = ownedProcess;
+  await terminateProcessTree(child);
+  await done;
 }
 
 export function noShellSandbox(
@@ -139,17 +123,25 @@ export function noShellSandbox(
       env: Record<string, string>;
     }) => {
       const processEnv = { ...process.env, ...env };
+      const owned = new Set<OwnedProcess>();
+      let closing: Promise<void> | undefined;
       return Promise.resolve({
         worktreePath,
         exec: (command: string, execOptions: SandboxExecOptions = {}) => {
           const [file, ...args] = commandArgs(command);
-          const launched = spawnCommand(file, args, processEnv);
-          const child = spawn(launched.file, launched.args, {
-            cwd: execOptions.cwd ?? worktreePath,
-            env: processEnv,
-            shell: false,
-            stdio: ["pipe", "pipe", "pipe"],
-          });
+          const child = pipedChild(
+            startProcess(
+              file,
+              args,
+              {
+                cwd: execOptions.cwd ?? worktreePath,
+                env: processEnv,
+                shell: false,
+                stdio: ["pipe", "pipe", "pipe"],
+              },
+              owned,
+            ).child,
+          );
           if (execOptions.stdin !== undefined) {
             child.stdin.write(execOptions.stdin);
           }
@@ -182,21 +174,21 @@ export function noShellSandbox(
         ) =>
           new Promise((resolve, reject) => {
             const [file, ...commandArgsForSpawn] = args;
-            const launched = spawnCommand(
+            const { child } = startProcess(
               file!,
               commandArgsForSpawn,
-              processEnv,
+              {
+                cwd: execOptions.cwd ?? worktreePath,
+                env: processEnv,
+                shell: false,
+                stdio: [
+                  execOptions.stdin as never,
+                  execOptions.stdout as never,
+                  execOptions.stderr as never,
+                ],
+              },
+              owned,
             );
-            const child: ChildProcess = spawn(launched.file, launched.args, {
-              cwd: execOptions.cwd ?? worktreePath,
-              env: processEnv,
-              shell: false,
-              stdio: [
-                execOptions.stdin as never,
-                execOptions.stdout as never,
-                execOptions.stderr as never,
-              ],
-            });
             child.once("error", (error) =>
               reject(new Error(formatToolError(args[0]!, error))),
             );
@@ -204,7 +196,12 @@ export function noShellSandbox(
               resolve({ exitCode: exitCode ?? 0 }),
             );
           }),
-        close: () => Promise.resolve(),
+        close: () => {
+          closing ??= Promise.all([...owned].map(stopProcess)).then(
+            () => undefined,
+          );
+          return closing;
+        },
       });
     },
   } as NoSandboxProvider;

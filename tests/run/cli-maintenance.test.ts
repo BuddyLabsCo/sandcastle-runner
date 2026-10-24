@@ -6,6 +6,7 @@ import { cleanupTempRoots } from "../support/temp-cleanup.ts";
 import {
   createCliDependencies,
   createCommittedDelivery,
+  isMaintenanceWorktree,
 } from "../support/cli-dependencies.ts";
 import {
   validConfig,
@@ -96,14 +97,14 @@ test("matching delivery label triggers one clean no_change Maintenance Ticket wi
       gitWorkspace: {
         ...delivery.gitWorkspace,
         async createWorktree(input) {
-          if (input.worktree.includes("/maintenance-")) {
+          if (isMaintenanceWorktree(input.worktree)) {
             maintenanceBranch = input.branch;
             return;
           }
           await delivery.gitWorkspace.createWorktree!(input);
         },
         async inspect(input) {
-          if (input.worktree.includes("/maintenance-")) {
+          if (isMaintenanceWorktree(input.worktree)) {
             return {
               worktree: input.worktree,
               branch: maintenanceBranch,
@@ -187,14 +188,14 @@ test("blocked Documentation Maintenance pauses the live Run", async () => {
     gitWorkspace: {
       ...delivery.gitWorkspace,
       async createWorktree(input) {
-        if (input.worktree.includes("/maintenance-")) {
+        if (isMaintenanceWorktree(input.worktree)) {
           maintenanceBranch = input.branch;
           return;
         }
         await delivery.gitWorkspace.createWorktree!(input);
       },
       async inspect(input) {
-        if (input.worktree.includes("/maintenance-")) {
+        if (isMaintenanceWorktree(input.worktree)) {
           return {
             worktree: input.worktree,
             branch: maintenanceBranch,
@@ -344,14 +345,14 @@ test("Documentation Maintenance reuses CI and conflict repair on its original Pu
           return base;
         },
         async createWorktree(input) {
-          if (input.worktree.includes("/maintenance-")) {
+          if (isMaintenanceWorktree(input.worktree)) {
             maintenanceBranch = input.branch;
             return;
           }
           await delivery.gitWorkspace.createWorktree!(input);
         },
         async inspect(input) {
-          if (!input.worktree.includes("/maintenance-")) {
+          if (!isMaintenanceWorktree(input.worktree)) {
             return delivery.gitWorkspace.inspect!(input);
           }
           pendingHead =
@@ -379,7 +380,7 @@ test("Documentation Maintenance reuses CI and conflict repair on its original Pu
           };
         },
         async push(worktree) {
-          if (worktree.includes("/maintenance-")) maintenanceHead = pendingHead;
+          if (isMaintenanceWorktree(worktree)) maintenanceHead = pendingHead;
         },
       },
       agentExecutor: {

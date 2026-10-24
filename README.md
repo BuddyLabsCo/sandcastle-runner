@@ -47,6 +47,10 @@ Every host needs the following in the same terminal that runs the Runner:
   `PATH`. OpenAI does not publish a Runner-specific Codex version floor.
 - A GitHub repository checkout at an absolute path.
 
+Paths containing Chinese characters are unsupported for the Runner checkout,
+the selected project's Git checkout, Worktrees, state and log directories,
+temporary files, or Codex state. Keep these paths free of Chinese characters.
+
 Missing executables fail on first use through the existing logical-command error
 path. The Runner does not start an interactive `gh auth` flow.
 Authenticate Codex with the [Codex CLI instructions](https://learn.chatgpt.com/docs/codex/cli)
@@ -95,8 +99,13 @@ git --version
 gh --version
 codex --version
 codex login status
-Get-Command node, npm, git, gh, codex
+Get-Command node, npm, git, gh, codex | Select-Object Name, Source
 ```
+
+`Get-Command npm` must resolve to the npm bundled with the selected Node.js
+installation. If a separate global npm shadows it, prepend the Node.js
+installation directory to `PATH` for the Run terminal or invoke the bundled
+`npm.cmd` directly. Do not replace the machine-wide npm installation.
 
 Set the configured credential variable for the session, or persist it for
 future sessions with the normal Windows environment-variable controls:
@@ -109,6 +118,28 @@ setx GH_TOKEN "your-github-token"
 
 The variable name must match `tracker.tokenEnv` and `codeHost.tokenEnv` in
 `config.yaml`. Do not run interactive `gh auth login` or commit the token.
+The process environment must contain both configured variables even when
+`gh auth status` reports a stored login.
+
+The selected project's `checkout` must already exist and be a Git checkout at a
+real absolute Windows path. Use YAML quoting that preserves backslashes, for
+example:
+
+```yaml
+checkout: 'C:\work\repos\example'
+```
+
+Codex state defaults to the current Windows user profile when `HOME` is absent.
+If `CODEX_HOME` is set, its `sessions` directory is used instead. Keep that state
+location on a supported path.
+
+Enable long paths in the selected repository only when its files require them.
+The setting must be repository-local because Agent Attempts run with isolated
+Git configuration:
+
+```powershell
+git -C 'C:\work\repos\example' config core.longpaths true
+```
 
 ### Linux
 
@@ -136,8 +167,8 @@ Use a shell profile or another local secret mechanism only when appropriate;
 never commit the token. Interactive `gh auth` is not used.
 
 These instructions describe the checkout contract on the three native OS
-families. They do not promise a broader OS or tool-version matrix, permanent
-cross-platform CI coverage, WSL-specific behavior, or a real Codex/Sandcastle
+families. They do not promise a broader OS or tool-version matrix,
+WSL-specific behavior, or a real Codex/Sandcastle
 integration guarantee. The configured repository and tracker must use GitHub;
 the Runner mutates issues, branches, worktrees, pull requests, and merges, so
 use a test repository when experimenting.
@@ -186,5 +217,10 @@ npm run typecheck        # TypeScript build-time validation
 npm run verify           # tests plus all checks
 npm run format           # format source files
 ```
+
+Repository text files are checked out with LF line endings through
+`.gitattributes`, including on Windows hosts configured with
+`core.autocrlf=true`. This keeps the documented checkout compatible with the
+format check.
 
 The test suite uses scripted tracker, code-host, Git, agent, clock, and terminal boundaries. It does not call authenticated Codex/Sandcastle services or mutate a remote GitHub repository.

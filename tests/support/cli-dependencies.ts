@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import type { CliDependencies } from "../../src/cli.ts";
 import type {
   AgentExecutor,
@@ -9,6 +11,10 @@ import type {
   Tracker,
 } from "../../src/run/contracts.ts";
 import { boundedTestOperator } from "./bounded-operator.ts";
+
+export function isMaintenanceWorktree(worktree: string): boolean {
+  return path.basename(worktree).startsWith("maintenance-");
+}
 
 export type CliDependencyOverrides = Omit<
   Partial<CliDependencies>,
@@ -180,7 +186,7 @@ export function createCliDependencies(
     },
     ...overrides.gitWorkspace,
     async createWorktree(input) {
-      if (input.worktree.includes("/maintenance-")) {
+      if (isMaintenanceWorktree(input.worktree)) {
         maintenanceWorktrees.set(input.worktree, {
           branch: input.branch,
           base: input.base,

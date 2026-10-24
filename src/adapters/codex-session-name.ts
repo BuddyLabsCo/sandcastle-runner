@@ -1,7 +1,8 @@
-import childProcess from "node:child_process";
 import { createInterface } from "node:readline";
 
-import { spawnCommand } from "./no-shell-sandbox.ts";
+import crossSpawn from "cross-spawn";
+
+import { terminateProcessTree } from "./process-tree.ts";
 
 export async function renameCodexSession(
   sessionId: string,
@@ -18,8 +19,7 @@ export async function renameCodexSession(
   }
 
   // Inherit the probe's Codex configuration/storage; no thread resume or model turn.
-  const launched = spawnCommand("codex", ["app-server"], process.env);
-  const child = childProcess.spawn(launched.file, launched.args, {
+  const child = crossSpawn("codex", ["app-server"], {
     cwd: input.worktree,
     stdio: ["pipe", "pipe", "ignore"],
   });
@@ -28,6 +28,7 @@ export async function renameCodexSession(
     let finished = false;
     let failure: Error | undefined;
     let expectedId = 0;
+    let termination = Promise.resolve();
     const finish = (error?: Error) => {
       if (finished) return;
       finished = true;
@@ -37,8 +38,7 @@ export async function renameCodexSession(
       lines.close();
       child.stdin.destroy();
       child.stdout.destroy();
-      if (child.exitCode === null && child.signalCode === null)
-        child.kill("SIGKILL");
+      termination = terminateProcessTree(child);
     };
     const abort = () =>
       finish(
@@ -53,15 +53,26 @@ export async function renameCodexSession(
     child.once("error", finish);
     child.stdin.on("error", finish);
     child.stdout.on("error", finish);
-    child.once("close", (code, signal) => {
+    const settle = async (
+      code: number | null,
+      signal: NodeJS.Signals | null,
+    ) => {
       if (!finished)
         finish(
           new Error(
             `Codex app-server exited before rename acknowledgement (${code ?? signal})`,
           ),
         );
+      try {
+        await termination;
+      } catch (error) {
+        failure ??= error instanceof Error ? error : new Error(String(error));
+      }
       if (failure) reject(failure);
       else resolve();
+    };
+    child.once("close", (code, signal) => {
+      void settle(code, signal);
     });
     lines.on("line", (line) => {
       if (finished) return;

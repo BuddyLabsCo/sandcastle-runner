@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import childProcess, { type ChildProcess } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import { renameCodexSession } from "../../src/adapters/codex-session-name.ts";
+import { processExists, stopProcess } from "../support/process.ts";
 
 const spawn = childProcess.spawn;
 const fixture = fileURLToPath(
@@ -110,7 +114,9 @@ for (const [scenario, expected] of [
         'Issue #169: "renamed"\n\u4f1a\u8bdd',
         {
           worktree: process.cwd(),
-          timeoutMs: 500,
+          timeoutMs: ["initialize-timeout", "no-ack"].includes(scenario)
+            ? 500
+            : 2_000,
           signal: new AbortController().signal,
         },
       ),
@@ -197,3 +203,46 @@ test("rejects a failed app-server launch", async (t) => {
     /ENOENT|ENOTDIR/u,
   );
 });
+
+test(
+  "times out a shimmed app server only after its descendant exits",
+  { skip: process.platform !== "win32" },
+  async () => {
+    const directory = await mkdtemp(join(tmpdir(), "sandcastle-app-server-"));
+    let pid: number | undefined;
+    const previousPath = process.env.PATH;
+    const previousPidFile = process.env.SANDBOX_TEST_PID_FILE;
+    try {
+      const pidFile = join(directory, "pid");
+      await writeFile(
+        join(directory, "codex.cmd"),
+        `@echo off\r\n"${process.execPath}" "${fixture}" no-ack\r\n`,
+      );
+      process.env.PATH = `${directory}${delimiter}${previousPath ?? ""}`;
+      process.env.SANDBOX_TEST_PID_FILE = pidFile;
+      await assert.rejects(
+        renameCodexSession(
+          "persisted-probe-id",
+          'Issue #169: "renamed"\n\u4f1a\u8bdd',
+          {
+            worktree: process.cwd(),
+            timeoutMs: 500,
+            signal: new AbortController().signal,
+          },
+        ),
+        /rename timed out/u,
+      );
+      pid = Number((await readFile(pidFile, "utf8")).trim());
+      assert.ok(Number.isSafeInteger(pid) && pid > 0);
+      assert.equal(processExists(pid), false);
+    } finally {
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+      if (previousPidFile === undefined)
+        delete process.env.SANDBOX_TEST_PID_FILE;
+      else process.env.SANDBOX_TEST_PID_FILE = previousPidFile;
+      if (pid !== undefined) stopProcess(pid);
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+);

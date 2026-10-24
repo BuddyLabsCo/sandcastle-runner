@@ -557,7 +557,17 @@ export async function writeRecoverySnapshot(
   const directory = await open(path.dirname(filename), "r");
   try {
     await directory.sync();
+  } catch (error) {
+    if (!isUnsupportedWindowsDirectorySync(error)) throw error;
+    // Windows cannot fsync directory handles; the snapshot file itself is synced.
   } finally {
     await directory.close();
   }
+}
+
+function isUnsupportedWindowsDirectorySync(error: unknown): boolean {
+  if (process.platform !== "win32") return false;
+  return ["EPERM", "EINVAL", "ENOTSUP"].includes(
+    String((error as NodeJS.ErrnoException).code),
+  );
 }

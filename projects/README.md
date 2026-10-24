@@ -36,7 +36,7 @@ Runner uses non-interactive GitHub operations, so interactive `gh auth login` is
 not used. Missing tools fail on first use through the existing logical-command
 error path. Registry/global/remote-`npx` installation, a native Runner
 installer, bundled prerequisites, broader OS/tool-version guarantees, and
-permanent cross-platform CI are unsupported; see the root contract for details.
+WSL-specific behavior are unsupported; see the root contract for details.
 
 ## `config.yaml`
 
