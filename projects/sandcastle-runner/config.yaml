@@ -15,7 +15,7 @@ operationRetryDelay:
   - 80
 agentRetryDelay:
   - 300
-  - 18000
+  - 300
 ticketClosure: runner
 maintenanceTicket:
   title: Maintain project documentation
@@ -40,24 +40,24 @@ agents:
   # Each Agent Attempt selects a supported model and low, medium, high, or xhigh reasoning. Review and documentation profiles are required only while their workflow nodes are enabled.
   implement:
     # Initial Delivery Ticket implementation.
-    model: gpt-6-astra
-    reasoningEffort: high
+    model: group/deepseek-v4.1-flash
+    reasoningEffort: max
   review:
     # Fresh-context Standards and Spec review.
-    model: gpt-6-sol
+    model: codex/gpt-6.1-sol
     reasoningEffort: high
   ciRepair:
     # Repair of failed required CI checks.
-    model: gpt-6-sol
-    reasoningEffort: medium
+    model: group/deepseek-v4.1-flash
+    reasoningEffort: max
   conflictRepair:
     # Repair of an explicit merge conflict.
-    model: gpt-6-sol
-    reasoningEffort: medium
+    model: group/deepseek-v4.1-flash
+    reasoningEffort: max
   documentation:
     # Documentation Maintenance.
-    model: gpt-6-astra
-    reasoningEffort: high
+    model: group/deepseek-v4.1-flash
+    reasoningEffort: max
 timeouts:
   # Positive minute limits for Agent Attempts, required-check readiness, and merge-queue confirmation.
   agentMinutes: 120
