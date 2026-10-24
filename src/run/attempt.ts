@@ -2,7 +2,10 @@ import path from "node:path";
 
 import type { AgentConfig } from "../config.ts";
 import type { PullRequestIdentity, RequiredCheck } from "./contracts.ts";
-import { type DeliveryBoundaryResult } from "./discovery.ts";
+import {
+  releasePrePublicationReservation,
+  type DeliveryBoundaryResult,
+} from "./discovery.ts";
 import {
   externalRead,
   OperatorCancelled,
@@ -18,13 +21,15 @@ import {
   type VerifiedHandoff,
   type AttemptBatchResult,
   type MaintenanceAttemptResult,
+  type TicketAttemptOutcome,
 } from "./agent-operation.ts";
+import { TicketSkipped } from "./agent-pause.ts";
 import { reviewHandoff } from "./review-attempt.ts";
 export type {
   AttemptBatchResult,
   MaintenanceAttemptResult,
+  VerifiedHandoff,
 } from "./agent-operation.ts";
-export type { VerifiedHandoff } from "./agent-operation.ts";
 
 function fullSha(value: unknown): string {
   if (typeof value !== "string" || !/^[0-9a-f]{40,64}$/u.test(value))
@@ -37,7 +42,7 @@ async function implementTicket(
   ticket: number,
   base: string,
   controller: AbortController,
-): Promise<VerifiedHandoff | string> {
+): Promise<TicketAttemptOutcome> {
   const ticketInput =
     input.standaloneIssues === undefined
       ? input
@@ -90,13 +95,28 @@ async function implementTicket(
       signal: controller.signal,
       attemptCounter: { value: 0 },
     });
-    if ("reason" in result) return result.reason;
-    return input.review
+    if ("reason" in result)
+      return { ticket, outcome: result.outcome, detail: result.reason };
+    const handoff = input.review
       ? await reviewHandoff(input, result, controller.signal)
       : result;
+    return {
+      ticket,
+      outcome: "handoff",
+      detail: "Implementation and review completed",
+      handoff,
+    };
   } catch (error) {
+    if (error instanceof TicketSkipped) {
+      await releasePrePublicationReservation(ticketInput, ticket);
+      return {
+        ticket,
+        outcome: "skipped",
+        detail: `skipped Delivery Ticket ${ticket}: ${error.reason}`,
+      };
+    }
     if (error instanceof BoundaryStop && error.result.outcome === "stopped")
-      return error.result.reason;
+      return { ticket, outcome: "blocked", detail: error.result.reason };
     throw error;
   }
 }
@@ -119,6 +139,7 @@ export async function runCiRepairAttempt(
       outcome: "boundary";
       boundary: Exclude<DeliveryBoundaryResult, { outcome: "ready" }>;
     }
+  | { outcome: "skipped"; reason: string }
 > {
   try {
     const result = await runAgentOperation(input, {
@@ -163,6 +184,8 @@ export async function runCiRepairAttempt(
           },
         };
   } catch (error) {
+    if (error instanceof TicketSkipped)
+      return { outcome: "skipped", reason: error.reason };
     if (error instanceof BoundaryStop) {
       return { outcome: "boundary", boundary: error.result };
     }
@@ -189,6 +212,7 @@ export async function runConflictRepairAttempt(
       outcome: "boundary";
       boundary: Exclude<DeliveryBoundaryResult, { outcome: "ready" }>;
     }
+  | { outcome: "skipped"; reason: string }
 > {
   try {
     const result = await runAgentOperation(input, {
@@ -229,6 +253,8 @@ export async function runConflictRepairAttempt(
           },
         };
   } catch (error) {
+    if (error instanceof TicketSkipped)
+      return { outcome: "skipped", reason: error.reason };
     if (error instanceof BoundaryStop) {
       return { outcome: "boundary", boundary: error.result };
     }
@@ -316,6 +342,8 @@ export async function runMaintenanceAttempt(
       ? result
       : { outcome: "committed", handoff: result };
   } catch (error) {
+    if (error instanceof TicketSkipped)
+      return { outcome: "skipped", reason: error.reason };
     if (error instanceof BoundaryStop) {
       return { outcome: "boundary", boundary: error.result };
     }
@@ -327,7 +355,9 @@ export async function implementReservedBatch(
   input: AttemptInput,
 ): Promise<AttemptBatchResult> {
   const candidates: number[] = [];
-  const stopped: string[] = [];
+  const tickets: TicketAttemptOutcome[] = [];
+  const controller = new AbortController();
+  let attempts: Promise<TicketAttemptOutcome>[] = [];
   try {
     for (const ticket of input.batch) {
       try {
@@ -335,16 +365,33 @@ export async function implementReservedBatch(
         candidates.push(ticket);
       } catch (error) {
         if (!(error instanceof BoundaryStop)) throw error;
-        if (
-          error.result.outcome === "cancelled" ||
-          error.result.outcome === "failed"
-        )
-          throw error;
-        stopped.push(error.result.reason);
+        const outcome: TicketAttemptOutcome = {
+          ticket,
+          outcome:
+            error.result.outcome === "cancelled"
+              ? "cancelled"
+              : error.result.outcome === "failed"
+                ? "failed"
+                : "blocked",
+          detail: error.result.reason,
+        };
+        tickets.push(outcome);
+        if (outcome.outcome === "cancelled" || outcome.outcome === "failed")
+          return {
+            outcome: outcome.outcome,
+            reasons: [outcome.detail],
+            handoffs: [],
+            tickets,
+          };
       }
     }
     if (candidates.length === 0)
-      return { outcome: "incomplete", reasons: stopped, handoffs: [] };
+      return {
+        outcome: "incomplete",
+        reasons: tickets.map(({ detail }) => detail),
+        handoffs: [],
+        tickets,
+      };
     const base = await externalRead({
       action: () =>
         input.gitWorkspace.fetchTargetBranch(
@@ -365,43 +412,69 @@ export async function implementReservedBatch(
       operator: input.operator,
       retryPolicy: input.retryPolicy,
     });
-    const controller = new AbortController();
     const concurrentInput = {
       ...input,
       operator: serializeOperator(input.operator, controller),
     };
-    const attempts = candidates.map((ticket) =>
-      implementTicket(concurrentInput, ticket, base, controller),
+    attempts = candidates.map((ticket) =>
+      implementTicket(concurrentInput, ticket, base, controller).then(
+        (result) => {
+          tickets.push(result);
+          return result;
+        },
+      ),
     );
-    try {
-      const settled = await Promise.all(attempts);
-      const handoffs = settled.filter(
-        (result): result is VerifiedHandoff => typeof result !== "string",
-      );
-      return {
-        outcome: "incomplete",
-        handoffs,
-        reasons: [
-          ...stopped,
-          ...settled.filter(
-            (result): result is string => typeof result === "string",
-          ),
-        ],
-      };
-    } catch (error) {
-      controller.abort(error);
-      await Promise.allSettled(attempts);
-      throw error;
-    }
+    await Promise.all(attempts);
+    const byTicket = new Map(tickets.map((result) => [result.ticket, result]));
+    const ordered = input.batch.flatMap((ticket) => {
+      const result = byTicket.get(ticket);
+      return result ? [result] : [];
+    });
+    const handoffs = ordered.flatMap(({ handoff }) =>
+      handoff === undefined ? [] : [handoff],
+    );
+    const terminal = ordered.find(
+      ({ outcome }) => outcome === "cancelled" || outcome === "failed",
+    );
+    return {
+      outcome:
+        terminal?.outcome === "cancelled"
+          ? "cancelled"
+          : terminal?.outcome === "failed"
+            ? "failed"
+            : "incomplete",
+      handoffs: terminal === undefined ? handoffs : [],
+      reasons: ordered
+        .filter(({ outcome }) => outcome !== "handoff")
+        .map(({ detail }) => detail),
+      tickets: ordered,
+    };
   } catch (error) {
-    if (error instanceof BoundaryStop) {
-      return {
-        outcome: error.result.outcome === "cancelled" ? "cancelled" : "failed",
-        reasons: [error.result.reason],
-        handoffs: [],
-      };
-    }
-    if (error instanceof OperatorCancelled) throw error;
-    throw error;
+    controller.abort(error);
+    await Promise.allSettled(attempts);
+    const outcome =
+      error instanceof OperatorCancelled ||
+      (error instanceof BoundaryStop && error.result.outcome === "cancelled")
+        ? "cancelled"
+        : "failed";
+    const detail =
+      error instanceof BoundaryStop
+        ? error.result.reason
+        : error instanceof Error
+          ? error.message
+          : "Agent Attempt failed";
+    return {
+      outcome,
+      reasons: [detail],
+      handoffs: [],
+      tickets: input.batch.map(
+        (ticket) =>
+          tickets.find((result) => result.ticket === ticket) ?? {
+            ticket,
+            outcome,
+            detail,
+          },
+      ),
+    };
   }
 }

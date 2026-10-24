@@ -5,6 +5,15 @@ import path from "node:path";
 
 import type { AuditEvent } from "../audit.ts";
 import type { AgentConfig } from "../config.ts";
+import { agentLogFile, agentLogStage } from "./agent-logs.ts";
+import {
+  agentPauseMessage,
+  pauseAgentAttempt,
+  skipTicketAgentAttempt,
+  TicketSkipped,
+  ticketAgentContinueActions,
+  ticketAgentRetryActions,
+} from "./agent-pause.ts";
 import type {
   AgentAttemptResult,
   AgentDiagnostics,
@@ -17,12 +26,10 @@ import {
   type DiscoveryInput,
   revalidateActiveTicket,
 } from "./discovery.ts";
-import {
-  OperatorCancelled,
-  pauseForOperator,
-  supervisedAuditWrite,
-  workflowWrite,
-} from "./operations.ts";
+import { OperatorCancelled, workflowWrite } from "./operations.ts";
+import { appendOperation, discardAgentLogs } from "./operation-audit.ts";
+
+export { agentPauseMessage } from "./agent-pause.ts";
 
 export interface VerifiedHandoff {
   ticket: number;
@@ -60,51 +67,19 @@ export interface AttemptInput extends AgentOperationInput {
   reviewAgent?: AgentConfig;
 }
 
-function diagnosticValue(value: unknown): string {
-  if (typeof value !== "string" || value.length === 0) return "unavailable";
-  return value;
-}
-
-function assistantReplyValue(value: unknown): string {
-  if (typeof value !== "string" || value.length === 0)
-    return "no assistant reply captured";
-  return value;
-}
-
-export function agentPauseMessage(
-  prefix: string,
-  diagnostics: AgentDiagnostics | undefined,
-  result?: Pick<
-    AgentAttemptResult,
-    "outcome" | "summary" | "blocker" | "commits" | "checks"
-  >,
-): string {
-  const d = diagnostics ?? {};
-  const reply = assistantReplyValue(d.assistantReply);
-  const previous = d.assistantReply
-    ? ""
-    : d.previousAssistantReply
-      ? `\nPrevious complete assistant reply (no new reply): ${d.previousAssistantReply}`
-      : "";
-  return [
-    `${prefix}: ${diagnosticValue(d.error)}`,
-    `Operation: ${diagnosticValue(d.operation)}; error category: ${diagnosticValue(d.errorCategory)}`,
-    `Attempt: ${d.attemptOrdinal ?? "unavailable"}; retryable: ${d.retryable ?? "unavailable"}`,
-    `Attempt Result: ${diagnosticValue(result?.outcome)}; summary: ${diagnosticValue(result?.summary)}; blocker: ${diagnosticValue(result?.blocker)}`,
-    `Claimed commits: ${result?.commits ? JSON.stringify(result.commits) : "unavailable"}; checks: ${result?.checks ? JSON.stringify(result.checks) : "unavailable"}`,
-    `Run: ${diagnosticValue(d.runId)}; Agent Attempt: ${diagnosticValue(d.agentAttemptId)}`,
-    `Provider/model: ${diagnosticValue(d.provider)}/${diagnosticValue(d.model)}; working directory: ${diagnosticValue(d.workingDirectory)}`,
-    `Provider session: ${diagnosticValue(d.sessionId)}; resume: codex resume ${diagnosticValue(d.sessionId)}`,
-    `Assistant reply: ${reply}${previous}`,
-    `Diagnostic log: ${diagnosticValue(d.diagnosticLogPath)}`,
-    "Enter to continue, q to cancel, or provide recovery instructions.",
-  ].join("\n");
-}
-
 export interface AttemptBatchResult {
   outcome: "incomplete" | "cancelled" | "failed";
   reasons: string[];
   handoffs: VerifiedHandoff[];
+  tickets: TicketAttemptOutcome[];
+}
+
+export interface TicketAttemptOutcome {
+  ticket: number;
+  outcome:
+    "handoff" | "no_change" | "blocked" | "failed" | "cancelled" | "skipped";
+  detail: string;
+  handoff?: VerifiedHandoff;
 }
 
 type AgentStop =
@@ -114,6 +89,7 @@ type AgentStop =
 export type MaintenanceAttemptResult =
   | { outcome: "committed"; handoff: VerifiedHandoff }
   | AgentStop
+  | { outcome: "skipped"; reason: string }
   | {
       outcome: "boundary";
       boundary: Exclude<DeliveryBoundaryResult, { outcome: "ready" }>;
@@ -126,33 +102,6 @@ export class BoundaryStop extends Error {
     super(result.reason);
     this.result = result;
   }
-}
-
-export async function appendOperation(
-  input: AgentOperationInput,
-  event: Omit<AuditEvent, "result" | "error">,
-  result: string,
-  error: string | null,
-  diagnostics?: AgentDiagnostics,
-  transition?: string,
-): Promise<void> {
-  await supervisedAuditWrite(
-    () =>
-      input.audit.append({
-        ...event,
-        result,
-        error,
-        ...(diagnostics?.agentAttemptId === undefined
-          ? {}
-          : { agentAttemptId: diagnostics.agentAttemptId }),
-        ...(diagnostics?.diagnosticLogPath === undefined
-          ? {}
-          : { diagnosticLogPath: diagnostics.diagnosticLogPath }),
-        ...(diagnostics === undefined ? {} : { diagnostics }),
-        ...(transition === undefined ? {} : { transition }),
-      }),
-    input.operator,
-  );
 }
 
 export async function boundary(
@@ -232,7 +181,9 @@ export async function runAgentOperation(
   let continuationPrompt: string | undefined;
   let attemptNumber!: number;
   let attemptId = "";
+  let logFile = "";
   let event!: Omit<AuditEvent, "result" | "error">;
+  const pause = (message: string) => pauseAgentAttempt(input, event, message);
   for (;;) {
     await boundary(input, operation.ticket);
     const resumePrompt = continuationPrompt;
@@ -241,6 +192,12 @@ export async function runAgentOperation(
       operation.attemptCounter.value += 1;
       attemptNumber = operation.attemptCounter.value;
       attemptId = randomUUID();
+      logFile = agentLogFile(
+        input.projectDirectory,
+        operation.ticket,
+        agentLogStage(operation.phase),
+        `${input.runId}-${attemptId}`,
+      );
       event = input.event(
         operation.phase,
         "agent_attempt",
@@ -255,6 +212,7 @@ export async function runAgentOperation(
       undefined,
       resumePrompt === undefined ? undefined : "resumed",
     );
+    let resultDiagnostics: AgentDiagnostics | undefined;
     try {
       const gitDirectory = await mkdtemp(
         path.join(tmpdir(), "sandcastle-runner-git-"),
@@ -276,16 +234,13 @@ export async function runAgentOperation(
           model: operation.agent.model,
           effort: operation.agent.reasoningEffort,
           gitConfigGlobal,
-          logFile: path.join(
-            input.projectDirectory,
-            "logs",
-            `agent-${operation.ticket}-${attemptId}.log`,
-          ),
+          logFile,
           timeoutMs: input.timeoutMs,
           retryPolicy: input.retryPolicy,
           signal: operation.signal,
           ...(resumePrompt === undefined ? {} : { resumePrompt }),
         });
+        resultDiagnostics = result.diagnostics;
       } finally {
         await rm(gitDirectory, { recursive: true, force: true });
       }
@@ -303,17 +258,26 @@ export async function runAgentOperation(
           null,
           result.diagnostics,
         );
-        const response = await pauseForOperator(
-          input.audit,
-          event,
-          input.operator,
+        const decision = await pause(
           agentPauseMessage(
-            "Agent Attempt blocked",
+            "blocked",
             result.diagnostics,
+            operation.worktree,
             result,
+            ticketAgentContinueActions,
           ),
         );
-        continuationPrompt = response === "" ? "continue" : response;
+        if (decision.decision === "skip")
+          return await skipTicketAgentAttempt(
+            input,
+            operation.phase,
+            event,
+            operation.ticket,
+            attemptNumber,
+            result.blocker ?? result.summary,
+          );
+        continuationPrompt =
+          decision.decision === "retry" ? "continue" : decision.response;
         continue;
       }
       const observed = await input.gitWorkspace.inspect({
@@ -354,6 +318,14 @@ export async function runAgentOperation(
           operator: input.operator,
           retryPolicy: input.retryPolicy,
         });
+        if (operation.phase === "maintenance")
+          await discardAgentLogs(
+            input,
+            operation.phase,
+            operation.ticket,
+            agentLogStage(operation.phase),
+            attemptNumber,
+          );
         return {
           outcome: "no_change",
           reason: `${input.ticketKind ?? "Delivery Ticket"} ${operation.ticket} no_change: ${result.summary}`,
@@ -387,25 +359,30 @@ export async function runAgentOperation(
         null,
         result.diagnostics,
       );
+      await discardAgentLogs(
+        input,
+        operation.phase,
+        operation.ticket,
+        agentLogStage(operation.phase),
+        attemptNumber,
+      );
       return handoff;
     } catch (error) {
-      if (error instanceof OperatorCancelled) throw error;
+      if (error instanceof OperatorCancelled || error instanceof TicketSkipped)
+        throw error;
       if (error instanceof BoundaryStop) {
         await appendOperation(input, event, error.result.outcome, null);
         throw error;
       }
       const diagnostics: AgentDiagnostics = {
+        ...resultDiagnostics,
         error: error instanceof Error ? error.message : "Agent Attempt failed",
         errorCategory: "agent_attempt",
         attemptOrdinal: attemptNumber,
         retryable: true,
         agentAttemptId: attemptId,
         workingDirectory: operation.worktree,
-        diagnosticLogPath: path.join(
-          input.projectDirectory,
-          "logs",
-          `agent-${operation.ticket}-${attemptId}.log`,
-        ),
+        diagnosticLogPath: logFile,
       };
       Object.assign(
         diagnostics,
@@ -422,13 +399,26 @@ export async function runAgentOperation(
       );
       if (diagnostics.retryable === false) {
         for (;;) {
-          const response = await pauseForOperator(
-            input.audit,
-            event,
-            input.operator,
-            "Operation failed. Enter to retry, q to cancel, or supply a trusted result.",
+          const decision = await pause(
+            agentPauseMessage(
+              "failed",
+              diagnostics,
+              operation.worktree,
+              undefined,
+              ticketAgentRetryActions,
+            ),
           );
-          if (response === "") break;
+          if (decision.decision === "skip")
+            return await skipTicketAgentAttempt(
+              input,
+              operation.phase,
+              event,
+              operation.ticket,
+              attemptNumber,
+              diagnostics.error ?? "Agent Attempt failed",
+            );
+          if (decision.decision === "retry") break;
+          const response = decision.response;
           try {
             await boundary(input, operation.ticket);
             const handoff = trustedHandoff(
@@ -440,6 +430,13 @@ export async function runAgentOperation(
               operation.existingPrMetadata,
             );
             await appendOperation(input, event, "operator_override", null);
+            await discardAgentLogs(
+              input,
+              operation.phase,
+              operation.ticket,
+              agentLogStage(operation.phase),
+              attemptNumber,
+            );
             return handoff;
           } catch {
             // Invalid trusted results remain in the same Operator Pause.
@@ -448,16 +445,29 @@ export async function runAgentOperation(
         continue;
       }
       for (;;) {
-        const response = await pauseForOperator(
-          input.audit,
-          event,
-          input.operator,
-          agentPauseMessage("Agent Attempt failed", diagnostics),
+        const decision = await pause(
+          agentPauseMessage(
+            "failed",
+            diagnostics,
+            operation.worktree,
+            undefined,
+            ticketAgentContinueActions,
+          ),
         );
-        if (response === "") {
+        if (decision.decision === "skip")
+          return await skipTicketAgentAttempt(
+            input,
+            operation.phase,
+            event,
+            operation.ticket,
+            attemptNumber,
+            diagnostics.error ?? "Agent Attempt failed",
+          );
+        if (decision.decision === "retry") {
           continuationPrompt = "continue";
           break;
         }
+        const response = decision.response;
         try {
           await boundary(input, operation.ticket);
           const handoff = trustedHandoff(
@@ -469,6 +479,13 @@ export async function runAgentOperation(
             operation.existingPrMetadata,
           );
           await appendOperation(input, event, "operator_override", null);
+          await discardAgentLogs(
+            input,
+            operation.phase,
+            operation.ticket,
+            agentLogStage(operation.phase),
+            attemptNumber,
+          );
           return handoff;
         } catch {
           // Free-form input continues the same provider session.

@@ -31,6 +31,7 @@ import type {
   Tracker,
 } from "./run/contracts.ts";
 import { OperatorCancelled, supervisedAuditWrite } from "./run/operations.ts";
+import { renderRunReport } from "./run/report.ts";
 import { runProject, type RunSummary } from "./run/run.ts";
 import type { CleanupRecord } from "./run/cleanup.ts";
 
@@ -102,6 +103,11 @@ function startupProject(argv: string[]): string {
     !value.startsWith("--")
     ? value
     : "unknown";
+}
+
+function startupFailureMessage(reason: string | undefined): string {
+  const line = (reason ?? "startup failed").replace(/\s+/gu, " ").trim();
+  return `Startup failed: ${line || "startup failed"}`;
 }
 
 function parseTicket(value: unknown): number {
@@ -258,7 +264,7 @@ export async function executeCli(
         error instanceof Error ? error.message : "invalid CLI arguments",
       ],
     };
-    dependencies.operator.write(JSON.stringify(summary));
+    dependencies.operator.write(startupFailureMessage(summary.reasons[0]));
     return { exitCode: 1, summary, logPath: null };
   }
   let loaded: Awaited<ReturnType<typeof loadProject>>;
@@ -278,7 +284,7 @@ export async function executeCli(
         error instanceof Error ? error.message : "startup validation failed",
       ],
     };
-    dependencies.operator.write(JSON.stringify(summary));
+    dependencies.operator.write(startupFailureMessage(summary.reasons[0]));
     return { exitCode: 1, summary, logPath: null };
   }
   const standaloneIssueList =
@@ -293,7 +299,7 @@ export async function executeCli(
       targetBranch: "unresolved",
       reasons: ["issueList must not be empty for value-less --issue"],
     };
-    dependencies.operator.write(JSON.stringify(summary));
+    dependencies.operator.write(startupFailureMessage(summary.reasons[0]));
     return { exitCode: 1, summary, logPath: null };
   }
   const effectiveParentTicket = parentTicket ?? standaloneIssueList?.[0] ?? 0;
@@ -330,11 +336,6 @@ export async function executeCli(
       );
     }
   } catch (error) {
-    if (error instanceof InvalidRecoverySnapshot) {
-      await dependencies.operator.pause(
-        `Recovery state is invalid: ${error.message}. Fix the snapshot and retry.`,
-      );
-    }
     const summary: RunSummary = {
       outcome: "failed",
       project,
@@ -344,7 +345,7 @@ export async function executeCli(
         error instanceof Error ? error.message : "recovery startup failed",
       ],
     };
-    dependencies.operator.write(JSON.stringify(summary));
+    dependencies.operator.write(startupFailureMessage(summary.reasons[0]));
     return { exitCode: 1, summary, logPath: null };
   }
   let currentSnapshot: RecoverySnapshot = {
@@ -375,7 +376,21 @@ export async function executeCli(
     if (paths !== undefined)
       await writeRecoverySnapshot(paths.snapshot, snapshot);
   };
-  await writeSnapshot(currentSnapshot);
+  try {
+    await writeSnapshot(currentSnapshot);
+  } catch (error) {
+    const summary: RunSummary = {
+      outcome: "failed",
+      project,
+      parentTicket: effectiveParentTicket,
+      targetBranch: loaded.config.targetBranch ?? "unresolved",
+      reasons: [
+        error instanceof Error ? error.message : "recovery startup failed",
+      ],
+    };
+    dependencies.operator.write(startupFailureMessage(summary.reasons[0]));
+    return { exitCode: 1, summary, logPath: null };
+  }
   const audit = new AuditLog(
     loaded.directory,
     timestamp,
@@ -389,35 +404,20 @@ export async function executeCli(
   const gitWorkspace =
     dependencies.gitWorkspace ?? new LocalGitWorkspace(loaded.codeHostToken);
   const agentExecutor =
-    dependencies.agentExecutor ??
-    new SandcastleAgentExecutor(
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      loaded.config.disableWebSearch,
-    );
-  let publicationWrite = Promise.resolve();
-  const persistPublication = async (
-    ticket: number,
-    intent: PublicationIntent | null,
+    dependencies.agentExecutor ?? new SandcastleAgentExecutor();
+  let snapshotWrite = Promise.resolve();
+  const persistSnapshotUpdate = async (
+    update: (snapshot: RecoverySnapshot) => RecoverySnapshot,
   ) => {
-    const previousWrite = publicationWrite;
+    const previousWrite = snapshotWrite;
     let releaseWrite!: () => void;
-    publicationWrite = new Promise<void>((resolve) => {
+    snapshotWrite = new Promise<void>((resolve) => {
       releaseWrite = resolve;
     });
     await previousWrite;
     try {
-      const publications = (currentSnapshot.publications ?? []).filter(
-        (publication) => publication.ticket !== ticket,
-      );
-      if (intent !== null) publications.push(intent);
-      const next = { ...currentSnapshot };
-      if (publications.length === 0) delete next.publications;
-      else next.publications = publications;
       const nextSnapshot = {
-        ...next,
+        ...update(currentSnapshot),
         updatedAt: dependencies.clock.now().toISOString(),
       };
       await writeSnapshot(nextSnapshot);
@@ -426,6 +426,20 @@ export async function executeCli(
       releaseWrite();
     }
   };
+  const persistPublication = (
+    ticket: number,
+    intent: PublicationIntent | null,
+  ) =>
+    persistSnapshotUpdate((snapshot) => {
+      const publications = (snapshot.publications ?? []).filter(
+        (publication) => publication.ticket !== ticket,
+      );
+      if (intent !== null) publications.push(intent);
+      const next = { ...snapshot };
+      if (publications.length === 0) delete next.publications;
+      else next.publications = publications;
+      return next;
+    });
   const persistBatch = async (
     batch: number[],
     completed: NonNullable<RecoverySnapshot["completedDeliveries"]>,
@@ -443,24 +457,27 @@ export async function executeCli(
     await writeSnapshot(nextSnapshot);
     currentSnapshot = nextSnapshot;
   };
-  const persistCleanup = async (ticket: number, record: CleanupRecord) => {
-    const nextSnapshot = {
-      ...currentSnapshot,
+  const persistCleanup = (ticket: number, record: CleanupRecord) =>
+    persistSnapshotUpdate((snapshot) => ({
+      ...snapshot,
       terminalCleanup: {
-        ...(currentSnapshot.terminalCleanup ?? {}),
+        ...(snapshot.terminalCleanup ?? {}),
         [ticket]: record,
       },
-      updatedAt: dependencies.clock.now().toISOString(),
-    };
-    await writeSnapshot(nextSnapshot);
-    currentSnapshot = nextSnapshot;
-  };
-  const persistMaintenance = async (state: MaintenanceState) => {
-    const nextSnapshot = {
-      ...currentSnapshot,
-      maintenance: state,
-      updatedAt: dependencies.clock.now().toISOString(),
-    };
+    }));
+  const persistMaintenance = async (state: MaintenanceState | null) => {
+    const nextSnapshot =
+      state === null
+        ? {
+            ...withoutMaintenanceRecovery(currentSnapshot),
+            activeBatch: [],
+            updatedAt: dependencies.clock.now().toISOString(),
+          }
+        : {
+            ...currentSnapshot,
+            maintenance: state,
+            updatedAt: dependencies.clock.now().toISOString(),
+          };
     await writeSnapshot(nextSnapshot);
     currentSnapshot = nextSnapshot;
   };
@@ -590,7 +607,7 @@ export async function executeCli(
     targetBranch: summary.targetBranch,
     updatedAt: dependencies.clock.now().toISOString(),
   });
-  dependencies.operator.write(JSON.stringify(summary));
+  dependencies.operator.write(renderRunReport(summary, audit.path));
   return {
     exitCode:
       summary.outcome === "succeeded" || summary.outcome === "no_work" ? 0 : 1,

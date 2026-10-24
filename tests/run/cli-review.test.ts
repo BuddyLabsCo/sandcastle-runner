@@ -69,6 +69,7 @@ test("a clean fresh-context review gates publication and preserves implementatio
     sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     message: "feat: implementation",
   };
+  let implementationInput: Parameters<AgentExecutor["execute"]>[0] | undefined;
   let reviewInput: Parameters<AgentExecutor["executeReview"]>[0] | undefined;
   let branch = "";
   const operations: string[] = [];
@@ -133,6 +134,7 @@ test("a clean fresh-context review gates publication and preserves implementatio
       },
       agentExecutor: {
         async execute(input) {
+          implementationInput = input;
           return delivery.agentExecutor.execute!(input);
         },
         async executeReview(input) {
@@ -177,6 +179,7 @@ test("a clean fresh-context review gates publication and preserves implementatio
   );
   assert.equal(reviewInput.base, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
   assert.equal(reviewInput.branch, branch);
+  assert.equal(reviewInput.worktree, implementationInput?.worktree);
   assert.deepEqual(reviewHandoff.deliveryTicket, {
     source: "https://github.com/owner/repo/issues/9",
     title: "Delivery ticket",
@@ -284,6 +287,7 @@ test("blocked, dirty, or invalid review pauses before publication", async () => 
     const delivery = createCommittedDelivery(9);
     let pushes = 0;
     let pauses = 0;
+    let pauseMessage = "";
     const result = await executeCli(
       ["run", "--project", "demo", "--parent", "8"],
       createCliDependencies(root, {
@@ -326,6 +330,7 @@ test("blocked, dirty, or invalid review pauses before publication", async () => 
               : {
                   outcome: "passed",
                   summary: "Axes pass but files are dirty.",
+                  diagnostics: { sessionId: "review-session" },
                   standards: { verdict: "passed", unresolved_findings: [] },
                   spec: { verdict: "passed", unresolved_findings: [] },
                   checks: [],
@@ -334,7 +339,8 @@ test("blocked, dirty, or invalid review pauses before publication", async () => 
           },
         },
         operator: {
-          async pause() {
+          async pause(message) {
+            pauseMessage = message;
             pauses += 1;
             return "q";
           },
@@ -344,6 +350,11 @@ test("blocked, dirty, or invalid review pauses before publication", async () => 
     assert.equal(result.summary.outcome, "cancelled");
     assert.equal(pauses, 1);
     assert.equal(pushes, 0);
+    if (failure === "dirty") {
+      assert.match(pauseMessage, /^Provider session: review-session$/mu);
+      assert.match(pauseMessage, /^Resume command: codex resume -C /mu);
+      assert.match(pauseMessage, /^Reason: Review left a dirty Worktree$/mu);
+    }
   }
 });
 

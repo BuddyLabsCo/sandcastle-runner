@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
@@ -7,6 +7,7 @@ import { cleanupTempRoots } from "../support/temp-cleanup.ts";
 import { createCliDependencies } from "../support/cli-dependencies.ts";
 import { createProject } from "../support/cli-project.ts";
 import { executeCli } from "../../src/cli.ts";
+import { recoveryPaths } from "../../src/recovery.ts";
 
 test.afterEach(cleanupTempRoots);
 
@@ -388,6 +389,7 @@ test("startup validation errors return a failed summary without workflow or paus
   const root = await createProject();
   let workflowCalls = 0;
   let pauseCalls = 0;
+  const messages: string[] = [];
   const result = await executeCli(
     ["run", "--project", "demo", "--parent", "8"],
     createCliDependencies(root, {
@@ -412,6 +414,9 @@ test("startup validation errors return a failed summary without workflow or paus
         },
       },
       operator: {
+        write(message) {
+          messages.push(message);
+        },
         async pause() {
           pauseCalls += 1;
           return "q";
@@ -426,6 +431,55 @@ test("startup validation errors return a failed summary without workflow or paus
   assert.equal(result.logPath, null);
   assert.equal(workflowCalls, 0);
   assert.equal(pauseCalls, 0);
+  assert.equal(messages.length, 1);
+  assert.match(
+    messages[0]!,
+    /^Startup failed: missing credential TEST_GH_TOKEN$/u,
+  );
+  assert.doesNotMatch(messages[0]!, /^\{/u);
+});
+
+test("malformed Recovery Snapshots fail startup with one readable error", async () => {
+  const root = await createProject();
+  const snapshot = recoveryPaths(
+    path.join(root, "projects", "demo"),
+    8,
+  ).snapshot;
+  await mkdir(path.dirname(snapshot), { recursive: true });
+  await writeFile(snapshot, "{not-json", "utf8");
+  let workflowCalls = 0;
+  let pauseCalls = 0;
+  const messages: string[] = [];
+
+  const result = await executeCli(
+    ["run", "--project", "demo", "--parent", "8"],
+    createCliDependencies(root, {
+      tracker: {
+        async getParent() {
+          workflowCalls += 1;
+          throw new Error("must not run");
+        },
+      },
+      operator: {
+        write(message) {
+          messages.push(message);
+        },
+        async pause() {
+          pauseCalls += 1;
+          return "q";
+        },
+      },
+    }),
+  );
+
+  assert.equal(result.summary.outcome, "failed");
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.logPath, null);
+  assert.equal(workflowCalls, 0);
+  assert.equal(pauseCalls, 0);
+  assert.deepEqual(messages, [
+    "Startup failed: recovery snapshot is malformed JSON",
+  ]);
 });
 
 test("an empty required prompt fails startup before workflow operations", async () => {

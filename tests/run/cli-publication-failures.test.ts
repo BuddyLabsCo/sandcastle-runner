@@ -496,11 +496,14 @@ test("false commit claims enter Operator Pause and q cancels active Sandcastle r
             blocker: null,
             pr_title: "feat: claimed commit",
             pr_body: "Claimed implementation.",
+            diagnostics: { sessionId: "implementation-session" },
           };
         },
       },
       operator: {
-        async pause() {
+        async pause(message) {
+          assert.match(message, /^Provider session: implementation-session$/mu);
+          assert.match(message, /^Reason: .*dirty Git state$/mu);
           return "q";
         },
       },

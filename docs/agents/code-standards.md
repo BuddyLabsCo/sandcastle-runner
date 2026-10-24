@@ -36,9 +36,13 @@ Place these modules under `src/run/`. Each owns a cohesive workflow responsibili
 | Module | Code that belongs here |
 | --- | --- |
 | `run.ts` | Public Run entry point; Run-local state; Batch concurrency, all-ready barrier, ordered integration, rescans, maintenance scheduling, and terminal outcomes. |
+| `report.ts` | Ordered per-ticket Run outcome presentation and final operator report rendering. |
 | `run-input.ts` / `run-batch.ts` | Run contracts and the wiring from a reserved Batch into Agent Attempts. |
 | `discovery.ts` / `discovery-state.ts` | Eligibility, Reservations, Parent/child/blocker reads and revalidation, exhaustion, and Parent closeout eligibility. |
 | `attempt.ts` / `agent-operation.ts` / `review-attempt.ts` | Worktree preparation, per-Attempt Git configuration, prompt metadata, Agent and Review Attempt execution, and Verified Handoff decisions using observed Git state. Reused for implementation, repairs, and maintenance. |
+| `agent-pause.ts` | Agent Pause presentation, ticket-bound skip decisions, and audit-only disposal of skipped Agent logs. |
+| `agent-logs.ts` | Stage-specific Agent Attempt log naming, owned-stage cleanup, and deletion-failure evidence. |
+| `operation-audit.ts` | Workflow operation audit appends and audit-only Agent log cleanup failures. |
 | `pull-request.ts` / `pull-request-core.ts` | Publication/readiness, integration, merge confirmation, and Ticket Closure Policy. It never decides Batch order. |
 | `pull-request-recovery.ts` / `pull-request-repair.ts` | Durable publication recovery, required-check polling, and CI/conflict repair budgets. |
 | `maintenance.ts` | One maintenance occurrence: ticket creation, documentation attempt, ordinary PR lifecycle reuse, or direct no-change closure. Label-trigger scheduling stays in `run.ts`. |
@@ -64,7 +68,7 @@ Under `src/adapters/`, implement only operations the current implementation need
 | `github-code-host.ts` / `CodeHost` | Repository metadata, PRs, required checks, merge requests, and queue observations. |
 | `git-workspace.ts` / `GitWorkspace` | Fetch, Worktree creation/inspection/closure, commits, working-tree evidence, and push. |
 | `sandcastle.ts` / `AgentExecutor` | Sandcastle invocation, streaming, session continuation, timeout/abort, and settlement. Delegate process lifecycle to Sandcastle. |
-| `codex-agent.ts` | Codex provider construction. Forwards configured model and effort verbatim, applies the optional web-search override, and isolates the Sandcastle dependency's provider typing. |
+| `codex-agent.ts` | Codex provider construction. Forwards configured model and effort verbatim and isolates the Sandcastle dependency's provider typing. |
 | `codex-session-name.ts` | Names an already-probed Codex session through the app-server handshake and `thread/name/set`; owns the short-lived protocol process and its timeout/cancellation cleanup. |
 | `process-errors.ts` | External command startup diagnostics, Agent Attempt output errors, and Codex process-failure classification. |
 | `sandcastle-output.ts` | Agent and Review Attempt output schemas, validation, and prompt placeholder replacement. |

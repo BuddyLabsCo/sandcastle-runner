@@ -9,6 +9,28 @@ export interface CleanupRecord {
   error?: string;
 }
 
+export interface ReplacedWorkspaceCleanup {
+  removedWorktrees: Set<string>;
+  deletedBranches: Set<string>;
+}
+
+export async function removeReplacedWorkspace(
+  gitWorkspace: GitWorkspace,
+  checkout: string,
+  workspace: { worktree: string; branch: string },
+  cleanup: ReplacedWorkspaceCleanup,
+): Promise<void> {
+  if (!gitWorkspace.removeWorktree || !gitWorkspace.deleteBranch) return;
+  if (!cleanup.removedWorktrees.has(workspace.worktree)) {
+    await gitWorkspace.removeWorktree(checkout, workspace.worktree);
+    cleanup.removedWorktrees.add(workspace.worktree);
+  }
+  if (!cleanup.deletedBranches.has(workspace.branch)) {
+    await gitWorkspace.deleteBranch(checkout, workspace.branch);
+    cleanup.deletedBranches.add(workspace.branch);
+  }
+}
+
 export function matchingWorktrees(
   entries: RegisteredWorktree[],
   repository: string,
@@ -43,12 +65,8 @@ export async function cleanupTicketWorktrees(
   ) {
     return { status: "cleaned", candidates: [] };
   }
-  const candidates = matchingWorktrees(
-    await gitWorkspace.listWorktrees(checkout),
-    repository,
-    root,
-    ticket,
-  );
+  const registered = await gitWorkspace.listWorktrees(checkout);
+  const candidates = matchingWorktrees(registered, repository, root, ticket);
   const evidence = candidates.map(
     ({ worktree, branch }) => `${worktree}:${branch}`,
   );
@@ -77,6 +95,15 @@ export async function cleanupTicketWorktrees(
   }
   for (const candidate of prior) {
     if (currentBranches.has(candidate.branch)) continue;
+    if (
+      registered.some(
+        (entry) =>
+          path.resolve(entry.repository) === path.resolve(repository) &&
+          path.resolve(entry.worktree) === path.resolve(candidate.worktree) &&
+          entry.branch === candidate.branch,
+      )
+    )
+      await gitWorkspace.removeWorktree(checkout, candidate.worktree);
     await gitWorkspace.deleteBranch(checkout, candidate.branch);
   }
   return {

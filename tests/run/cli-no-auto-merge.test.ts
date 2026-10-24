@@ -218,7 +218,7 @@ test("no-auto-merge keeps Operator Pause behavior when CI repair fails", async (
   );
 
   assert.equal(result.summary.outcome, "cancelled");
-  assert.match(pauses[0] ?? "", /Agent Attempt blocked/u);
+  assert.match(pauses[0] ?? "", /^Outcome: blocked$/mu);
   assert.equal(agentCalls, 2);
   assert.equal(mergeRequests, 0);
 });

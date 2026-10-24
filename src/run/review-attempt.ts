@@ -10,19 +10,25 @@ import type {
   ReviewAttemptResult,
   Ticket,
 } from "./contracts.ts";
+import { agentLogFile } from "./agent-logs.ts";
+import {
+  agentPauseMessage,
+  skipTicketAgentAttempt,
+  TicketSkipped,
+  ticketAgentContinueActions,
+} from "./agent-pause.ts";
 import {
   externalRead,
   OperatorCancelled,
-  pauseForOperator,
+  pauseTicketAgentForOperator,
 } from "./operations.ts";
 import {
-  agentPauseMessage,
-  appendOperation,
   boundary,
   BoundaryStop,
   type AttemptInput,
   type VerifiedHandoff,
 } from "./agent-operation.ts";
+import { appendOperation, discardAgentLogs } from "./operation-audit.ts";
 
 function snapshot(
   ticket: Ticket,
@@ -115,12 +121,8 @@ export async function reviewHandoff(
   let continuationPrompt: string | undefined;
   let attemptNumber!: number;
   let attemptId = "";
+  let logFile = "";
   let event!: Omit<AuditEvent, "result" | "error">;
-  const logFile = path.join(
-    input.projectDirectory,
-    "logs",
-    `review-${handoff.ticket}-${randomUUID()}.log`,
-  );
   for (;;) {
     await boundary(input, handoff.ticket);
     const resumePrompt = continuationPrompt;
@@ -129,6 +131,12 @@ export async function reviewHandoff(
     if (resumePrompt === undefined) {
       attemptNumber = (attemptNumber || 0) + 1;
       attemptId = randomUUID();
+      logFile = agentLogFile(
+        input.projectDirectory,
+        handoff.ticket,
+        "review",
+        `${input.runId}-${attemptId}`,
+      );
       event = input.event(
         "review",
         "agent_attempt",
@@ -143,6 +151,7 @@ export async function reviewHandoff(
       undefined,
       resumePrompt === undefined ? undefined : "resumed",
     );
+    let resultDiagnostics: AgentDiagnostics | undefined;
     try {
       const [deliveryTicket, governingSpecification, standardsSources] =
         await Promise.all([
@@ -198,6 +207,7 @@ export async function reviewHandoff(
           signal,
           ...(resumePrompt === undefined ? {} : { resumePrompt }),
         });
+        resultDiagnostics = result.diagnostics;
       } finally {
         await rm(gitDirectory, { recursive: true, force: true });
       }
@@ -214,23 +224,32 @@ export async function reviewHandoff(
           null,
           result.diagnostics,
         );
-        const response = await pauseForOperator(
+        const decision = await pauseTicketAgentForOperator(
           input.audit,
           event,
           input.operator,
           agentPauseMessage(
-            "Review Agent Attempt blocked",
+            "blocked",
             result.diagnostics,
+            handoff.worktree,
             {
-              outcome: result.outcome,
               summary: result.summary,
               blocker: result.blocker,
-              commits: [],
-              checks: result.checks,
             },
+            ticketAgentContinueActions,
           ),
         );
-        continuationPrompt = response === "" ? "continue" : response;
+        if (decision.decision === "skip")
+          return await skipTicketAgentAttempt(
+            input,
+            "review",
+            event,
+            handoff.ticket,
+            attemptNumber,
+            result.blocker ?? result.summary,
+          );
+        continuationPrompt =
+          decision.decision === "retry" ? "continue" : decision.response;
         continue;
       }
       const reviewed = await acceptReview(
@@ -247,14 +266,23 @@ export async function reviewHandoff(
         null,
         result.diagnostics,
       );
+      await discardAgentLogs(
+        input,
+        "review",
+        handoff.ticket,
+        "review",
+        attemptNumber,
+      );
       return reviewed;
     } catch (error) {
-      if (error instanceof OperatorCancelled) throw error;
+      if (error instanceof OperatorCancelled || error instanceof TicketSkipped)
+        throw error;
       if (error instanceof BoundaryStop) {
         await appendOperation(input, event, error.result.outcome, null);
         throw error;
       }
       const diagnostics: AgentDiagnostics = {
+        ...resultDiagnostics,
         error:
           error instanceof Error
             ? error.message
@@ -279,13 +307,29 @@ export async function reviewHandoff(
         diagnostics,
       );
       for (;;) {
-        const response = await pauseForOperator(
+        const decision = await pauseTicketAgentForOperator(
           input.audit,
           event,
           input.operator,
-          agentPauseMessage("Review Agent Attempt failed", diagnostics),
+          agentPauseMessage(
+            "failed",
+            diagnostics,
+            handoff.worktree,
+            undefined,
+            ticketAgentContinueActions,
+          ),
         );
-        continuationPrompt = response === "" ? "continue" : response;
+        if (decision.decision === "skip")
+          return await skipTicketAgentAttempt(
+            input,
+            "review",
+            event,
+            handoff.ticket,
+            attemptNumber,
+            diagnostics.error ?? "Review Agent Attempt failed",
+          );
+        continuationPrompt =
+          decision.decision === "retry" ? "continue" : decision.response;
         break;
       }
     }

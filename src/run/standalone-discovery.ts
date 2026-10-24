@@ -112,7 +112,6 @@ export async function discoverAndReserveStandalone(
       (checkpoint.ticket.assignees ?? []).includes(input.runnerAccount),
       (checkpoint.ticket.labels ?? []).includes(input.reservationLabel),
     );
-    await input.cleanupTerminal?.(checkpoint.ticket.number);
     return checkpoint.ticket.stateReason === "completed" ||
       checkpoint.ticket.stateReason === "not_planned"
       ? { outcome: "no_work", reasons: [] }

@@ -54,7 +54,6 @@ test("SandcastleAgentExecutor retries session probe with exponential backoff", a
     },
     async () => {},
     async () => {},
-    undefined,
     async () => {},
   );
   await executor.execute(input());
@@ -92,7 +91,6 @@ test("SandcastleAgentExecutor uses the configured operation retry policy", async
     },
     async () => {},
     async () => {},
-    undefined,
     async () => {},
   );
   await executor.execute({
@@ -117,7 +115,6 @@ test("session probe exhaustion requests a non-agent operator pause", async () =>
       waits.push(milliseconds);
     },
     async () => {},
-    undefined,
     undefined,
     async () => {},
   );
@@ -165,7 +162,6 @@ test("SandcastleAgentExecutor recovers a missing output tag with continue", asyn
     async (_logFile, message) => {
       statuses.push(message);
     },
-    undefined,
     async () => {},
   );
   await executor.execute(input());
@@ -204,7 +200,6 @@ test("SandcastleAgentExecutor recovers a process failure with continue", async (
     },
     async () => {},
     async () => {},
-    undefined,
     async () => {},
   );
 
@@ -232,7 +227,6 @@ test("SandcastleAgentExecutor stops process recovery when total timeout expires"
     async () => new Promise((resolve) => setTimeout(resolve, 5)),
     async () => {},
     async () => {},
-    undefined,
     async () => {},
   );
 
@@ -271,7 +265,6 @@ test("missing output tag with zero agent retries does not continue", async () =>
     },
     async () => {},
     async () => {},
-    undefined,
     async () => {},
   );
   await assert.rejects(
@@ -315,7 +308,6 @@ test("SandcastleAgentExecutor logs every prompt it sends", async () => {
       logged.push(prompt);
     },
     undefined,
-    undefined,
     async () => {},
   );
   await executor.execute(input());
@@ -351,7 +343,6 @@ test("prompt logs separate probe and real prompts", async () => {
             );
       },
       async () => {},
-      undefined,
       undefined,
       undefined,
       async () => {},
@@ -483,7 +474,6 @@ test("SandcastleAgentExecutor accepts a valid final retry payload from an output
     async (_logFile, message) => {
       statuses.push(message);
     },
-    undefined,
     async () => {},
   );
 

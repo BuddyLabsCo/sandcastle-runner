@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 
 import { registerTempRoot } from "../support/temp-cleanup.ts";
 
 import { LocalGitWorkspace } from "../../src/adapters/git-workspace.ts";
+import { cleanupTicketWorktrees } from "../../src/run/cleanup.ts";
 
 test("LocalGitWorkspace fetches an exact base and creates and inspects only the requested Worktree", async () => {
   const root = registerTempRoot(
@@ -239,4 +242,90 @@ test("terminal cleanup matches only owned worktrees with a bounded ticket prefix
     ),
     ["ticket-5", "ticket-5-ci-1"],
   );
+});
+
+test("terminal cleanup retries after deleting one of several local Git branches", async () => {
+  const root = registerTempRoot(
+    await realpath(await mkdtemp(path.join(tmpdir(), "git-cleanup-retry-"))),
+  );
+  const checkout = path.join(root, "repo");
+  const git = promisify(execFile);
+  await git("git", ["init", checkout]);
+  await git("git", [
+    "-C",
+    checkout,
+    "-c",
+    "user.name=Test",
+    "-c",
+    "user.email=test@example.test",
+    "-c",
+    "commit.gpgsign=false",
+    "commit",
+    "--allow-empty",
+    "-m",
+    "initial",
+  ]);
+  const { stdout: head } = await git("git", [
+    "-C",
+    checkout,
+    "rev-parse",
+    "HEAD",
+  ]);
+  const workspace = new LocalGitWorkspace("unused");
+  const worktreeRoot = path.join(root, "worktrees", "run-id");
+  const worktrees = ["ticket-9", "ticket-9-ci-1"].map((name) => ({
+    worktree: path.join(worktreeRoot, name),
+    branch: `sandcastle/run-id/${name}`,
+  }));
+  try {
+    for (const entry of worktrees)
+      await workspace.createWorktree({ checkout, ...entry, base: head.trim() });
+    const removeWorktree = workspace.removeWorktree.bind(workspace);
+    let failRemoval = true;
+    workspace.removeWorktree = async (repository, worktree) => {
+      if (worktree === worktrees[1]!.worktree && failRemoval) {
+        failRemoval = false;
+        throw new Error("Worktree temporarily busy");
+      }
+      await removeWorktree(repository, worktree);
+    };
+    let pending: string[] = [];
+    await assert.rejects(
+      cleanupTicketWorktrees(
+        workspace,
+        checkout,
+        checkout,
+        worktreeRoot,
+        9,
+        async (candidates) => {
+          pending = candidates;
+        },
+      ),
+      /Worktree temporarily busy/u,
+    );
+    const result = await cleanupTicketWorktrees(
+      workspace,
+      checkout,
+      checkout,
+      worktreeRoot,
+      9,
+      undefined,
+      pending,
+    );
+    assert.equal(result.status, "cleaned");
+    assert.deepEqual(
+      (await workspace.listWorktrees(checkout)).map(({ worktree }) => worktree),
+      [checkout],
+    );
+    const { stdout: branches } = await git("git", [
+      "-C",
+      checkout,
+      "for-each-ref",
+      "--format=%(refname)",
+      "refs/heads/sandcastle/",
+    ]);
+    assert.equal(branches, "");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

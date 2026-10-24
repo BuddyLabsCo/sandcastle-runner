@@ -2,7 +2,6 @@
 
 repository: BuddyLabsCo/sandcastle-runner
 checkout: /home/xiakeng/Desktop/workspace/sandcastle-runner-checkout/
-disableWebSearch: true
 issueList: []
 maxBatchSize: 2
 targetBranch: main
