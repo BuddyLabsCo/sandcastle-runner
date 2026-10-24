@@ -172,7 +172,7 @@ Maintenance Ticket, followed by any remaining discovery reasons, Retained
 Worktrees, and the Audit Log path. `succeeded` and `no_work` exit with status 0;
 `incomplete`, `cancelled`, and `failed` exit non-zero.
 
-By default, a standalone Run requests a merge after its Pull Request is CI-ready. With `--no-auto-merge`, the Runner creates and validates the Pull Request, then preserves the Reservation, Worktree, and Recovery Snapshot without adding the ticket to completed deliveries. Explicit auto-merge flags require a value-bearing `--issue <issue-number>` and accept no value.
+By default, a standalone Run requests a merge after its Pull Request is CI-ready. With `--no-auto-merge`, the Runner creates and validates the Pull Request, then removes the Worktrees and local branches created by the current Run for that ticket, along with its Agent logs. It retains the remote branch, Reservation, Pull Request, and Recovery Snapshot, reports `PR ready`, and requests neither merge nor closure. Explicit auto-merge flags require a value-bearing `--issue <issue-number>` and accept no value.
 
 `--document` runs one fresh, complete Documentation Maintenance occurrence for the selected Project without a Parent Ticket or Delivery Ticket scope. It ignores `issueList`, does not resume prior maintenance recovery, and may be used when the automatic trigger label is empty.
 

@@ -197,7 +197,7 @@ export async function runAgentOperation(
         input.projectDirectory,
         operation.ticket,
         agentLogStage(operation.phase),
-        attemptId,
+        `${input.runId}-${attemptId}`,
       );
       event = input.event(
         operation.phase,

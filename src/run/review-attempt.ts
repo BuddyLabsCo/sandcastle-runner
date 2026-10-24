@@ -135,7 +135,7 @@ export async function reviewHandoff(
         input.projectDirectory,
         handoff.ticket,
         "review",
-        attemptId,
+        `${input.runId}-${attemptId}`,
       );
       event = input.event(
         "review",
