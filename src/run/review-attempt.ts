@@ -10,6 +10,7 @@ import type {
   ReviewAttemptResult,
   Ticket,
 } from "./contracts.ts";
+import { agentLogFile } from "./agent-logs.ts";
 import {
   externalRead,
   OperatorCancelled,
@@ -17,12 +18,12 @@ import {
 } from "./operations.ts";
 import {
   agentPauseMessage,
-  appendOperation,
   boundary,
   BoundaryStop,
   type AttemptInput,
   type VerifiedHandoff,
 } from "./agent-operation.ts";
+import { appendOperation, discardAgentLogs } from "./operation-audit.ts";
 
 function snapshot(
   ticket: Ticket,
@@ -115,12 +116,8 @@ export async function reviewHandoff(
   let continuationPrompt: string | undefined;
   let attemptNumber!: number;
   let attemptId = "";
+  let logFile = "";
   let event!: Omit<AuditEvent, "result" | "error">;
-  const logFile = path.join(
-    input.projectDirectory,
-    "logs",
-    `review-${handoff.ticket}-${randomUUID()}.log`,
-  );
   for (;;) {
     await boundary(input, handoff.ticket);
     const resumePrompt = continuationPrompt;
@@ -129,6 +126,12 @@ export async function reviewHandoff(
     if (resumePrompt === undefined) {
       attemptNumber = (attemptNumber || 0) + 1;
       attemptId = randomUUID();
+      logFile = agentLogFile(
+        input.projectDirectory,
+        handoff.ticket,
+        "review",
+        attemptId,
+      );
       event = input.event(
         "review",
         "agent_attempt",
@@ -241,6 +244,13 @@ export async function reviewHandoff(
         "succeeded",
         null,
         result.diagnostics,
+      );
+      await discardAgentLogs(
+        input,
+        "review",
+        handoff.ticket,
+        "review",
+        attemptNumber,
       );
       return reviewed;
     } catch (error) {

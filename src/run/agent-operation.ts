@@ -5,6 +5,7 @@ import path from "node:path";
 
 import type { AuditEvent } from "../audit.ts";
 import type { AgentConfig } from "../config.ts";
+import { agentLogFile, agentLogStage } from "./agent-logs.ts";
 import type {
   AgentAttemptResult,
   AgentDiagnostics,
@@ -20,9 +21,9 @@ import {
 import {
   OperatorCancelled,
   pauseForOperator,
-  supervisedAuditWrite,
   workflowWrite,
 } from "./operations.ts";
+import { appendOperation, discardAgentLogs } from "./operation-audit.ts";
 
 export interface VerifiedHandoff {
   ticket: number;
@@ -134,33 +135,6 @@ export class BoundaryStop extends Error {
   }
 }
 
-export async function appendOperation(
-  input: AgentOperationInput,
-  event: Omit<AuditEvent, "result" | "error">,
-  result: string,
-  error: string | null,
-  diagnostics?: AgentDiagnostics,
-  transition?: string,
-): Promise<void> {
-  await supervisedAuditWrite(
-    () =>
-      input.audit.append({
-        ...event,
-        result,
-        error,
-        ...(diagnostics?.agentAttemptId === undefined
-          ? {}
-          : { agentAttemptId: diagnostics.agentAttemptId }),
-        ...(diagnostics?.diagnosticLogPath === undefined
-          ? {}
-          : { diagnosticLogPath: diagnostics.diagnosticLogPath }),
-        ...(diagnostics === undefined ? {} : { diagnostics }),
-        ...(transition === undefined ? {} : { transition }),
-      }),
-    input.operator,
-  );
-}
-
 export async function boundary(
   input: AgentOperationInput,
   ticket: number,
@@ -238,6 +212,7 @@ export async function runAgentOperation(
   let continuationPrompt: string | undefined;
   let attemptNumber!: number;
   let attemptId = "";
+  let logFile = "";
   let event!: Omit<AuditEvent, "result" | "error">;
   for (;;) {
     await boundary(input, operation.ticket);
@@ -247,6 +222,12 @@ export async function runAgentOperation(
       operation.attemptCounter.value += 1;
       attemptNumber = operation.attemptCounter.value;
       attemptId = randomUUID();
+      logFile = agentLogFile(
+        input.projectDirectory,
+        operation.ticket,
+        agentLogStage(operation.phase),
+        attemptId,
+      );
       event = input.event(
         operation.phase,
         "agent_attempt",
@@ -283,11 +264,7 @@ export async function runAgentOperation(
           model: operation.agent.model,
           effort: operation.agent.reasoningEffort,
           gitConfigGlobal,
-          logFile: path.join(
-            input.projectDirectory,
-            "logs",
-            `agent-${operation.ticket}-${attemptId}.log`,
-          ),
+          logFile,
           timeoutMs: input.timeoutMs,
           retryPolicy: input.retryPolicy,
           signal: operation.signal,
@@ -363,6 +340,14 @@ export async function runAgentOperation(
           operator: input.operator,
           retryPolicy: input.retryPolicy,
         });
+        if (operation.phase === "maintenance")
+          await discardAgentLogs(
+            input,
+            operation.phase,
+            operation.ticket,
+            agentLogStage(operation.phase),
+            attemptNumber,
+          );
         return {
           outcome: "no_change",
           reason: `${input.ticketKind ?? "Delivery Ticket"} ${operation.ticket} no_change: ${result.summary}`,
@@ -396,6 +381,13 @@ export async function runAgentOperation(
         null,
         result.diagnostics,
       );
+      await discardAgentLogs(
+        input,
+        operation.phase,
+        operation.ticket,
+        agentLogStage(operation.phase),
+        attemptNumber,
+      );
       return handoff;
     } catch (error) {
       if (error instanceof OperatorCancelled) throw error;
@@ -411,11 +403,7 @@ export async function runAgentOperation(
         retryable: true,
         agentAttemptId: attemptId,
         workingDirectory: operation.worktree,
-        diagnosticLogPath: path.join(
-          input.projectDirectory,
-          "logs",
-          `agent-${operation.ticket}-${attemptId}.log`,
-        ),
+        diagnosticLogPath: logFile,
       };
       Object.assign(
         diagnostics,
