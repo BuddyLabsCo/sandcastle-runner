@@ -65,12 +65,8 @@ export async function cleanupTicketWorktrees(
   ) {
     return { status: "cleaned", candidates: [] };
   }
-  const candidates = matchingWorktrees(
-    await gitWorkspace.listWorktrees(checkout),
-    repository,
-    root,
-    ticket,
-  );
+  const registered = await gitWorkspace.listWorktrees(checkout);
+  const candidates = matchingWorktrees(registered, repository, root, ticket);
   const evidence = candidates.map(
     ({ worktree, branch }) => `${worktree}:${branch}`,
   );
@@ -99,6 +95,15 @@ export async function cleanupTicketWorktrees(
   }
   for (const candidate of prior) {
     if (currentBranches.has(candidate.branch)) continue;
+    if (
+      registered.some(
+        (entry) =>
+          path.resolve(entry.repository) === path.resolve(repository) &&
+          path.resolve(entry.worktree) === path.resolve(candidate.worktree) &&
+          entry.branch === candidate.branch,
+      )
+    )
+      await gitWorkspace.removeWorktree(checkout, candidate.worktree);
     await gitWorkspace.deleteBranch(checkout, candidate.branch);
   }
   return {

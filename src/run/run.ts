@@ -22,6 +22,8 @@ import type {
   MaintenanceState,
   PublicationIntent,
 } from "../recovery.ts";
+import { deleteTicketAgentLogs } from "./agent-logs.ts";
+import { currentRepairHandoff } from "./pull-request-repair.ts";
 import { cleanupTicketWorktrees, type CleanupRecord } from "./cleanup.ts";
 import type { GitWorkspace, Ticket } from "./contracts.ts";
 import {
@@ -412,24 +414,55 @@ async function runProjectInternal(
     cleanupRecords.set(ticket, record);
   };
 
-  const cleanupTerminal = async (ticket: number): Promise<void> => {
+  const cleanupTerminal = async (
+    ticket: number,
+    worktreeRoot = path.join(input.projectDirectory, "worktrees"),
+    workspaces: VerifiedHandoff[] = [],
+  ): Promise<void> => {
     for (;;) {
       const previous = cleanupRecords.get(ticket);
       if (previous?.status === "cleaned" || previous?.status === "accepted")
         return;
       const pending: CleanupRecord = {
         status: "pending",
-        candidates: previous?.candidates ?? [],
+        candidates: [
+          ...new Set([
+            ...(previous?.candidates ?? []),
+            ...workspaces.map(
+              ({ worktree, branch }) => `${worktree}:${branch}`,
+            ),
+          ]),
+        ],
         ...(previous?.error === undefined ? {} : { error: previous.error }),
       };
       await input.persistCleanup?.(ticket, pending);
       cleanupRecords.set(ticket, pending);
       try {
+        if (workspaces.length > 0) {
+          const logFailures = await deleteTicketAgentLogs(
+            input.projectDirectory,
+            ticket,
+            [
+              input.runId,
+              ...workspaces.map(({ worktree }) =>
+                path.basename(path.dirname(worktree)),
+              ),
+            ],
+          );
+          if (logFailures.length > 0)
+            throw new Error(
+              logFailures
+                .map(
+                  ({ logFile, error }) => `${logFile ?? "Agent log"}: ${error}`,
+                )
+                .join("; "),
+            );
+        }
         const result = await cleanupTicketWorktrees(
           input.gitWorkspace,
           input.checkout,
           input.checkout,
-          path.join(input.projectDirectory, "worktrees"),
+          worktreeRoot,
           ticket,
           async (candidates) => {
             const discovered = { ...pending, candidates };
@@ -454,9 +487,12 @@ async function runProjectInternal(
           `Terminal cleanup for Ticket ${ticket} failed. Enter to retry, q to cancel, or supply accepted residual artifacts.`,
         );
         if (response === null || response === "q")
-          throw new Error(`terminal cleanup pending for Ticket ${ticket}`, {
-            cause: error,
-          });
+          throw new OperatorCancelled(
+            `terminal cleanup pending for Ticket ${ticket}`,
+            {
+              cause: error,
+            },
+          );
         if (response !== "") {
           const accepted = {
             status: "accepted" as const,
@@ -636,13 +672,22 @@ async function runProjectInternal(
       (input.issueTicket !== undefined ||
         input.standaloneIssueList !== undefined)
     ) {
-      for (const { observation } of publication.published)
-        if (!skippedTickets.has(observation.ticket))
-          updateTicket(observation.ticket, {
-            status: "PR ready",
-            pullRequest: observation.number,
-            detail: `Pull Request #${observation.number} is CI-ready; awaiting manual merge`,
-          });
+      const worktreeRoot = path.join(
+        input.projectDirectory,
+        "worktrees",
+        input.runId,
+      );
+      for (const { observation, handoff } of publication.published) {
+        if (skippedTickets.has(observation.ticket)) continue;
+        await cleanupTerminal(observation.ticket, worktreeRoot, [
+          currentRepairHandoff(publicationInputs, handoff),
+        ]);
+        updateTicket(observation.ticket, {
+          status: "PR ready",
+          pullRequest: observation.number,
+          detail: `Pull Request #${observation.number} is CI-ready; awaiting manual merge`,
+        });
+      }
       return null;
     }
     const ordered = await Promise.all(
