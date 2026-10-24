@@ -264,9 +264,11 @@ async function runProjectInternal(
     outcome: RunOutcome,
     finalReasons: string[] = reasons,
   ): RunSummary => {
+    if (outcome === "no_work" && ticketReports.length > 0)
+      outcome = "incomplete";
     const resolvedReasons =
       outcome === "incomplete" &&
-      batches.length > 0 &&
+      ticketReports.length > 0 &&
       !finalReasons.includes("No pickable Delivery Tickets remain")
         ? [...finalReasons, "No pickable Delivery Tickets remain"]
         : finalReasons;
