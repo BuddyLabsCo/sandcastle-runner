@@ -4,7 +4,11 @@ import path from "node:path";
 import test from "node:test";
 
 import { executeCli } from "../../src/cli.ts";
-import { recoveryPaths, readRecoverySnapshot } from "../../src/recovery.ts";
+import {
+  recoveryPaths,
+  readRecoverySnapshot,
+  writeRecoverySnapshot,
+} from "../../src/recovery.ts";
 import type { Ticket } from "../../src/run/contracts.ts";
 import { createCliDependencies } from "../support/cli-dependencies.ts";
 import {
@@ -18,8 +22,13 @@ import { cleanupTempRoots } from "../support/temp-cleanup.ts";
 test.afterEach(cleanupTempRoots);
 
 for (const selector of ["parent", "issue"] as const)
-  for (const point of ["before_pr", "after_pr"] as const) {
-    test(`skip ends a Maintenance occurrence ${point} and allows later ${selector} work`, async () => {
+  for (const [point, laterBatch] of [
+    ["before_pr", true],
+    ["before_pr", false],
+    ["after_pr", true],
+    ["after_pr", false],
+  ] as const) {
+    test(`skip ends a Maintenance occurrence ${point} with ${laterBatch ? "later" : "no later"} ${selector} work`, async () => {
       const root = await createProject();
       const configPath = path.join(root, "projects/demo/config.yaml");
       const config = await readProjectConfig<{
@@ -27,7 +36,8 @@ for (const selector of ["parent", "issue"] as const)
         maxBatchSize: number;
         workflow: { docMaintainTriggerLabel: string };
       }>(configPath);
-      config.issueList = selector === "issue" ? [9, 10] : [];
+      const deliveries = laterBatch ? [9, 10] : [9];
+      config.issueList = selector === "issue" ? deliveries : [];
       config.maxBatchSize = 1;
       config.workflow.docMaintainTriggerLabel = "documentation";
       await writeProjectConfig(configPath, config);
@@ -38,7 +48,7 @@ for (const selector of ["parent", "issue"] as const)
         stateReason: null,
       };
       const tickets = new Map<number, Ticket>(
-        [9, 10].map((ticket) => [
+        deliveries.map((ticket) => [
           ticket,
           {
             number: ticket,
@@ -112,24 +122,24 @@ for (const selector of ["parent", "issue"] as const)
             return ticket;
           },
           async addLabel(_repository, ticket, label) {
-            const found = tickets.get(ticket);
+            const found = maintenanceTickets.get(ticket) ?? tickets.get(ticket);
             if (found && !(found.labels ?? []).includes(label))
               found.labels?.push(label);
           },
           async addAssignee(_repository, ticket, assignee) {
-            const found = tickets.get(ticket);
+            const found = maintenanceTickets.get(ticket) ?? tickets.get(ticket);
             if (found && !(found.assignees ?? []).includes(assignee))
               found.assignees?.push(assignee);
           },
           async removeLabel(_repository, ticket, label) {
-            const found = tickets.get(ticket);
+            const found = maintenanceTickets.get(ticket) ?? tickets.get(ticket);
             if (found)
               found.labels = (found.labels ?? []).filter(
                 (value) => value !== label,
               );
           },
           async removeAssignee(_repository, ticket, assignee) {
-            const found = tickets.get(ticket);
+            const found = maintenanceTickets.get(ticket) ?? tickets.get(ticket);
             if (found)
               found.assignees = (found.assignees ?? []).filter(
                 (value) => value !== assignee,
@@ -207,7 +217,10 @@ for (const selector of ["parent", "issue"] as const)
         },
         agentExecutor: {
           async execute(input) {
-            agentCalls.push({ ticket: input.ticket, prompt: input.promptFile });
+            agentCalls.push({
+              ticket: input.ticket,
+              prompt: input.promptFile,
+            });
             await mkdir(path.dirname(input.logFile), { recursive: true });
             await writeFile(input.logFile, `attempt ${input.ticket}`);
             rememberLog(input.ticket, input.logFile);
@@ -322,11 +335,14 @@ for (const selector of ["parent", "issue"] as const)
         "incomplete",
         result.summary.reasons.join("; "),
       );
-      assert.deepEqual(result.summary.completedTickets, [9, 10]);
+      assert.deepEqual(result.summary.completedTickets, deliveries);
       assert.equal(parentCloses, 0);
       assert.equal(parent.state, "open");
-      assert.deepEqual([...maintenanceTickets.keys()], [100, 101]);
-      assert.equal(maintenanceCreates, 2);
+      assert.deepEqual(
+        [...maintenanceTickets.keys()],
+        laterBatch ? [100, 101] : [100],
+      );
+      assert.equal(maintenanceCreates, laterBatch ? 2 : 1);
       assert.equal(pauses.length, 1);
       assert.match(pauses[0]!, /s to skip/u);
 
@@ -335,7 +351,8 @@ for (const selector of ["parent", "issue"] as const)
       assert.deepEqual(skippedTicket.labels, ["doc-maintain"]);
       assert.deepEqual(skippedTicket.assignees, []);
       assert.equal(comments.includes(100), false);
-      assert.equal(maintenanceTickets.get(101)?.stateReason, "completed");
+      if (laterBatch)
+        assert.equal(maintenanceTickets.get(101)?.stateReason, "completed");
 
       const skippedRow = result.summary.tickets?.find(
         ({ ticket }) => ticket === 100,
@@ -368,9 +385,9 @@ for (const selector of ["parent", "issue"] as const)
       const snapshot = await readRecoverySnapshot(
         selector === "parent"
           ? recoveryPaths(projectDirectory, 8).snapshot
-          : recoveryPaths(projectDirectory, 9, "issue", [9, 10]).snapshot,
+          : recoveryPaths(projectDirectory, 9, "issue", deliveries).snapshot,
       );
-      assert.equal(snapshot?.maintenance?.ticket, 101);
+      assert.equal(snapshot?.maintenance?.ticket, laterBatch ? 101 : undefined);
       assert.equal(
         snapshot?.publications?.some(({ ticket }) => ticket === 100),
         false,
@@ -385,5 +402,84 @@ for (const selector of ["parent", "issue"] as const)
         callsBeforeRestart,
         "a restart must not resume the skipped Maintenance occurrence",
       );
+      assert.equal(
+        maintenanceCreates,
+        laterBatch ? 2 : 1,
+        "a restart must not retrigger maintenance for the skipped Batch",
+      );
     });
   }
+
+test("skipping recovered Maintenance stays incomplete under --no-auto-merge", async () => {
+  const root = await createProject();
+  const configPath = path.join(root, "projects/demo/config.yaml");
+  const config = await readProjectConfig<{
+    workflow: { docMaintainTriggerLabel: string };
+  }>(configPath);
+  config.workflow.docMaintainTriggerLabel = "documentation";
+  await writeProjectConfig(configPath, config);
+  await writeRecoverySnapshot(
+    recoveryPaths(path.join(root, "projects/demo"), 9, "issue").snapshot,
+    {
+      schemaVersion: 2,
+      project: "demo",
+      repository: validConfig.repository,
+      checkout: validConfig.checkout,
+      parentTicket: 9,
+      runKind: "issue",
+      issueTicket: 9,
+      runId: "interrupted",
+      phase: "running",
+      targetBranch: "main",
+      createdAt: "2026-10-24T00:00:00.000Z",
+      updatedAt: "2026-10-24T00:00:00.000Z",
+      batch: [9],
+      activeBatch: [9],
+      completedDeliveries: [{ ticket: 9, labels: ["documentation"] }],
+      maintenance: {
+        phase: "blocked",
+        ticket: 100,
+        deliveryTickets: [9],
+        barrier: true,
+      },
+    },
+  );
+  const maintenance: Ticket = {
+    number: 100,
+    state: "open",
+    stateReason: null,
+    assignees: [],
+    labels: ["doc-maintain"],
+  };
+  let parentCloses = 0;
+  const result = await executeCli(
+    ["run", "--project", "demo", "--issue", "9", "--no-auto-merge"],
+    createCliDependencies(root, {
+      tracker: {
+        async getTicket() {
+          return maintenance;
+        },
+        async closeParent() {
+          parentCloses += 1;
+        },
+      },
+      operator: {
+        async pause() {
+          return "s";
+        },
+      },
+    }),
+  );
+  assert.equal(
+    result.summary.outcome,
+    "incomplete",
+    result.summary.reasons.join("; "),
+  );
+  assert.equal(result.exitCode, 1);
+  assert.equal(parentCloses, 0);
+  assert.equal(maintenance.state, "open");
+  assert.equal(
+    result.summary.tickets?.find(({ ticket }) => ticket === 100)?.status,
+    "failed",
+  );
+});

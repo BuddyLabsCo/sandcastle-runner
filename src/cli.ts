@@ -470,6 +470,7 @@ export async function executeCli(
       state === null
         ? {
             ...withoutMaintenanceRecovery(currentSnapshot),
+            activeBatch: [],
             updatedAt: dependencies.clock.now().toISOString(),
           }
         : {

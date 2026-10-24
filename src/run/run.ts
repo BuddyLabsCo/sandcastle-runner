@@ -919,7 +919,11 @@ async function runProjectInternal(
     );
     if (outcome) return summary(outcome);
     if (!input.autoMerge)
-      return summary(skippedTickets.size > 0 ? "incomplete" : "succeeded");
+      return summary(
+        skippedTickets.size > 0 || skippedMaintenance.size > 0
+          ? "incomplete"
+          : "succeeded",
+      );
   }
 
   if (input.issueTicket !== undefined) {
