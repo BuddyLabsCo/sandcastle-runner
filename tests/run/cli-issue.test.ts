@@ -348,7 +348,9 @@ test("no-auto-merge publishes, repairs CI, and preserves recovery state without 
     snapshot.publications?.map(({ ticket, phase }) => ({ ticket, phase })),
     [{ ticket: 9, phase: "pr_created" }],
   );
-  assert.equal(snapshot.terminalCleanup, undefined);
+  assert.deepEqual(snapshot.terminalCleanup, {
+    9: { status: "cleaned", candidates: [] },
+  });
 });
 
 test("auto-merge flag forms are parsed and restricted", async () => {

@@ -22,6 +22,7 @@ import type {
   MaintenanceState,
   PublicationIntent,
 } from "../recovery.ts";
+import { deleteTicketAgentLogs } from "./agent-logs.ts";
 import { cleanupTicketWorktrees, type CleanupRecord } from "./cleanup.ts";
 import type { GitWorkspace, Ticket } from "./contracts.ts";
 import {
@@ -400,7 +401,11 @@ async function runProjectInternal(
     cleanupRecords.set(ticket, record);
   };
 
-  const cleanupTerminal = async (ticket: number): Promise<void> => {
+  const cleanupTerminal = async (
+    ticket: number,
+    worktreeRoot = path.join(input.projectDirectory, "worktrees"),
+    discardLogs = false,
+  ): Promise<void> => {
     for (;;) {
       const previous = cleanupRecords.get(ticket);
       if (previous?.status === "cleaned" || previous?.status === "accepted")
@@ -413,11 +418,25 @@ async function runProjectInternal(
       await input.persistCleanup?.(ticket, pending);
       cleanupRecords.set(ticket, pending);
       try {
+        if (discardLogs) {
+          const logFailures = await deleteTicketAgentLogs(
+            input.projectDirectory,
+            ticket,
+          );
+          if (logFailures.length > 0)
+            throw new Error(
+              logFailures
+                .map(
+                  ({ logFile, error }) => `${logFile ?? "Agent log"}: ${error}`,
+                )
+                .join("; "),
+            );
+        }
         const result = await cleanupTicketWorktrees(
           input.gitWorkspace,
           input.checkout,
           input.checkout,
-          path.join(input.projectDirectory, "worktrees"),
+          worktreeRoot,
           ticket,
           async (candidates) => {
             const discovered = { ...pending, candidates };
@@ -621,12 +640,19 @@ async function runProjectInternal(
       (input.issueTicket !== undefined ||
         input.standaloneIssueList !== undefined)
     ) {
-      for (const { observation } of publication.published)
+      const worktreeRoot = path.join(
+        input.projectDirectory,
+        "worktrees",
+        input.runId,
+      );
+      for (const { observation } of publication.published) {
+        await cleanupTerminal(observation.ticket, worktreeRoot, true);
         updateTicket(observation.ticket, {
           status: "PR ready",
           pullRequest: observation.number,
           detail: `Pull Request #${observation.number} is CI-ready; awaiting manual merge`,
         });
+      }
       return null;
     }
     const ordered = await Promise.all(
