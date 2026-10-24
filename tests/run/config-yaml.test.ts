@@ -102,7 +102,11 @@ test("loadProject reports a missing config.yaml with its path", async () => {
 
   await assert.rejects(
     loadProject(root, "demo", { TEST_GH_TOKEN: "token" }),
-    /failed to load .*projects\/demo\/config\.yaml/u,
+    (error: unknown) =>
+      error instanceof Error &&
+      error.message.startsWith(
+        `failed to load ${path.join(root, "projects", "demo", "config.yaml")}:`,
+      ),
   );
 });
 
@@ -119,6 +123,10 @@ test("loadProject reports invalid YAML with its path", async () => {
 
   await assert.rejects(
     loadProject(root, "demo", { TEST_GH_TOKEN: "token" }),
-    /failed to load .*projects\/demo\/config\.yaml/u,
+    (error: unknown) =>
+      error instanceof Error &&
+      error.message.startsWith(
+        `failed to load ${path.join(project, "config.yaml")}:`,
+      ),
   );
 });
