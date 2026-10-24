@@ -621,10 +621,11 @@ async function runProjectInternal(
       if (!batchComplete) {
         reasons.push("Batch barrier blocked by unresolved Agent Attempts");
         for (const { observation } of publication.published)
-          updateTicket(observation.ticket, {
-            status: "blocked",
-            detail: "Batch barrier blocked by unresolved Agent Attempts",
-          });
+          if (!skippedTickets.has(observation.ticket))
+            updateTicket(observation.ticket, {
+              status: "blocked",
+              detail: "Batch barrier blocked by unresolved Agent Attempts",
+            });
       }
       return publication.outcome !== "succeeded"
         ? publication.outcome

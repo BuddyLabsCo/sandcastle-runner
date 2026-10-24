@@ -7,11 +7,83 @@ import { executeCli } from "../../src/cli.ts";
 import {
   createAttemptTracker,
   createCliDependencies,
+  createCommittedBatch,
 } from "../support/cli-dependencies.ts";
 import { createProject, validConfig } from "../support/cli-project.ts";
 import { cleanupTempRoots } from "../support/temp-cleanup.ts";
 
 test.afterEach(cleanupTempRoots);
+
+test("a CI skip keeps its failed row when a peer leaves the Batch barrier unresolved", async () => {
+  const root = await createProject();
+  const delivery = createCommittedBatch(9, 10);
+  let mergeRequests = 0;
+  const result = await executeCli(
+    ["run", "--project", "demo", "--parent", "8"],
+    createCliDependencies(root, {
+      tracker: delivery.tracker,
+      gitWorkspace: {
+        ...delivery.gitWorkspace,
+        async inspect(input) {
+          const observed = await delivery.gitWorkspace.inspect(input);
+          return input.worktree.endsWith("ticket-10")
+            ? { ...observed, commits: [] }
+            : observed;
+        },
+      },
+      agentExecutor: {
+        async execute(input) {
+          if (input.promptFile.endsWith("ci-repair.md"))
+            return {
+              outcome: "blocked",
+              summary: "CI repair needs a decision",
+              commits: [],
+              checks: [],
+              blocker: "CI repair needs a decision",
+            };
+          return input.ticket === 10
+            ? {
+                outcome: "no_change",
+                summary: "no safe change",
+                commits: [],
+                checks: [],
+                blocker: null,
+              }
+            : delivery.agentExecutor.execute(input);
+        },
+      },
+      codeHost: {
+        async getRequiredChecks() {
+          return [
+            {
+              name: "checks",
+              state: "FAILURE",
+              link: "https://example.test/checks/1",
+              bucket: "fail",
+            },
+          ];
+        },
+        async requestSquashMerge() {
+          mergeRequests += 1;
+          return { outcome: "accepted" };
+        },
+      },
+      operator: {
+        async pause() {
+          return "s";
+        },
+      },
+    }),
+  );
+
+  assert.equal(result.summary.outcome, "incomplete");
+  const skipped = result.summary.tickets?.find(({ ticket }) => ticket === 9);
+  assert.equal(skipped?.status, "failed");
+  assert.equal(skipped?.pullRequest, 1);
+  assert.match(skipped?.detail ?? "", /^skipped/u);
+  assert.equal(result.summary.tickets?.[1]?.status, "no_change");
+  assert.equal(mergeRequests, 0);
+});
 
 for (const repair of ["ci", "conflict"] as const) {
   test(`skip during ${repair} repair keeps the published ticket while its Batch peer completes`, async () => {
