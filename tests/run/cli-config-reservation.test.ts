@@ -12,6 +12,7 @@ import {
   validConfig,
   createProject,
   publicationIntent,
+  writeProjectConfig,
 } from "../support/cli-project.ts";
 import { executeCli } from "../../src/cli.ts";
 import {
@@ -26,17 +27,13 @@ test("disabled Documentation Maintenance allows delivery and Parent closeout wit
   const root = await createProject();
   const config = structuredClone(validConfig);
   delete config.agents.documentation;
-  await writeFile(
-    path.join(root, "projects/demo/config.json"),
-    JSON.stringify({
-      ...config,
-      workflow: {
-        $comment: "Review is disabled to isolate maintenance behavior.",
-        review: false,
-        docMaintainTriggerLabel: "",
-      },
-    }),
-  );
+  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+    ...config,
+    workflow: {
+      review: false,
+      docMaintainTriggerLabel: "",
+    },
+  });
   await rm(path.join(root, "projects/demo/prompts/documentation.md"));
   const maintenancePublication = {
     ...publicationIntent("pr_created", 100),
@@ -139,9 +136,9 @@ test("Review and Documentation Maintenance trigger operate independently", async
     } = structuredClone(validConfig);
     if (scenario.workflow === undefined) delete config.workflow;
     else config.workflow = scenario.workflow;
-    await writeFile(
-      path.join(root, "projects/demo/config.json"),
-      JSON.stringify(config),
+    await writeProjectConfig(
+      path.join(root, "projects/demo/config.yaml"),
+      config,
     );
     const delivery = createCommittedDelivery();
     if (scenario.workflow?.docMaintainTriggerLabel)
@@ -191,9 +188,9 @@ test("enabled Documentation Maintenance requires maintenance ticket title, body,
     const config = structuredClone(validConfig);
     config.workflow.docMaintainTriggerLabel = "documentation";
     delete config.maintenanceTicket[field];
-    await writeFile(
-      path.join(root, "projects/demo/config.json"),
-      JSON.stringify(config),
+    await writeProjectConfig(
+      path.join(root, "projects/demo/config.yaml"),
+      config,
     );
     const result = await executeCli(
       ["run", "--project", "demo", "--parent", "8"],
@@ -221,15 +218,19 @@ test("workflow configuration rejects malformed switches, unknown fields", async 
       workflow: { documentationMaintenance: false },
       expected: /workflow contains unknown field documentationMaintenance/u,
     },
+    {
+      workflow: { $comment: "legacy pseudo-comment", review: false },
+      expected: /workflow contains unknown field \$comment/u,
+    },
   ];
 
   for (const scenario of cases) {
     const root = await createProject();
     const config = structuredClone(validConfig);
-    await writeFile(
-      path.join(root, "projects/demo/config.json"),
-      JSON.stringify({ ...config, workflow: scenario.workflow }),
-    );
+    await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+      ...config,
+      workflow: scenario.workflow,
+    });
     const result = await executeCli(
       ["run", "--project", "demo", "--parent", "8"],
       createCliDependencies(root),
@@ -245,10 +246,10 @@ test("omitted Documentation Maintenance trigger disables automatic maintenance",
   const root = await createProject();
   const config = structuredClone(validConfig);
   delete config.agents.documentation;
-  await writeFile(
-    path.join(root, "projects/demo/config.json"),
-    JSON.stringify({ ...config, workflow: { review: false } }),
-  );
+  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+    ...config,
+    workflow: { review: false },
+  });
   await rm(path.join(root, "projects/demo/prompts/documentation.md"));
 
   const result = await executeCli(
@@ -264,9 +265,9 @@ test("enabled Documentation Maintenance rejects a missing profile", async () => 
   const config = structuredClone(validConfig);
   config.workflow.docMaintainTriggerLabel = "documentation";
   delete config.agents.documentation;
-  await writeFile(
-    path.join(root, "projects/demo/config.json"),
-    JSON.stringify(config),
+  await writeProjectConfig(
+    path.join(root, "projects/demo/config.yaml"),
+    config,
   );
 
   const result = await executeCli(
@@ -286,9 +287,9 @@ test("enabled Documentation Maintenance rejects an empty prompt", async () => {
   const root = await createProject();
   const config = structuredClone(validConfig);
   config.workflow.docMaintainTriggerLabel = "documentation";
-  await writeFile(
-    path.join(root, "projects/demo/config.json"),
-    JSON.stringify(config),
+  await writeProjectConfig(
+    path.join(root, "projects/demo/config.yaml"),
+    config,
   );
   await writeFile(
     path.join(root, "projects/demo/prompts/documentation.md"),
@@ -376,10 +377,10 @@ test("invalid CLI arguments return a structured startup failure", async () => {
 
 test("an omitted Target Branch is resolved once through CodeHost and fixed for the Run", async () => {
   const root = await createProject();
-  const configPath = path.join(root, "projects", "demo", "config.json");
+  const configPath = path.join(root, "projects", "demo", "config.yaml");
   const configWithoutBranch = { ...validConfig };
   delete (configWithoutBranch as Partial<typeof validConfig>).targetBranch;
-  await writeFile(configPath, JSON.stringify(configWithoutBranch));
+  await writeProjectConfig(configPath, configWithoutBranch);
   let branchCalls = 0;
   const result = await executeCli(
     ["run", "--project", "demo", "--parent", "8"],
@@ -399,10 +400,10 @@ test("an omitted Target Branch is resolved once through CodeHost and fixed for t
 
 test("a trusted Target Branch override uses the project term", async () => {
   const root = await createProject();
-  const configPath = path.join(root, "projects", "demo", "config.json");
+  const configPath = path.join(root, "projects", "demo", "config.yaml");
   const configWithoutBranch = { ...validConfig };
   delete (configWithoutBranch as Partial<typeof validConfig>).targetBranch;
-  await writeFile(configPath, JSON.stringify(configWithoutBranch));
+  await writeProjectConfig(configPath, configWithoutBranch);
   let branchCalls = 0;
   let pauseCalls = 0;
   const result = await executeCli(

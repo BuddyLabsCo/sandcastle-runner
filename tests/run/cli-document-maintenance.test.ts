@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
@@ -11,19 +10,23 @@ import {
   createCommittedBatch,
   createCommittedDelivery,
 } from "../support/cli-dependencies.ts";
-import { createProject } from "../support/cli-project.ts";
+import {
+  createProject,
+  readProjectConfig,
+  writeProjectConfig,
+} from "../support/cli-project.ts";
 import { cleanupTempRoots } from "../support/temp-cleanup.ts";
 
 test.afterEach(cleanupTempRoots);
 
 async function createMaintenanceProject(): Promise<string> {
   const root = await createProject();
-  const configPath = path.join(root, "projects/demo/config.json");
-  const config = JSON.parse(await readFile(configPath, "utf8")) as {
+  const configPath = path.join(root, "projects/demo/config.yaml");
+  const config = await readProjectConfig<{
     workflow: { docMaintainTriggerLabel: string };
-  };
+  }>(configPath);
   config.workflow.docMaintainTriggerLabel = "documentation";
-  await writeFile(configPath, JSON.stringify(config));
+  await writeProjectConfig(configPath, config);
   return root;
 }
 
@@ -81,12 +84,12 @@ test("nonmatching deliveries and Parent closeout do not trigger maintenance", as
 
 test("--document starts fresh after an interrupted Parent-independent occurrence", async () => {
   const root = await createProject();
-  const configPath = path.join(root, "projects/demo/config.json");
-  const config = JSON.parse(await readFile(configPath, "utf8")) as {
+  const configPath = path.join(root, "projects/demo/config.yaml");
+  const config = await readProjectConfig<{
     issueList: number[];
-  };
+  }>(configPath);
   config.issueList = [41];
-  await writeFile(configPath, JSON.stringify(config));
+  await writeProjectConfig(configPath, config);
   const tickets = new Map<number, Ticket>();
   let creates = 0;
   let parentReads = 0;

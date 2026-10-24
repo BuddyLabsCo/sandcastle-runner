@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { parse } from "yaml";
 
 import type { RetryPolicy, TicketClosurePolicy } from "./run/contracts.ts";
 
@@ -139,7 +140,7 @@ function parseConfig(
   const workflow =
     input.workflow === undefined ? {} : record(input.workflow, "workflow");
   const unknownWorkflowField = Object.keys(workflow).find(
-    (name) => !["$comment", "review", "docMaintainTriggerLabel"].includes(name),
+    (name) => !["review", "docMaintainTriggerLabel"].includes(name),
   );
   if (unknownWorkflowField) {
     throw new Error(`workflow contains unknown field ${unknownWorkflowField}`);
@@ -283,10 +284,17 @@ export async function loadProject(
   if (!/^[A-Za-z0-9._-]+$/u.test(projectKey))
     throw new Error("invalid project key");
   const directory = path.join(root, "projects", projectKey);
-  const config = parseConfig(
-    JSON.parse(await readFile(path.join(directory, "config.json"), "utf8")),
-    options,
-  );
+  const configPath = path.join(directory, "config.yaml");
+  let value: unknown;
+  try {
+    value = parse(await readFile(configPath, "utf8"));
+  } catch (error) {
+    throw new Error(
+      `failed to load ${configPath}: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
+  const config = parseConfig(value, options);
   await Promise.all(
     promptNames.map(async (name) => {
       const filename = `${name}.md`;

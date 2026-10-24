@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import test from "node:test";
 
 import { executeCli } from "../../src/cli.ts";
@@ -9,7 +9,11 @@ import {
   createCliDependencies,
   createCommittedDelivery,
 } from "../support/cli-dependencies.ts";
-import { createProject } from "../support/cli-project.ts";
+import {
+  createProject,
+  readProjectConfig,
+  writeProjectConfig,
+} from "../support/cli-project.ts";
 
 test.afterEach(cleanupTempRoots);
 
@@ -30,12 +34,12 @@ test("delivery and document selectors are mutually exclusive and required", asyn
 
 test("value-less issue processes the configured Issue List", async () => {
   const root = await createProject();
-  const configPath = `${root}/projects/demo/config.json`;
-  const config = JSON.parse(await readFile(configPath, "utf8")) as {
+  const configPath = `${root}/projects/demo/config.yaml`;
+  const config = await readProjectConfig<{
     issueList: number[];
-  };
+  }>(configPath);
   config.issueList = [41, 42];
-  await writeFile(configPath, JSON.stringify(config));
+  await writeProjectConfig(configPath, config);
   const reads: number[] = [];
   const completed = {
     state: "closed" as const,
@@ -85,14 +89,14 @@ test("value-less issue rejects an empty Issue List before workflow operations", 
 
 test("standalone issue runs without Documentation Maintenance configuration", async () => {
   const root = await createProject();
-  const configPath = `${root}/projects/demo/config.json`;
-  const config = JSON.parse(await readFile(configPath, "utf8")) as {
+  const configPath = `${root}/projects/demo/config.yaml`;
+  const config = await readProjectConfig<{
     workflow: { docMaintainTriggerLabel: string };
     agents: Record<string, unknown>;
-  };
+  }>(configPath);
   config.workflow.docMaintainTriggerLabel = "";
   delete config.agents.documentation;
-  await writeFile(configPath, JSON.stringify(config));
+  await writeProjectConfig(configPath, config);
   await rm(`${root}/projects/demo/prompts/documentation.md`);
   let parentReads = 0;
   let childReads = 0;
@@ -163,13 +167,13 @@ test("standalone issue applies ready-for-agent gating and terminal no_work", asy
 
 test("standalone issue uses the selected issue as the Review specification", async () => {
   const root = await createProject();
-  const configPath = `${root}/projects/demo/config.json`;
-  const config = JSON.parse(await readFile(configPath, "utf8")) as {
+  const configPath = `${root}/projects/demo/config.yaml`;
+  const config = await readProjectConfig<{
     workflow: { review: boolean; docMaintainTriggerLabel: string };
-  };
+  }>(configPath);
   config.workflow.docMaintainTriggerLabel = "";
   config.workflow.review = true;
-  await writeFile(configPath, JSON.stringify(config));
+  await writeProjectConfig(configPath, config);
   const delivery = createCommittedDelivery(9);
   let governing = "";
   const result = await executeCli(

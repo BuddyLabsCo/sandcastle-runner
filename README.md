@@ -52,7 +52,7 @@ path. The Runner does not start an interactive `gh auth` flow.
 Authenticate Codex with the [Codex CLI instructions](https://learn.chatgpt.com/docs/codex/cli)
 and verify `codex login status`. If using API-key authentication, keep
 `OPENAI_API_KEY` in the process environment; ChatGPT authentication uses
-Codex's supported local sign-in. Neither credential belongs in `config.json`.
+Codex's supported local sign-in. Neither credential belongs in `config.yaml`.
 
 ### macOS
 
@@ -71,7 +71,7 @@ command -v node npm git gh codex
 ```
 
 Set the credential variable named by both `tracker.tokenEnv` and
-`codeHost.tokenEnv` in `config.json` (the template uses `GH_TOKEN`) before
+`codeHost.tokenEnv` in `config.yaml` (the template uses `GH_TOKEN`) before
 starting the Run:
 
 ```sh
@@ -108,7 +108,7 @@ setx GH_TOKEN "your-github-token"
 ```
 
 The variable name must match `tracker.tokenEnv` and `codeHost.tokenEnv` in
-`config.json`. Do not run interactive `gh auth login` or commit the token.
+`config.yaml`. Do not run interactive `gh auth login` or commit the token.
 
 ### Linux
 
@@ -126,7 +126,7 @@ codex login status
 command -v node npm git gh codex
 ```
 
-Set the credential variable named in `config.json` before invoking the Runner:
+Set the credential variable named in `config.yaml` before invoking the Runner:
 
 ```sh
 export GH_TOKEN='your-github-token'
@@ -148,7 +148,7 @@ Create a project directory with this layout:
 
 ```text
 projects/<project-key>/
-├── config.json
+├── config.yaml
 ├── prompts/
 │   ├── implement.md
 │   ├── review.md
@@ -158,7 +158,7 @@ projects/<project-key>/
 └── logs/
 ```
 
-Start from [`projects/trickplay-cropper`](projects/trickplay-cropper) and set the repository, absolute checkout, target branch, credential variable, agent profiles, timeouts, and workflow flags in `config.json`. Enabled workflow nodes require their prompt file; implementation and repair prompts must be non-empty. Configuration files are ordinary JSON and may contain `$comment` fields.
+Start from [`projects/trickplay-cropper`](projects/trickplay-cropper) and set the repository, absolute checkout, target branch, credential variable, agent profiles, timeouts, and workflow flags in `config.yaml`. Enabled workflow nodes require their prompt file; implementation and repair prompts must be non-empty. Configuration files use YAML and support `#` comments.
 
 Install dependencies and run a parent issue:
 

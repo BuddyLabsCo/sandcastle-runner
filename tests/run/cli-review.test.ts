@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
@@ -8,7 +8,11 @@ import {
   createCliDependencies,
   createCommittedDelivery,
 } from "../support/cli-dependencies.ts";
-import { validConfig, createProject } from "../support/cli-project.ts";
+import {
+  validConfig,
+  createProject,
+  writeProjectConfig,
+} from "../support/cli-project.ts";
 import { executeCli } from "../../src/cli.ts";
 import type { AgentExecutor } from "../../src/run/contracts.ts";
 
@@ -22,9 +26,9 @@ test("default-enabled review reports its required profile and prompt paths", asy
   };
   delete defaulted.workflow;
   delete defaulted.agents.review;
-  await writeFile(
-    path.join(root, "projects/demo/config.json"),
-    JSON.stringify(config),
+  await writeProjectConfig(
+    path.join(root, "projects/demo/config.yaml"),
+    config,
   );
   await rm(path.join(root, "projects/demo/prompts/review.md"));
 
@@ -56,9 +60,9 @@ test("a clean fresh-context review gates publication and preserves implementatio
   const root = await createProject();
   const config = structuredClone(validConfig);
   config.workflow.review = true;
-  await writeFile(
-    path.join(root, "projects/demo/config.json"),
-    JSON.stringify(config),
+  await writeProjectConfig(
+    path.join(root, "projects/demo/config.yaml"),
+    config,
   );
   const delivery = createCommittedDelivery(9);
   const implementation = {
@@ -195,9 +199,9 @@ test("review fix commits become part of the complete delivery without replacing 
   const root = await createProject();
   const config = structuredClone(validConfig);
   config.workflow.review = true;
-  await writeFile(
-    path.join(root, "projects/demo/config.json"),
-    JSON.stringify(config),
+  await writeProjectConfig(
+    path.join(root, "projects/demo/config.yaml"),
+    config,
   );
   const delivery = createCommittedDelivery(9);
   const implementation = {
@@ -273,9 +277,9 @@ test("blocked, dirty, or invalid review pauses before publication", async () => 
     const root = await createProject();
     const config = structuredClone(validConfig);
     config.workflow.review = true;
-    await writeFile(
-      path.join(root, "projects/demo/config.json"),
-      JSON.stringify(config),
+    await writeProjectConfig(
+      path.join(root, "projects/demo/config.yaml"),
+      config,
     );
     const delivery = createCommittedDelivery(9);
     let pushes = 0;
@@ -347,9 +351,9 @@ test("review retry uses a fresh attempt and verifies the Worktree", async () => 
   const root = await createProject();
   const config = structuredClone(validConfig);
   config.workflow.review = true;
-  await writeFile(
-    path.join(root, "projects/demo/config.json"),
-    JSON.stringify(config),
+  await writeProjectConfig(
+    path.join(root, "projects/demo/config.yaml"),
+    config,
   );
   const delivery = createCommittedDelivery(9);
   const implementation = {
@@ -420,9 +424,9 @@ test("a trusted review result cannot bypass the clean Worktree gate", async () =
   const root = await createProject();
   const config = structuredClone(validConfig);
   config.workflow.review = true;
-  await writeFile(
-    path.join(root, "projects/demo/config.json"),
-    JSON.stringify(config),
+  await writeProjectConfig(
+    path.join(root, "projects/demo/config.yaml"),
+    config,
   );
   const delivery = createCommittedDelivery(9);
   let pauses = 0;

@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
-import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
 import { loadProject } from "../../src/config.ts";
-import { createProject, validConfig } from "../support/cli-project.ts";
+import {
+  createProject,
+  validConfig,
+  writeProjectConfig,
+} from "../support/cli-project.ts";
 import { cleanupTempRoots } from "../support/temp-cleanup.ts";
 
 test.afterEach(cleanupTempRoots);
@@ -44,9 +47,9 @@ test("loadProject rejects missing and malformed retry fields", async () => {
     const config = structuredClone(validConfig) as Record<string, unknown>;
     if (value === undefined) delete config[field];
     else config[field] = value;
-    await writeFile(
-      path.join(root, "projects", "demo", "config.json"),
-      JSON.stringify(config),
+    await writeProjectConfig(
+      path.join(root, "projects", "demo", "config.yaml"),
+      config,
     );
     await assert.rejects(
       loadProject(root, "demo", { TEST_GH_TOKEN: "token" }),
@@ -70,9 +73,9 @@ test("loadProject requires maxBatchSize to be a positive safe integer", async ()
     const config = structuredClone(validConfig) as Record<string, unknown>;
     if (value === undefined) delete config.maxBatchSize;
     else config.maxBatchSize = value;
-    await writeFile(
-      path.join(root, "projects", "demo", "config.json"),
-      JSON.stringify(config),
+    await writeProjectConfig(
+      path.join(root, "projects", "demo", "config.yaml"),
+      config,
     );
     await assert.rejects(
       loadProject(root, "demo", { TEST_GH_TOKEN: "token" }),

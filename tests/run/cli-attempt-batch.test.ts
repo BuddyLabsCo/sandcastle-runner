@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
@@ -9,7 +9,11 @@ import {
   createAttemptTracker,
   createCommittedBatch,
 } from "../support/cli-dependencies.ts";
-import { validConfig, createProject } from "../support/cli-project.ts";
+import {
+  validConfig,
+  createProject,
+  writeProjectConfig,
+} from "../support/cli-project.ts";
 import { executeCli } from "../../src/cli.ts";
 import { readRecoverySnapshot, recoveryPaths } from "../../src/recovery.ts";
 
@@ -285,18 +289,15 @@ test("a Batch publishes every PR before merging by creation order", async () => 
 test("multiple matching Delivery Tickets trigger one committed Documentation Maintenance occurrence", async () => {
   const sessionNames: string[] = [];
   const root = await createProject();
-  await writeFile(
-    path.join(root, "projects/demo/config.json"),
-    JSON.stringify({
-      ...validConfig,
-      workflow: {
-        ...validConfig.workflow,
-        review: true,
-        docMaintainTriggerLabel: "documentation",
-      },
-      ticketClosure: "code_host",
-    }),
-  );
+  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+    ...validConfig,
+    workflow: {
+      ...validConfig.workflow,
+      review: true,
+      docMaintainTriggerLabel: "documentation",
+    },
+    ticketClosure: "code_host",
+  });
   const delivery = createCommittedBatch(9, 10, 11);
   for (const ticket of delivery.tickets) ticket.labels.push("documentation");
   const maintenance = {

@@ -1,0 +1,65 @@
+# Replace repository, checkout, runnerAccount, and targetBranch for your Project. checkout must be absolute. ticketClosure is runner or code_host.
+
+repository: xiakeng/trickplay-cropper
+checkout: /home/xiakeng/Desktop/workspace/trickplay-cropper/
+disableWebSearch: true
+issueList: []
+maxBatchSize: 2
+targetBranch: main
+operationRetry: 4
+agentRetry: 2
+operationRetryDelay:
+  - 10
+  - 20
+  - 40
+  - 80
+agentRetryDelay:
+  - 300
+  - 300
+ticketClosure: runner
+maintenanceTicket:
+  title: Maintain project documentation
+  body: Sync project documents under `docs/business` and `docs/code-maps` up to the latest code changes.
+  label: doc-maintain
+workflow:
+  # Review defaults to true; an empty documentation trigger label disables automatic maintenance.
+  review: true
+  docMaintainTriggerLabel: ""
+tracker:
+  # GitHub tracker settings. tokenEnv names an environment variable; reservationLabel marks Runner-owned Delivery Tickets.
+  type: github
+  tokenEnv: GH_TOKEN
+  runnerAccount: xiakeng
+  reservationLabel: sandcastle:reserved
+codeHost:
+  # GitHub Pull Request settings. adminMerge allows or forbids administrative squash merge requests.
+  type: github
+  tokenEnv: GH_TOKEN
+  adminMerge: true
+agents:
+  # Each Agent Attempt selects a supported model and low, medium, high, or xhigh reasoning. Review and documentation profiles are required only while their workflow nodes are enabled.
+  implement:
+    # Initial Delivery Ticket implementation.
+    model: gpt-6-astra
+    reasoningEffort: high
+  review:
+    # Fresh-context Standards and Spec review.
+    model: gpt-6-sol
+    reasoningEffort: high
+  ciRepair:
+    # Repair of failed required CI checks.
+    model: gpt-6-sol
+    reasoningEffort: medium
+  conflictRepair:
+    # Repair of an explicit merge conflict.
+    model: gpt-6-sol
+    reasoningEffort: medium
+  documentation:
+    # Documentation Maintenance.
+    model: gpt-6-astra
+    reasoningEffort: high
+timeouts:
+  # Positive minute limits for Agent Attempts, required-check readiness, and merge-queue confirmation.
+  agentMinutes: 120
+  requiredChecksMinutes: 60
+  mergeQueueMinutes: 60
