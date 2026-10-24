@@ -18,6 +18,7 @@ import {
   type VerifiedHandoff,
   type AttemptBatchResult,
   type MaintenanceAttemptResult,
+  type TicketAttemptOutcome,
 } from "./agent-operation.ts";
 import { reviewHandoff } from "./review-attempt.ts";
 export type {
@@ -37,7 +38,7 @@ async function implementTicket(
   ticket: number,
   base: string,
   controller: AbortController,
-): Promise<VerifiedHandoff | string> {
+): Promise<TicketAttemptOutcome> {
   const ticketInput =
     input.standaloneIssues === undefined
       ? input
@@ -90,13 +91,20 @@ async function implementTicket(
       signal: controller.signal,
       attemptCounter: { value: 0 },
     });
-    if ("reason" in result) return result.reason;
-    return input.review
+    if ("reason" in result)
+      return { ticket, outcome: result.outcome, detail: result.reason };
+    const handoff = input.review
       ? await reviewHandoff(input, result, controller.signal)
       : result;
+    return {
+      ticket,
+      outcome: "handoff",
+      detail: "Implementation and review completed",
+      handoff,
+    };
   } catch (error) {
     if (error instanceof BoundaryStop && error.result.outcome === "stopped")
-      return error.result.reason;
+      return { ticket, outcome: "blocked", detail: error.result.reason };
     throw error;
   }
 }
@@ -327,7 +335,7 @@ export async function implementReservedBatch(
   input: AttemptInput,
 ): Promise<AttemptBatchResult> {
   const candidates: number[] = [];
-  const stopped: string[] = [];
+  const tickets: TicketAttemptOutcome[] = [];
   try {
     for (const ticket of input.batch) {
       try {
@@ -335,16 +343,33 @@ export async function implementReservedBatch(
         candidates.push(ticket);
       } catch (error) {
         if (!(error instanceof BoundaryStop)) throw error;
-        if (
-          error.result.outcome === "cancelled" ||
-          error.result.outcome === "failed"
-        )
-          throw error;
-        stopped.push(error.result.reason);
+        const outcome: TicketAttemptOutcome = {
+          ticket,
+          outcome:
+            error.result.outcome === "cancelled"
+              ? "cancelled"
+              : error.result.outcome === "failed"
+                ? "failed"
+                : "blocked",
+          detail: error.result.reason,
+        };
+        tickets.push(outcome);
+        if (outcome.outcome === "cancelled" || outcome.outcome === "failed")
+          return {
+            outcome: outcome.outcome,
+            reasons: [outcome.detail],
+            handoffs: [],
+            tickets,
+          };
       }
     }
     if (candidates.length === 0)
-      return { outcome: "incomplete", reasons: stopped, handoffs: [] };
+      return {
+        outcome: "incomplete",
+        reasons: tickets.map(({ detail }) => detail),
+        handoffs: [],
+        tickets,
+      };
     const base = await externalRead({
       action: () =>
         input.gitWorkspace.fetchTargetBranch(
@@ -375,18 +400,31 @@ export async function implementReservedBatch(
     );
     try {
       const settled = await Promise.all(attempts);
-      const handoffs = settled.filter(
-        (result): result is VerifiedHandoff => typeof result !== "string",
+      const byTicket = new Map(
+        [...tickets, ...settled].map((result) => [result.ticket, result]),
+      );
+      const ordered = input.batch.flatMap((ticket) => {
+        const result = byTicket.get(ticket);
+        return result ? [result] : [];
+      });
+      const handoffs = ordered.flatMap(({ handoff }) =>
+        handoff === undefined ? [] : [handoff],
+      );
+      const terminal = ordered.find(
+        ({ outcome }) => outcome === "cancelled" || outcome === "failed",
       );
       return {
-        outcome: "incomplete",
-        handoffs,
-        reasons: [
-          ...stopped,
-          ...settled.filter(
-            (result): result is string => typeof result === "string",
-          ),
-        ],
+        outcome:
+          terminal?.outcome === "cancelled"
+            ? "cancelled"
+            : terminal?.outcome === "failed"
+              ? "failed"
+              : "incomplete",
+        handoffs: terminal === undefined ? handoffs : [],
+        reasons: ordered
+          .filter(({ outcome }) => outcome !== "handoff")
+          .map(({ detail }) => detail),
+        tickets: ordered,
       };
     } catch (error) {
       controller.abort(error);
@@ -395,10 +433,17 @@ export async function implementReservedBatch(
     }
   } catch (error) {
     if (error instanceof BoundaryStop) {
+      const outcome =
+        error.result.outcome === "cancelled" ? "cancelled" : "failed";
       return {
-        outcome: error.result.outcome === "cancelled" ? "cancelled" : "failed",
+        outcome,
         reasons: [error.result.reason],
         handoffs: [],
+        tickets: candidates.map((ticket) => ({
+          ticket,
+          outcome,
+          detail: error.result.reason,
+        })),
       };
     }
     if (error instanceof OperatorCancelled) throw error;

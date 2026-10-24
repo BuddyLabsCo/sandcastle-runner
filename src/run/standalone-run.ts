@@ -12,6 +12,7 @@ import {
 import type { RunInput, RunOutcome, RunSummary } from "./run-input.ts";
 import type { createEvent } from "./run-input.ts";
 import { implementBatch } from "./run-batch.ts";
+import type { AttemptBatchResult } from "./agent-operation.ts";
 
 export interface StandaloneRunContext {
   input: RunInput;
@@ -31,6 +32,7 @@ export interface StandaloneRunContext {
   completedTickets: number[];
   completedDeliveries: CompletedDelivery[];
   reasons: string[];
+  applyAttempts: (attempts: AttemptBatchResult) => void;
 }
 
 export async function runStandaloneIssue(
@@ -88,6 +90,7 @@ export async function runStandaloneIssue(
       context.event,
       discovery.batch,
     );
+    context.applyAttempts(attempts);
     context.handoffs.push(...attempts.handoffs);
     const batchComplete =
       attempts.handoffs.length === discovery.batch.length &&
@@ -99,8 +102,6 @@ export async function runStandaloneIssue(
         : await publishVerifiedHandoffs(publicationInputs);
     context.reasons.push(...discovery.reasons, ...attempts.reasons);
     if (!publication) return context.summary(attempts.outcome);
-    if (!input.autoMerge && publication.outcome === "succeeded")
-      return context.summary("succeeded");
     const outcome = await context.integratePublication(
       publication,
       batchComplete,

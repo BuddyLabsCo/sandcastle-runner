@@ -23,18 +23,28 @@ import type {
   PublicationIntent,
 } from "../recovery.ts";
 import { cleanupTicketWorktrees, type CleanupRecord } from "./cleanup.ts";
-import type { Ticket } from "./contracts.ts";
+import type { GitWorkspace, Ticket } from "./contracts.ts";
 import {
   createEvent,
   type RunInput,
   type RunOutcome,
   type RunSummary,
+  type TicketReport,
+  type TicketReportStatus,
 } from "./run-input.ts";
 import { implementBatch } from "./run-batch.ts";
 import { createPublicationInput } from "./publication-input.ts";
 import { runStandaloneIssue } from "./standalone-run.ts";
 import { parentClosureReconciliation } from "./write-reconciliation.ts";
 export type { RunInput, RunOutcome, RunSummary } from "./run-input.ts";
+
+type PendingTicketReport = Omit<TicketReport, "status"> & {
+  status: TicketReportStatus | "pending";
+};
+
+interface FailureSummary {
+  report?: (error: unknown) => RunSummary;
+}
 
 function recordCompletedDelivery(
   deliveries: CompletedDelivery[],
@@ -69,6 +79,19 @@ function batchMatchesTrigger(
 }
 
 export async function runProject(input: RunInput): Promise<RunSummary> {
+  const failure: FailureSummary = {};
+  try {
+    return await runProjectInternal(input, failure);
+  } catch (error) {
+    if (failure.report === undefined) throw error;
+    return failure.report(error);
+  }
+}
+
+async function runProjectInternal(
+  input: RunInput,
+  failure: FailureSummary,
+): Promise<RunSummary> {
   const event = createEvent(input);
   const targetBranch =
     input.configuredTargetBranch ??
@@ -103,6 +126,46 @@ export async function runProject(input: RunInput): Promise<RunSummary> {
   ];
   const completedTickets = completedDeliveries.map(({ ticket }) => ticket);
   const reasons: string[] = [...(input.startupReasons ?? [])];
+  const ticketReports: PendingTicketReport[] = [];
+  const recordTicket = (
+    ticket: number,
+    kind: TicketReport["kind"],
+  ): PendingTicketReport => {
+    const existing = ticketReports.find((report) => report.ticket === ticket);
+    if (existing) return existing;
+    const report: PendingTicketReport = {
+      ticket,
+      kind,
+      status: "pending",
+      pullRequest: null,
+      detail: "Selected for processing",
+      retainedWorktrees: [],
+    };
+    ticketReports.push(report);
+    return report;
+  };
+  const updateTicket = (
+    ticket: number,
+    update: Partial<Omit<PendingTicketReport, "ticket" | "kind">>,
+  ): void => {
+    const report = ticketReports.find((entry) => entry.ticket === ticket);
+    if (report) Object.assign(report, update);
+  };
+  const recordBatch = (batch: number[]): void => {
+    for (const ticket of batch) recordTicket(ticket, "delivery");
+  };
+  const recordWorktree = (
+    ticket: number,
+    kind: TicketReport["kind"],
+    worktree: string,
+  ): void => {
+    const report = recordTicket(ticket, kind);
+    if (!report.retainedWorktrees.includes(worktree))
+      report.retainedWorktrees.push(worktree);
+  };
+  const clearWorktrees = (ticket: number): void => {
+    updateTicket(ticket, { retainedWorktrees: [] });
+  };
   const publicationIntents = new Map<number, PublicationIntent>();
   for (const intent of input.recoveredPublications ?? [])
     publicationIntents.set(intent.ticket, intent);
@@ -127,22 +190,157 @@ export async function runProject(input: RunInput): Promise<RunSummary> {
       barrier: true,
     };
   }
+  for (const ticket of batches) {
+    recordTicket(ticket, "delivery");
+    const intent = publicationIntents.get(ticket);
+    if (completedTickets.includes(ticket)) {
+      updateTicket(ticket, {
+        status: "completed",
+        ...(intent?.pullRequest === undefined
+          ? {}
+          : { pullRequest: intent.pullRequest.number }),
+        detail: "Completed Delivery Ticket",
+      });
+    } else if (intent?.pullRequest !== undefined) {
+      updateTicket(ticket, {
+        pullRequest: intent.pullRequest.number,
+        detail: "Recovered Pull Request",
+      });
+    }
+  }
+  if (maintenanceRecovery?.ticket !== undefined)
+    recordTicket(maintenanceRecovery.ticket, "maintenance");
+  const sourceGitWorkspace = input.gitWorkspace;
+  const trackedGitWorkspace: GitWorkspace = new Proxy(sourceGitWorkspace, {
+    get(target, property): unknown {
+      if (property === "createWorktree") {
+        return async (
+          worktreeInput: Parameters<GitWorkspace["createWorktree"]>[0],
+        ) => {
+          await target.createWorktree(worktreeInput);
+          const match = /(?:^|\/)(ticket|maintenance)-(\d+)(?:-|$)/u.exec(
+            worktreeInput.branch,
+          );
+          if (match)
+            recordWorktree(
+              Number(match[2]),
+              match[1] === "maintenance" ? "maintenance" : "delivery",
+              worktreeInput.worktree,
+            );
+        };
+      }
+      const value: unknown = Reflect.get(target, property, target);
+      return typeof value === "function"
+        ? (value as (...args: unknown[]) => unknown).bind(target)
+        : value;
+    },
+  });
+  const sourcePersistBatch = input.persistBatch;
+  const sourcePersistMaintenance = input.persistMaintenance;
+  input = {
+    ...input,
+    gitWorkspace: trackedGitWorkspace,
+    persistBatch: async (batch, completed) => {
+      recordBatch(batch);
+      await sourcePersistBatch?.(batch, completed);
+    },
+    persistMaintenance: async (state) => {
+      if (state.ticket !== undefined) recordTicket(state.ticket, "maintenance");
+      await sourcePersistMaintenance?.(state);
+    },
+  };
   const summary = (
     outcome: RunOutcome,
     finalReasons: string[] = reasons,
-  ): RunSummary => ({
-    outcome,
-    project: input.project,
-    parentTicket: input.parentTicket,
-    ...(input.issueTicket === undefined
-      ? {}
-      : { issueTicket: input.issueTicket }),
-    targetBranch,
-    reasons: finalReasons,
-    ...(!hasBatchState
-      ? {}
-      : { batch: batches, handoffs, pullRequests, completedTickets }),
-  });
+  ): RunSummary => {
+    const resolvedReasons =
+      outcome === "incomplete" &&
+      batches.length > 0 &&
+      !finalReasons.includes("No pickable Delivery Tickets remain")
+        ? [...finalReasons, "No pickable Delivery Tickets remain"]
+        : finalReasons;
+    return {
+      outcome,
+      project: input.project,
+      parentTicket: input.parentTicket,
+      ...(input.issueTicket === undefined
+        ? {}
+        : { issueTicket: input.issueTicket }),
+      targetBranch,
+      reasons: resolvedReasons,
+      tickets: ticketReports.map((report) => ({
+        ...report,
+        status:
+          report.status === "pending"
+            ? outcome === "cancelled"
+              ? "cancelled"
+              : outcome === "failed"
+                ? "failed"
+                : "blocked"
+            : report.status,
+        detail:
+          report.status === "pending" &&
+          report.detail === "Selected for processing"
+            ? "Processing did not complete"
+            : report.detail,
+      })),
+      ...(!hasBatchState
+        ? {}
+        : { batch: batches, handoffs, pullRequests, completedTickets }),
+    };
+  };
+  failure.report = (error) => {
+    const outcome = error instanceof OperatorCancelled ? "cancelled" : "failed";
+    const reason =
+      error instanceof Error
+        ? error.message
+        : outcome === "cancelled"
+          ? "operator cancelled"
+          : "Run failed";
+    reasons.push(reason);
+    for (const report of ticketReports)
+      if (report.status === "pending")
+        updateTicket(report.ticket, { detail: reason });
+    return summary(outcome);
+  };
+  const applyAttempts = (
+    attempts: Awaited<ReturnType<typeof implementBatch>>,
+  ): void => {
+    for (const result of attempts.tickets) {
+      updateTicket(result.ticket, {
+        status: result.outcome === "handoff" ? "pending" : result.outcome,
+        detail:
+          result.outcome === "handoff"
+            ? "Implementation completed; publication pending"
+            : result.detail,
+      });
+    }
+  };
+  const applyPublication = (publication: PublicationResult): void => {
+    for (const { observation } of publication.published) {
+      updateTicket(observation.ticket, {
+        pullRequest: observation.number,
+        status:
+          observation.readiness === "ready"
+            ? "pending"
+            : observation.readiness === "failed"
+              ? "failed"
+              : "blocked",
+        detail:
+          observation.readiness === "ready"
+            ? `Pull Request #${observation.number} is CI-ready`
+            : (publication.reasons[0] ??
+              `Pull Request #${observation.number} did not become CI-ready`),
+      });
+    }
+    if (publication.outcome === "cancelled" || publication.outcome === "failed")
+      for (const { observation } of publication.published)
+        if (observation.readiness !== "ready")
+          updateTicket(observation.ticket, {
+            status: publication.outcome,
+            detail: publication.reasons[0] ?? "Publication did not complete",
+          });
+  };
 
   const cleanupTerminal = async (ticket: number): Promise<void> => {
     const previous = cleanupRecords.get(ticket);
@@ -172,6 +370,7 @@ export async function runProject(input: RunInput): Promise<RunSummary> {
         );
         await input.persistCleanup?.(ticket, result);
         cleanupRecords.set(ticket, result);
+        clearWorktrees(ticket);
         return;
       } catch (error) {
         const current = cleanupRecords.get(ticket) ?? pending;
@@ -281,6 +480,30 @@ export async function runProject(input: RunInput): Promise<RunSummary> {
     reasons.push(...result.reasons);
     if (result.handoff) handoffs.push(result.handoff);
     if (result.pullRequest) pullRequests.push(result.pullRequest);
+    if (result.ticket !== undefined) {
+      recordTicket(result.ticket, "maintenance");
+      const detail =
+        result.reasons.join("; ") ||
+        (result.outcome === "succeeded"
+          ? `Completed Maintenance Ticket ${result.ticket}`
+          : "Maintenance did not complete");
+      updateTicket(result.ticket, {
+        status:
+          result.outcome === "succeeded"
+            ? result.pullRequest === undefined
+              ? "no_change"
+              : "completed"
+            : result.outcome === "cancelled"
+              ? "cancelled"
+              : result.outcome === "failed"
+                ? "failed"
+                : "blocked",
+        ...(result.pullRequest === undefined
+          ? {}
+          : { pullRequest: result.pullRequest.number }),
+        detail,
+      });
+    }
     if (result.outcome === "succeeded") {
       if (result.ticket !== undefined) await cleanupTerminal(result.ticket);
       maintainedDeliveryTickets = new Set(recovery.deliveryTickets);
@@ -305,6 +528,7 @@ export async function runProject(input: RunInput): Promise<RunSummary> {
     publicationInputs: PublicationInput,
     batchTickets: number[],
   ): Promise<RunOutcome | null> => {
+    applyPublication(publication);
     pullRequests.push(...publication.pullRequests);
     reasons.push(...publication.reasons);
     const batchReady =
@@ -314,8 +538,14 @@ export async function runProject(input: RunInput): Promise<RunSummary> {
         ({ observation }) => observation.readiness === "ready",
       );
     if (!batchReady) {
-      if (!batchComplete)
+      if (!batchComplete) {
         reasons.push("Batch barrier blocked by unresolved Agent Attempts");
+        for (const { observation } of publication.published)
+          updateTicket(observation.ticket, {
+            status: "blocked",
+            detail: "Batch barrier blocked by unresolved Agent Attempts",
+          });
+      }
       return publication.outcome !== "succeeded"
         ? publication.outcome
         : "incomplete";
@@ -324,8 +554,15 @@ export async function runProject(input: RunInput): Promise<RunSummary> {
       !input.autoMerge &&
       (input.issueTicket !== undefined ||
         input.standaloneIssueList !== undefined)
-    )
+    ) {
+      for (const { observation } of publication.published)
+        updateTicket(observation.ticket, {
+          status: "PR ready",
+          pullRequest: observation.number,
+          detail: `Pull Request #${observation.number} is CI-ready; awaiting manual merge`,
+        });
       return null;
+    }
     const ordered = await Promise.all(
       publication.published.map(async (published) => ({
         ...published,
@@ -356,6 +593,21 @@ export async function runProject(input: RunInput): Promise<RunSummary> {
       }
       if (integration.outcome !== "completed") {
         reasons.push(integration.reason);
+        const status =
+          integration.outcome === "cancelled"
+            ? "cancelled"
+            : integration.outcome === "failed"
+              ? "failed"
+              : "blocked";
+        for (const ticket of batchTickets)
+          if (
+            ticketReports.find((report) => report.ticket === ticket)?.status ===
+            "pending"
+          )
+            updateTicket(ticket, {
+              status,
+              detail: integration.reason,
+            });
         return integration.outcome === "cancelled"
           ? "cancelled"
           : integration.outcome === "failed"
@@ -367,6 +619,11 @@ export async function runProject(input: RunInput): Promise<RunSummary> {
         handoff.ticket,
         integration.ticket,
       );
+      updateTicket(handoff.ticket, {
+        status: "completed",
+        pullRequest: pullRequest.number,
+        detail: `Pull Request #${pullRequest.number} merged and ticket closed`,
+      });
       await input.persistBatch?.(batchTickets, completedDeliveries);
       if (!completedTickets.includes(handoff.ticket))
         completedTickets.push(handoff.ticket);
@@ -435,6 +692,7 @@ export async function runProject(input: RunInput): Promise<RunSummary> {
         ...(input.recoveredBatch ?? recovered.map(({ ticket }) => ticket)),
       );
     }
+    recordBatch(batches);
     let inputs = publicationInput([]);
     const recoveredPublication = recovered.length
       ? await recoverPublishedHandoffs(inputs, recovered)
@@ -457,6 +715,7 @@ export async function runProject(input: RunInput): Promise<RunSummary> {
         event,
         recoveredPublication.restarted,
       );
+      applyAttempts(attempts);
       handoffs.push(...attempts.handoffs);
       batchComplete =
         attempts.handoffs.length === recoveredPublication.restarted.length &&
@@ -508,6 +767,7 @@ export async function runProject(input: RunInput): Promise<RunSummary> {
       completedTickets,
       completedDeliveries,
       reasons,
+      applyAttempts,
     });
   }
 
@@ -526,6 +786,7 @@ export async function runProject(input: RunInput): Promise<RunSummary> {
       completedTickets,
       completedDeliveries,
       reasons,
+      applyAttempts,
     });
   }
 
@@ -581,6 +842,7 @@ export async function runProject(input: RunInput): Promise<RunSummary> {
       event,
       discovery.batch,
     );
+    applyAttempts(attempts);
     handoffs.push(...attempts.handoffs);
     const batchComplete =
       attempts.handoffs.length === discovery.batch.length &&

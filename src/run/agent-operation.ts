@@ -111,6 +111,14 @@ export interface AttemptBatchResult {
   outcome: "incomplete" | "cancelled" | "failed";
   reasons: string[];
   handoffs: VerifiedHandoff[];
+  tickets: TicketAttemptOutcome[];
+}
+
+export interface TicketAttemptOutcome {
+  ticket: number;
+  outcome: "handoff" | "no_change" | "blocked" | "failed" | "cancelled";
+  detail: string;
+  handoff?: VerifiedHandoff;
 }
 
 type AgentStop =
