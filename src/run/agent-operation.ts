@@ -182,7 +182,9 @@ export async function runAgentOperation(
   let attemptId = "";
   let logFile = "";
   let event!: Omit<AuditEvent, "result" | "error">;
-  const allowsSkip = operation.phase === "implement";
+  const allowsSkip =
+    operation.phase !== "maintenance" &&
+    input.ticketKind !== "Maintenance Ticket";
   const pause = (message: string) =>
     pauseAgentAttempt(input, event, operation.phase, message);
   for (;;) {
@@ -271,7 +273,7 @@ export async function runAgentOperation(
         if (decision.decision === "skip")
           return await skipTicketAgentAttempt(
             input,
-            "implement",
+            operation.phase,
             event,
             operation.ticket,
             attemptNumber,
@@ -414,7 +416,7 @@ export async function runAgentOperation(
           if (decision.decision === "skip")
             return await skipTicketAgentAttempt(
               input,
-              "implement",
+              operation.phase,
               event,
               operation.ticket,
               attemptNumber,
@@ -460,7 +462,7 @@ export async function runAgentOperation(
         if (decision.decision === "skip")
           return await skipTicketAgentAttempt(
             input,
-            "implement",
+            operation.phase,
             event,
             operation.ticket,
             attemptNumber,

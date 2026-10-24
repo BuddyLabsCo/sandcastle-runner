@@ -139,6 +139,7 @@ export async function runCiRepairAttempt(
       outcome: "boundary";
       boundary: Exclude<DeliveryBoundaryResult, { outcome: "ready" }>;
     }
+  | { outcome: "skipped"; reason: string }
 > {
   try {
     const result = await runAgentOperation(input, {
@@ -183,6 +184,8 @@ export async function runCiRepairAttempt(
           },
         };
   } catch (error) {
+    if (error instanceof TicketSkipped)
+      return { outcome: "skipped", reason: error.reason };
     if (error instanceof BoundaryStop) {
       return { outcome: "boundary", boundary: error.result };
     }
@@ -209,6 +212,7 @@ export async function runConflictRepairAttempt(
       outcome: "boundary";
       boundary: Exclude<DeliveryBoundaryResult, { outcome: "ready" }>;
     }
+  | { outcome: "skipped"; reason: string }
 > {
   try {
     const result = await runAgentOperation(input, {
@@ -249,6 +253,8 @@ export async function runConflictRepairAttempt(
           },
         };
   } catch (error) {
+    if (error instanceof TicketSkipped)
+      return { outcome: "skipped", reason: error.reason };
     if (error instanceof BoundaryStop) {
       return { outcome: "boundary", boundary: error.result };
     }

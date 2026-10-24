@@ -131,10 +131,7 @@ export async function observeRequiredChecks(
   input: ReadinessInput,
   handoff: VerifiedHandoff,
   pullRequest: PullRequestIdentity,
-): Promise<
-  | Pick<PullRequestObservation, "readiness" | "failedChecks">
-  | Exclude<DeliveryBoundaryResult, { outcome: "ready" }>
-> {
+): Promise<Exclude<RequiredChecksResult, { outcome: "skipped" }>> {
   await input.clock.sleep(30_000);
   for (;;) {
     const deadline =
@@ -185,16 +182,18 @@ export async function observeRequiredChecks(
   }
 }
 
+export type RequiredChecksResult =
+  | Pick<PullRequestObservation, "readiness" | "failedChecks">
+  | Exclude<DeliveryBoundaryResult, { outcome: "ready" }>
+  | { outcome: "skipped"; reason: string };
+
 export async function repairRequiredChecks(
   input: PublicationInput,
   handoff: VerifiedHandoff,
   pullRequest: PullRequestIdentity,
   initialFailedChecks: RequiredCheck[],
   signal: AbortSignal,
-): Promise<
-  | Pick<PullRequestObservation, "readiness" | "failedChecks">
-  | Exclude<DeliveryBoundaryResult, { outcome: "ready" }>
-> {
+): Promise<RequiredChecksResult> {
   let failedChecks = initialFailedChecks;
   let currentHandoff = currentRepairHandoff(input, handoff);
   const budget = input.ciRepairBudgets.get(handoff.ticket) ?? {
@@ -250,6 +249,7 @@ export async function repairRequiredChecks(
         signal,
         attemptCounter: budget.attempts,
       });
+      if (repair.outcome === "skipped") return repair;
       if (repair.outcome === "boundary") return repair.boundary;
       budget.consumed += 1;
       await repairIntent(input, handoff.ticket, "ci", {
@@ -365,6 +365,7 @@ export async function repairMergeConflict(
 ): Promise<
   | { state: PullRequestState }
   | Exclude<DeliveryBoundaryResult, { outcome: "ready" }>
+  | { outcome: "skipped"; reason: string }
 > {
   const controller = new AbortController();
   let currentHandoff = currentRepairHandoff(input, handoff);
@@ -441,6 +442,7 @@ export async function repairMergeConflict(
         signal: controller.signal,
         attemptCounter: budget.attempts,
       });
+      if (repair.outcome === "skipped") return repair;
       if (repair.outcome === "boundary") return repair.boundary;
       budget.consumed += 1;
       await repairIntent(input, handoff.ticket, "conflict", {
@@ -510,7 +512,7 @@ export async function repairMergeConflict(
       }
       currentHandoff = repair.handoff;
       input.repairHandoffs!.set(handoff.ticket, currentHandoff);
-      let readiness = await observeRequiredChecks(
+      let readiness: RequiredChecksResult = await observeRequiredChecks(
         input,
         currentHandoff,
         pullRequest,
@@ -560,7 +562,7 @@ export async function repairMergeConflict(
     const boundary = await revalidateActiveTicket(input, currentHandoff.ticket);
     if (boundary.outcome !== "ready") return boundary;
     await recordOperatorOverride(input.audit, event, input.operator);
-    let readiness = await observeRequiredChecks(
+    let readiness: RequiredChecksResult = await observeRequiredChecks(
       input,
       currentHandoff,
       pullRequest,

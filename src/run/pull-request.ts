@@ -17,6 +17,7 @@ import {
   observeRequiredChecks,
   repairRequiredChecks,
   repairMergeConflict,
+  type RequiredChecksResult,
 } from "./pull-request-repair.ts";
 import {
   observePullRequestForIntegration,
@@ -29,6 +30,7 @@ import {
   type PublicationInput,
   type PublicationResult,
   type PublishedHandoff,
+  type SkippedPublication,
 } from "./pull-request-core.ts";
 export type {
   PublicationInput,
@@ -38,6 +40,7 @@ export type {
   ReadinessInput,
   RecoveredPublicationResult,
   RepairBudget,
+  SkippedPublication,
 } from "./pull-request-core.ts";
 export {
   recoverPublishedHandoffs,
@@ -54,6 +57,7 @@ export async function integratePullRequest(
 ): Promise<
   | { outcome: "completed"; ticket: Ticket }
   | Exclude<DeliveryBoundaryResult, { outcome: "ready" }>
+  | { outcome: "skipped"; reason: string }
 > {
   const persistedConflict = persistedBudget(input, handoff.ticket, "conflict");
   const conflictBudget = {
@@ -156,6 +160,7 @@ export async function publishVerifiedHandoffs(
   interface PublicationAttempt {
     published?: PublishedHandoff;
     boundary?: Exclude<DeliveryBoundaryResult, { outcome: "ready" }>;
+    skipped?: SkippedPublication;
   }
   const publications = input.handoffs.map(
     async (handoff): Promise<PublicationAttempt> => {
@@ -259,7 +264,7 @@ export async function publishVerifiedHandoffs(
       };
       await input.persistPublication?.(handoff.ticket, publishedIntent);
       input.publicationIntents?.set(handoff.ticket, publishedIntent);
-      let readiness = await observeRequiredChecks(
+      let readiness: RequiredChecksResult = await observeRequiredChecks(
         concurrentInput,
         handoff,
         pullRequest,
@@ -274,6 +279,25 @@ export async function publishVerifiedHandoffs(
         );
       }
       if ("outcome" in readiness) {
+        if (readiness.outcome === "skipped")
+          return {
+            skipped: {
+              ticket: handoff.ticket,
+              pullRequest: pullRequest.number,
+              reason: readiness.reason,
+            },
+            published: {
+              handoff,
+              pullRequest,
+              observation: {
+                ticket: handoff.ticket,
+                branch: handoff.branch,
+                ...pullRequest,
+                readiness: "failed",
+                failedChecks: [],
+              },
+            },
+          };
         return {
           boundary: readiness,
           published: {
@@ -315,20 +339,37 @@ export async function publishVerifiedHandoffs(
     published ? [published] : [],
   );
   const pullRequests = publishedHandoffs.map(({ observation }) => observation);
+  const skipped = published.flatMap(({ skipped }) =>
+    skipped === undefined ? [] : [skipped],
+  );
   const changed = published.find(({ boundary }) => boundary)?.boundary;
-  if (changed) return stopped(changed, pullRequests, publishedHandoffs);
+  if (changed)
+    return stopped(
+      changed,
+      pullRequests,
+      publishedHandoffs,
+      skipped.length === 0 ? undefined : skipped,
+    );
   const failed = publishedHandoffs.filter(
-    ({ observation }) => observation.readiness === "failed",
+    ({ observation }) =>
+      observation.readiness === "failed" &&
+      !skipped.some(({ ticket }) => ticket === observation.ticket),
   );
   return {
     outcome: "succeeded",
-    reasons: failed.map(
-      ({ observation }) =>
-        `Required checks failed for Pull Request ${observation.number}: ${observation.failedChecks
-          .map(({ name, state }) => `${name} (${state})`)
-          .join(", ")}`,
-    ),
+    reasons: [
+      ...skipped.map(
+        ({ ticket, reason }) => `skipped Delivery Ticket ${ticket}: ${reason}`,
+      ),
+      ...failed.map(
+        ({ observation }) =>
+          `Required checks failed for Pull Request ${observation.number}: ${observation.failedChecks
+            .map(({ name, state }) => `${name} (${state})`)
+            .join(", ")}`,
+      ),
+    ],
     pullRequests,
     published: publishedHandoffs,
+    ...(skipped.length === 0 ? {} : { skipped }),
   };
 }

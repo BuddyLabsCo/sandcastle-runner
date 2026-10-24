@@ -150,6 +150,12 @@ export interface PublicationResult {
   reasons: string[];
   pullRequests: PullRequestObservation[];
   published: PublishedHandoff[];
+  skipped?: SkippedPublication[];
+}
+export interface SkippedPublication {
+  ticket: number;
+  pullRequest: number;
+  reason: string;
 }
 export interface RecoveredPublicationResult extends PublicationResult {
   restarted: number[];
@@ -158,6 +164,7 @@ export function stopped(
   result: Exclude<DeliveryBoundaryResult, { outcome: "ready" }>,
   pullRequests: PullRequestObservation[],
   published: PublishedHandoff[],
+  skipped?: SkippedPublication[],
 ): PublicationResult {
   return {
     outcome:
@@ -169,6 +176,7 @@ export function stopped(
     reasons: [result.reason],
     pullRequests,
     published,
+    ...(skipped === undefined ? {} : { skipped }),
   };
 }
 function pullRequestStateOverride(value: string): PullRequestState {

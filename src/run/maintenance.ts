@@ -2,7 +2,6 @@ import type { AgentConfig } from "../config.ts";
 import { runMaintenanceAttempt, type VerifiedHandoff } from "./attempt.ts";
 import type { LabelPage, Ticket } from "./contracts.ts";
 import {
-  type DeliveryBoundaryResult,
   revalidateParentForOperation,
   revalidateStandaloneMaintenanceTicket,
   type TicketBoundary,
@@ -70,7 +69,10 @@ function createdTicket(value: string, label: string): Ticket {
 }
 
 function stopped(
-  boundary: Exclude<DeliveryBoundaryResult, { outcome: "ready" }>,
+  boundary: {
+    outcome: "cancelled" | "failed" | "stopped" | "skipped";
+    reason: string;
+  },
   ticket?: number,
 ): MaintenanceResult {
   return {
