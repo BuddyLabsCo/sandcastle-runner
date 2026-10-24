@@ -143,8 +143,13 @@ export async function publishVerifiedHandoffs(
   input: PublicationInput,
 ): Promise<PublicationResult> {
   const controller = new AbortController();
+  input.replacedWorkspaceCleanup ??= {
+    removedWorktrees: new Set<string>(),
+    deletedBranches: new Set<string>(),
+  };
   const concurrentInput = {
     ...input,
+    replacedWorkspaceCleanup: input.replacedWorkspaceCleanup,
     operator: serializeOperator(input.operator, controller),
   };
   interface PublicationAttempt {

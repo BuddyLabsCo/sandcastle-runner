@@ -18,7 +18,6 @@ export interface StandaloneRunContext {
   input: RunInput;
   targetBranch: string;
   event: ReturnType<typeof createEvent>;
-  cleanupTerminal: (ticket: number) => Promise<void>;
   publicationInput: (handoffs: VerifiedHandoff[]) => PublicationInput;
   integratePublication: (
     publication: PublicationResult,
@@ -59,7 +58,6 @@ export async function runStandaloneIssue(
           event: context.event,
           runnerAccount: input.runnerAccount,
           reservationLabel: input.reservationLabel,
-          cleanupTerminal: context.cleanupTerminal,
         })
       : await discoverAndReserveStandalone({
           repository: input.repository,
@@ -73,7 +71,6 @@ export async function runStandaloneIssue(
           event: context.event,
           runnerAccount: input.runnerAccount,
           reservationLabel: input.reservationLabel,
-          cleanupTerminal: context.cleanupTerminal,
         });
     if (discovery.outcome === "no_work" && context.batches.length > 0)
       return context.summary("succeeded");

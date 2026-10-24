@@ -105,7 +105,6 @@ export async function revalidateReservedDeliveryTicket(
   const result = await revalidateReserved(input, ticketNumber);
   if (result.outcome === "terminal") {
     await releaseTerminalReservation(input, result.ticket);
-    await input.cleanupTerminal?.(result.ticket.number);
     return {
       outcome: "stopped",
       reason: `Delivery Ticket ${ticketNumber} became terminal`,
@@ -234,10 +233,7 @@ export async function revalidateStandaloneMaintenanceTicket(
     retryPolicy: input.retryPolicy,
   });
   const boundary = maintenanceTicketBoundary(input, ticket);
-  if (boundary.outcome === "terminal") {
-    await input.cleanupTerminal?.(ticket.number);
-    return boundary;
-  }
+  if (boundary.outcome === "terminal") return boundary;
   if (boundary.outcome !== "ready") return boundary;
   const blockers = await readBlockers(input, ticketNumber, "maintenance");
   return blockers.some(({ state }) => state === "open")

@@ -9,6 +9,28 @@ export interface CleanupRecord {
   error?: string;
 }
 
+export interface ReplacedWorkspaceCleanup {
+  removedWorktrees: Set<string>;
+  deletedBranches: Set<string>;
+}
+
+export async function removeReplacedWorkspace(
+  gitWorkspace: GitWorkspace,
+  checkout: string,
+  workspace: { worktree: string; branch: string },
+  cleanup: ReplacedWorkspaceCleanup,
+): Promise<void> {
+  if (!gitWorkspace.removeWorktree || !gitWorkspace.deleteBranch) return;
+  if (!cleanup.removedWorktrees.has(workspace.worktree)) {
+    await gitWorkspace.removeWorktree(checkout, workspace.worktree);
+    cleanup.removedWorktrees.add(workspace.worktree);
+  }
+  if (!cleanup.deletedBranches.has(workspace.branch)) {
+    await gitWorkspace.deleteBranch(checkout, workspace.branch);
+    cleanup.deletedBranches.add(workspace.branch);
+  }
+}
+
 export function matchingWorktrees(
   entries: RegisteredWorktree[],
   repository: string,

@@ -9,7 +9,6 @@ export function createPublicationInput(
   targetBranch: string,
   event: ReturnType<typeof createEvent>,
   publicationIntents: Map<number, PublicationIntent>,
-  cleanupTerminal: (ticket: number) => Promise<void>,
 ): (batchHandoffs: VerifiedHandoff[]) => PublicationInput {
   return (batchHandoffs) => ({
     repository: input.repository,
@@ -47,7 +46,6 @@ export function createPublicationInput(
     gitWorkspace: input.gitWorkspace,
     codeHost: input.codeHost,
     agentExecutor: input.agentExecutor,
-    cleanupTerminal,
     ...(input.persistPublication === undefined
       ? {}
       : { persistPublication: input.persistPublication }),

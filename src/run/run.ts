@@ -166,6 +166,12 @@ async function runProjectInternal(
   const clearWorktrees = (ticket: number): void => {
     updateTicket(ticket, { retainedWorktrees: [] });
   };
+  const forgetWorktree = (worktree: string): void => {
+    for (const report of ticketReports)
+      report.retainedWorktrees = report.retainedWorktrees.filter(
+        (candidate) => candidate !== worktree,
+      );
+  };
   const publicationIntents = new Map<number, PublicationIntent>();
   for (const intent of input.recoveredPublications ?? [])
     publicationIntents.set(intent.ticket, intent);
@@ -232,6 +238,15 @@ async function runProjectInternal(
               match[1] === "maintenance" ? "maintenance" : "delivery",
               worktreeInput.worktree,
             );
+        };
+      }
+      if (
+        property === "removeWorktree" &&
+        typeof target.removeWorktree === "function"
+      ) {
+        return async (checkout: string, worktree: string) => {
+          await target.removeWorktree!(checkout, worktree);
+          forgetWorktree(worktree);
         };
       }
       const value: unknown = Reflect.get(target, property, target);
@@ -481,7 +496,6 @@ async function runProjectInternal(
       ...(input.persistPublication === undefined
         ? {}
         : { persistPublication: input.persistPublication }),
-      cleanupTerminal,
     }).catch((error: unknown) => {
       if (!(error instanceof OperatorCancelled)) throw error;
       return null;
@@ -532,7 +546,6 @@ async function runProjectInternal(
     targetBranch,
     event,
     publicationIntents,
-    cleanupTerminal,
   );
 
   const integratePublication = async (
@@ -771,7 +784,6 @@ async function runProjectInternal(
       input,
       targetBranch,
       event,
-      cleanupTerminal,
       publicationInput,
       integratePublication,
       summary,
@@ -790,7 +802,6 @@ async function runProjectInternal(
       input,
       targetBranch,
       event,
-      cleanupTerminal,
       publicationInput,
       integratePublication,
       summary,
@@ -818,7 +829,6 @@ async function runProjectInternal(
       reservationLabel: input.reservationLabel,
       issueList: input.issueList,
       hadChildren,
-      cleanupTerminal,
     });
     if (discovery.outcome === "incomplete") hasBatchState = true;
     if (discovery.outcome === "close_parent") {

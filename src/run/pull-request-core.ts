@@ -32,6 +32,7 @@ import {
   remoteHeadOverride,
 } from "./write-reconciliation.ts";
 import { type RepairState, type PublicationIntent } from "../recovery.ts";
+import type { ReplacedWorkspaceCleanup } from "./cleanup.ts";
 
 export interface PullRequestObservation extends PullRequestIdentity {
   ticket: number;
@@ -73,6 +74,7 @@ export interface PublicationInput extends ReadinessInput {
     intent: PublicationIntent | null,
   ) => Promise<void>;
   publicationIntents?: Map<number, PublicationIntent>;
+  replacedWorkspaceCleanup?: ReplacedWorkspaceCleanup;
 }
 
 export interface RepairBudget {

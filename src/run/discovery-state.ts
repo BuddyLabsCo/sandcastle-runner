@@ -33,7 +33,6 @@ export interface DiscoveryInput {
   ticketKind?: "Delivery Ticket" | "Maintenance Ticket";
   parentScopedMaintenance?: boolean;
   maintenanceTicketLabel?: string;
-  cleanupTerminal?: (ticket: number) => Promise<void>;
 }
 
 export interface BatchDiscoveryInput extends DiscoveryInput {
