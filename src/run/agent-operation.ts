@@ -444,6 +444,13 @@ export async function runAgentOperation(
               operation.existingPrMetadata,
             );
             await appendOperation(input, event, "operator_override", null);
+            await discardAgentLogs(
+              input,
+              operation.phase,
+              operation.ticket,
+              agentLogStage(operation.phase),
+              attemptNumber,
+            );
             return handoff;
           } catch {
             // Invalid trusted results remain in the same Operator Pause.
@@ -473,6 +480,13 @@ export async function runAgentOperation(
             operation.existingPrMetadata,
           );
           await appendOperation(input, event, "operator_override", null);
+          await discardAgentLogs(
+            input,
+            operation.phase,
+            operation.ticket,
+            agentLogStage(operation.phase),
+            attemptNumber,
+          );
           return handoff;
         } catch {
           // Free-form input continues the same provider session.
