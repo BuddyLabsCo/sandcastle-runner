@@ -18,7 +18,6 @@ export interface AgentConfig {
 export interface ProjectConfig {
   repository: string;
   checkout: string;
-  disableWebSearch: boolean;
   issueList: number[];
   maxBatchSize: number;
   targetBranch?: string;
@@ -213,11 +212,6 @@ function parseConfig(
   return {
     repository,
     checkout,
-    disableWebSearch: switchValue(
-      input.disableWebSearch,
-      "disableWebSearch",
-      false,
-    ),
     issueList: configuredIssueList,
     maxBatchSize,
     ...(input.targetBranch === undefined

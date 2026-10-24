@@ -26,7 +26,6 @@ test("loadProject reads commented YAML configuration", async () => {
     `# Project configuration uses YAML comments.
 repository: owner/repo
 checkout: /tmp/repo # Absolute checkout path.
-disableWebSearch: false
 issueList: [3, 1]
 maxBatchSize: 2
 targetBranch: main
@@ -81,7 +80,6 @@ maintenanceTicket:
     ...validConfig,
     issueList: [1, 3],
     maxBatchSize: 2,
-    disableWebSearch: false,
     workflow: {
       review: false,
       docMaintainTriggerLabel: "documentation",

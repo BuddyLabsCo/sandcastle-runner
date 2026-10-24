@@ -44,7 +44,6 @@ for (const renameFails of [false, true]) {
         async (_logFile, message) => {
           statuses.push(message);
         },
-        false,
         async (sessionId, name) => {
           events.push(`name:${sessionId}:${name}`);
           if (renameFails) throw new Error("name unavailable");

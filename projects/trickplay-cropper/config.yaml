@@ -2,7 +2,6 @@
 
 repository: xiakeng/trickplay-cropper
 checkout: /home/xiakeng/Desktop/workspace/trickplay-cropper/
-disableWebSearch: true
 issueList: []
 maxBatchSize: 2
 targetBranch: main

@@ -2,7 +2,6 @@
 
 repository: BuddyLabsCo/pin-glide-service
 checkout: /home/xiakeng/Desktop/workspace/pin-glide-service-checkout/
-disableWebSearch: false
 issueList:
   - 39
   - 40
