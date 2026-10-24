@@ -465,12 +465,19 @@ export async function executeCli(
         [ticket]: record,
       },
     }));
-  const persistMaintenance = async (state: MaintenanceState) => {
-    const nextSnapshot = {
-      ...currentSnapshot,
-      maintenance: state,
-      updatedAt: dependencies.clock.now().toISOString(),
-    };
+  const persistMaintenance = async (state: MaintenanceState | null) => {
+    const nextSnapshot =
+      state === null
+        ? {
+            ...withoutMaintenanceRecovery(currentSnapshot),
+            activeBatch: [],
+            updatedAt: dependencies.clock.now().toISOString(),
+          }
+        : {
+            ...currentSnapshot,
+            maintenance: state,
+            updatedAt: dependencies.clock.now().toISOString(),
+          };
     await writeSnapshot(nextSnapshot);
     currentSnapshot = nextSnapshot;
   };

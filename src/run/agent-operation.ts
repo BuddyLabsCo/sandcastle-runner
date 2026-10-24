@@ -89,6 +89,7 @@ type AgentStop =
 export type MaintenanceAttemptResult =
   | { outcome: "committed"; handoff: VerifiedHandoff }
   | AgentStop
+  | { outcome: "skipped"; reason: string }
   | {
       outcome: "boundary";
       boundary: Exclude<DeliveryBoundaryResult, { outcome: "ready" }>;
@@ -182,11 +183,7 @@ export async function runAgentOperation(
   let attemptId = "";
   let logFile = "";
   let event!: Omit<AuditEvent, "result" | "error">;
-  const allowsSkip =
-    operation.phase !== "maintenance" &&
-    input.ticketKind !== "Maintenance Ticket";
-  const pause = (message: string) =>
-    pauseAgentAttempt(input, event, operation.phase, message);
+  const pause = (message: string) => pauseAgentAttempt(input, event, message);
   for (;;) {
     await boundary(input, operation.ticket);
     const resumePrompt = continuationPrompt;
@@ -267,7 +264,7 @@ export async function runAgentOperation(
             result.diagnostics,
             operation.worktree,
             result,
-            allowsSkip ? ticketAgentContinueActions : undefined,
+            ticketAgentContinueActions,
           ),
         );
         if (decision.decision === "skip")
@@ -408,9 +405,7 @@ export async function runAgentOperation(
               diagnostics,
               operation.worktree,
               undefined,
-              allowsSkip
-                ? ticketAgentRetryActions
-                : "Enter to retry, q to cancel, or supply a trusted result.",
+              ticketAgentRetryActions,
             ),
           );
           if (decision.decision === "skip")
@@ -456,7 +451,7 @@ export async function runAgentOperation(
             diagnostics,
             operation.worktree,
             undefined,
-            allowsSkip ? ticketAgentContinueActions : undefined,
+            ticketAgentContinueActions,
           ),
         );
         if (decision.decision === "skip")

@@ -342,6 +342,8 @@ export async function runMaintenanceAttempt(
       ? result
       : { outcome: "committed", handoff: result };
   } catch (error) {
+    if (error instanceof TicketSkipped)
+      return { outcome: "skipped", reason: error.reason };
     if (error instanceof BoundaryStop) {
       return { outcome: "boundary", boundary: error.result };
     }
