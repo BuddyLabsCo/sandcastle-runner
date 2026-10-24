@@ -8,20 +8,21 @@ import {
   createCliDependencies,
   createAttemptTracker,
 } from "../support/cli-dependencies.ts";
-import { validConfig, createProject } from "../support/cli-project.ts";
+import {
+  validConfig,
+  createProject,
+  writeProjectConfig,
+} from "../support/cli-project.ts";
 import { executeCli } from "../../src/cli.ts";
 
 test.afterEach(cleanupTempRoots);
 
 test("required-check timeout enters Operator Pause", async () => {
   const root = await createProject();
-  await writeFile(
-    path.join(root, "projects/demo/config.json"),
-    JSON.stringify({
-      ...validConfig,
-      timeouts: { ...validConfig.timeouts, requiredChecksMinutes: 1 / 60_000 },
-    }),
-  );
+  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+    ...validConfig,
+    timeouts: { ...validConfig.timeouts, requiredChecksMinutes: 1 / 60_000 },
+  });
   let elapsed = 0;
   let discoveryDelays = 0;
   let branch = "";
@@ -326,9 +327,9 @@ test("valid no_change and blocked results stay unresolved without handoffs", asy
     const root = await createProject();
     const config = structuredClone(validConfig);
     config.workflow.review = true;
-    await writeFile(
-      path.join(root, "projects/demo/config.json"),
-      JSON.stringify(config),
+    await writeProjectConfig(
+      path.join(root, "projects/demo/config.yaml"),
+      config,
     );
     let inspections = 0;
     let branch = "";

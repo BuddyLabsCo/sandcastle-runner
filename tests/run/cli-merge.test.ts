@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
@@ -9,7 +9,11 @@ import {
   createAttemptTracker,
   createCommittedDelivery,
 } from "../support/cli-dependencies.ts";
-import { validConfig, createProject } from "../support/cli-project.ts";
+import {
+  validConfig,
+  createProject,
+  writeProjectConfig,
+} from "../support/cli-project.ts";
 import { executeCli } from "../../src/cli.ts";
 import type { AgentExecutor } from "../../src/run/contracts.ts";
 
@@ -17,10 +21,10 @@ test.afterEach(cleanupTempRoots);
 
 test("code_host closure waits 10 seconds and then another 30 seconds while leaving closure to GitHub", async () => {
   const root = await createProject();
-  await writeFile(
-    path.join(root, "projects/demo/config.json"),
-    JSON.stringify({ ...validConfig, ticketClosure: "code_host" }),
-  );
+  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+    ...validConfig,
+    ticketClosure: "code_host",
+  });
   const delivery = createCommittedDelivery();
   const sleeps: number[] = [];
   let waitedTen = false;
@@ -56,13 +60,10 @@ test("code_host closure waits 10 seconds and then another 30 seconds while leavi
 
 test("a queued merge receives no completion credit until timeout recovery confirms success", async () => {
   const root = await createProject();
-  await writeFile(
-    path.join(root, "projects/demo/config.json"),
-    JSON.stringify({
-      ...validConfig,
-      timeouts: { ...validConfig.timeouts, mergeQueueMinutes: 1 / 60_000 },
-    }),
-  );
+  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+    ...validConfig,
+    timeouts: { ...validConfig.timeouts, mergeQueueMinutes: 1 / 60_000 },
+  });
   const delivery = createCommittedDelivery();
   let elapsed = 0;
   let mergeRequests = 0;
@@ -205,17 +206,14 @@ test("a transient merge failure retries after reconciling Pull Request state", a
 
 test("an explicit merge conflict is repaired on the original branch and Pull Request", async () => {
   const root = await createProject();
-  await writeFile(
-    path.join(root, "projects/demo/config.json"),
-    JSON.stringify({
-      ...validConfig,
-      workflow: { ...validConfig.workflow, review: true },
-      agents: {
-        ...validConfig.agents,
-        conflictRepair: { model: "gpt-5.5", reasoningEffort: "medium" },
-      },
-    }),
-  );
+  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+    ...validConfig,
+    workflow: { ...validConfig.workflow, review: true },
+    agents: {
+      ...validConfig.agents,
+      conflictRepair: { model: "gpt-5.5", reasoningEffort: "medium" },
+    },
+  });
   const { tracker } = createAttemptTracker(9);
   const implementation = {
     sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",

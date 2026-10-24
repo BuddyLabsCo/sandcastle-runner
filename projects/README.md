@@ -1,6 +1,6 @@
 # Project Template
 
-This directory is a project template for Sandcastle Runner. Copy it to `projects/<project-key>` and adapt `config.json` and the prompts.
+This directory is a project template for Sandcastle Runner. Copy it to `projects/<project-key>` and adapt `config.yaml` and the prompts.
 
 ## Checkout installation contract
 
@@ -21,7 +21,7 @@ checkout path. Keep all executables on `PATH` in the terminal that invokes the
 Runner; no Codex version floor is claimed here.
 
 Set the environment variable named by both `tracker.tokenEnv` and
-`codeHost.tokenEnv` in this template's `config.json` before invoking the Runner:
+`codeHost.tokenEnv` in this template's `config.yaml` before invoking the Runner:
 
 ```sh
 export GH_TOKEN='your-github-token'       # macOS/Linux
@@ -38,7 +38,7 @@ error path. Registry/global/remote-`npx` installation, a native Runner
 installer, bundled prerequisites, broader OS/tool-version guarantees, and
 permanent cross-platform CI are unsupported; see the root contract for details.
 
-## `config.json`
+## `config.yaml`
 
 - `repository`: GitHub repository in `owner/name` form.
 - `checkout`: absolute path to that repository.
@@ -56,7 +56,7 @@ permanent cross-platform CI are unsupported; see the root contract for details.
 - `ticketClosure`: `runner` or `code_host`.
 - `maintenanceTicket`: title, body, and `doc-maintain` label for maintenance tickets.
 
-Keep credentials in the environment, for example `export GH_TOKEN=...`. `workflow.review` defaults to `true`; `workflow.docMaintainTriggerLabel` defaults to an empty string. `$comment` fields are ignored.
+Keep credentials in the environment, for example `export GH_TOKEN=...`. `workflow.review` defaults to `true`; `workflow.docMaintainTriggerLabel` defaults to an empty string. Use YAML `#` comments for explanations; the loader ignores them.
 
 ## Documentation Maintenance workflow
 
@@ -74,7 +74,7 @@ flowchart TD
     F -- blocked or failed --> I[Retain barrier for automatic recovery]
 ```
 
-Delivery-time labels are stored in the Recovery Snapshot. On restart, the current `config.json` trigger is evaluated against that stored evidence. An empty or newly nonmatching trigger stops continuation without closing or deleting the existing Maintenance Ticket, Pull Request, branch, or Worktree; their recorded locations are reported for manual handling.
+Delivery-time labels are stored in the Recovery Snapshot. On restart, the current `config.yaml` trigger is evaluated against that stored evidence. An empty or newly nonmatching trigger stops continuation without closing or deleting the existing Maintenance Ticket, Pull Request, branch, or Worktree; their recorded locations are reported for manual handling.
 
 `--document` runs one fresh, complete occurrence without a Parent or issue scope. It ignores `issueList`, does not require a trigger label, never resumes prior maintenance, and preserves the ordinary no-change behavior without creating an empty Pull Request.
 

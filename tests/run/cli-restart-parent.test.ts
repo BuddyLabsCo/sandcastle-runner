@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
@@ -15,6 +15,7 @@ import {
   createProject,
   publicationIntent,
   writePublicationState,
+  writeProjectConfig,
 } from "../support/cli-project.ts";
 import { executeCli } from "../../src/cli.ts";
 import { readRecoverySnapshot, recoveryPaths } from "../../src/recovery.ts";
@@ -25,9 +26,9 @@ test("restart adopts an exact published Pull Request without rerunning implement
   const root = await createProject();
   const config = structuredClone(validConfig);
   config.workflow.docMaintainTriggerLabel = "";
-  await writeFile(
-    path.join(root, "projects", "demo", "config.json"),
-    JSON.stringify(config),
+  await writeProjectConfig(
+    path.join(root, "projects", "demo", "config.yaml"),
+    config,
   );
   const intent = publicationIntent("pending_pr");
   const snapshot = await writePublicationState(root, [intent]);
@@ -103,9 +104,9 @@ test("restart abandons an absent pending push and creates fresh work", async () 
   const root = await createProject();
   const config = structuredClone(validConfig);
   config.workflow.docMaintainTriggerLabel = "";
-  await writeFile(
-    path.join(root, "projects", "demo", "config.json"),
-    JSON.stringify(config),
+  await writeProjectConfig(
+    path.join(root, "projects", "demo", "config.yaml"),
+    config,
   );
   const intent = publicationIntent("pending_push");
   await writePublicationState(root, [intent]);
@@ -181,9 +182,9 @@ test("restart creates one absent Pull Request after rechecking the remote head",
   const root = await createProject();
   const config = structuredClone(validConfig);
   config.workflow.docMaintainTriggerLabel = "";
-  await writeFile(
-    path.join(root, "projects", "demo", "config.json"),
-    JSON.stringify(config),
+  await writeProjectConfig(
+    path.join(root, "projects", "demo", "config.yaml"),
+    config,
   );
   const intent = publicationIntent("pending_pr");
   await writePublicationState(root, [intent]);
@@ -331,9 +332,9 @@ test("an interrupted Batch retains every pending publication", async () => {
   const root = await createProject();
   const config = structuredClone(validConfig);
   config.workflow.docMaintainTriggerLabel = "";
-  await writeFile(
-    path.join(root, "projects", "demo", "config.json"),
-    JSON.stringify(config),
+  await writeProjectConfig(
+    path.join(root, "projects", "demo", "config.yaml"),
+    config,
   );
   const delivery = createCommittedBatch(9, 10);
   const result = await executeCli(

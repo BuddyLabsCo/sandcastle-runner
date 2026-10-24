@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
@@ -10,6 +10,10 @@ import {
   milestones,
   batchBarriers,
 } from "../support/full-contract.ts";
+import {
+  readProjectConfig,
+  writeProjectConfig,
+} from "../support/cli-project.ts";
 import {
   createFiveTicketScenario,
   type RestartPoint,
@@ -23,14 +27,14 @@ test(
   async () => {
     for (const selector of ["parent", "issue"] as const) {
       const root = await createProject(false);
-      const configPath = path.join(root, "projects", "demo", "config.json");
-      const config = JSON.parse(await readFile(configPath, "utf8")) as {
+      const configPath = path.join(root, "projects", "demo", "config.yaml");
+      const config = await readProjectConfig<{
         issueList: number[];
         maxBatchSize: number;
-      };
+      }>(configPath);
       config.maxBatchSize = 2;
       config.issueList = selector === "issue" ? [4, 3, 2, 1] : [];
-      await writeFile(configPath, JSON.stringify(config));
+      await writeProjectConfig(configPath, config);
       const scenario = createFiveTicketScenario(
         root,
         false,
@@ -250,12 +254,12 @@ test(
       ),
     );
 
-    const configPath = path.join(root, "projects", "demo", "config.json");
-    const config = JSON.parse(await readFile(configPath, "utf8")) as {
+    const configPath = path.join(root, "projects", "demo", "config.yaml");
+    const config = await readProjectConfig<{
       maxBatchSize: number;
-    };
+    }>(configPath);
     config.maxBatchSize = 2;
-    await writeFile(configPath, JSON.stringify(config));
+    await writeProjectConfig(configPath, config);
 
     scenario.resetInterruption();
     restartPoint.current = "integration";
@@ -288,12 +292,12 @@ test("unfinished maintenance is forgotten when disabled and not rediscovered", a
   const args = ["run", "--project", "demo", "--parent", "8"];
   const first = await executeCli(args, scenario.dependencies);
   assert.notEqual(first.summary.outcome, "succeeded");
-  const configPath = path.join(root, "projects", "demo", "config.json");
-  const config = JSON.parse(await readFile(configPath, "utf8")) as {
+  const configPath = path.join(root, "projects", "demo", "config.yaml");
+  const config = await readProjectConfig<{
     workflow: { docMaintainTriggerLabel: string };
-  };
+  }>(configPath);
   config.workflow.docMaintainTriggerLabel = "";
-  await writeFile(configPath, JSON.stringify(config));
+  await writeProjectConfig(configPath, config);
   const before = scenario.operations.length;
   await executeCli(args, scenario.dependencies);
   assert.deepEqual(scenario.maintenanceTickets, [101]);
@@ -302,7 +306,7 @@ test("unfinished maintenance is forgotten when disabled and not rediscovered", a
     false,
   );
   config.workflow.docMaintainTriggerLabel = "documentation";
-  await writeFile(configPath, JSON.stringify(config));
+  await writeProjectConfig(configPath, config);
   const beforeReenable = scenario.operations.length;
   await executeCli(args, scenario.dependencies);
   assert.deepEqual(scenario.maintenanceTickets, [101]);

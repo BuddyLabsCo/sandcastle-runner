@@ -1,6 +1,7 @@
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { parse, stringify } from "yaml";
 
 import {
   recoveryPaths,
@@ -48,16 +49,24 @@ export const validConfig = {
   },
 };
 
+export async function readProjectConfig<T>(configPath: string): Promise<T> {
+  return parse(await readFile(configPath, "utf8")) as T;
+}
+
+export async function writeProjectConfig(
+  configPath: string,
+  config: unknown,
+): Promise<void> {
+  await writeFile(configPath, stringify(config));
+}
+
 export async function createProject(): Promise<string> {
   const root = registerTempRoot(
     await mkdtemp(path.join(tmpdir(), "sandcastle-runner-")),
   );
   const project = path.join(root, "projects", "demo");
   await mkdir(path.join(project, "prompts"), { recursive: true });
-  await writeFile(
-    path.join(project, "config.json"),
-    JSON.stringify(validConfig),
-  );
+  await writeProjectConfig(path.join(project, "config.yaml"), validConfig);
   await Promise.all(
     [
       "implement",

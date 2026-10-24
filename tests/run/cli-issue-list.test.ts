@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFile, writeFile } from "node:fs/promises";
 import test from "node:test";
 
 import { executeCli } from "../../src/cli.ts";
@@ -7,7 +6,11 @@ import {
   createCliDependencies,
   createCommittedBatch,
 } from "../support/cli-dependencies.ts";
-import { createProject } from "../support/cli-project.ts";
+import {
+  createProject,
+  readProjectConfig,
+  writeProjectConfig,
+} from "../support/cli-project.ts";
 import { cleanupTempRoots } from "../support/temp-cleanup.ts";
 
 test.afterEach(cleanupTempRoots);
@@ -16,12 +19,12 @@ async function configureIssueList(
   root: string,
   issueList: number[],
 ): Promise<void> {
-  const configPath = `${root}/projects/demo/config.json`;
-  const config = JSON.parse(await readFile(configPath, "utf8")) as {
+  const configPath = `${root}/projects/demo/config.yaml`;
+  const config = await readProjectConfig<{
     issueList: number[];
-  };
+  }>(configPath);
   config.issueList = issueList;
-  await writeFile(configPath, JSON.stringify(config));
+  await writeProjectConfig(configPath, config);
 }
 
 test("value-less issue processes eligible entries whose successors are blocked", async () => {

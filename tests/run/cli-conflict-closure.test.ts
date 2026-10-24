@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
@@ -9,7 +8,11 @@ import {
   createAttemptTracker,
   createCommittedDelivery,
 } from "../support/cli-dependencies.ts";
-import { validConfig, createProject } from "../support/cli-project.ts";
+import {
+  validConfig,
+  createProject,
+  writeProjectConfig,
+} from "../support/cli-project.ts";
 import { executeCli } from "../../src/cli.ts";
 
 test.afterEach(cleanupTempRoots);
@@ -177,10 +180,10 @@ test("Parent cancellation during a merge rejection pause prevents the authorized
 
 test("a post-merge cancellation releases its Reservation without completion credit", async () => {
   const root = await createProject();
-  await writeFile(
-    path.join(root, "projects/demo/config.json"),
-    JSON.stringify({ ...validConfig, ticketClosure: "code_host" }),
-  );
+  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+    ...validConfig,
+    ticketClosure: "code_host",
+  });
   const delivery = createCommittedDelivery();
   let releases = 0;
 
@@ -327,10 +330,10 @@ test("Parent cancellation during a closure write pause prevents the authorized r
 
 test("an open code_host ticket after both closure reads enters Operator Pause without credit", async () => {
   const root = await createProject();
-  await writeFile(
-    path.join(root, "projects/demo/config.json"),
-    JSON.stringify({ ...validConfig, ticketClosure: "code_host" }),
-  );
+  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+    ...validConfig,
+    ticketClosure: "code_host",
+  });
   const delivery = createCommittedDelivery();
   let pauseMessage = "";
 
@@ -355,10 +358,10 @@ test("an open code_host ticket after both closure reads enters Operator Pause wi
 test("trusted completion releases the observed Reservation unless the Parent was cancelled", async () => {
   for (const cancelParent of [false, true]) {
     const root = await createProject();
-    await writeFile(
-      path.join(root, "projects/demo/config.json"),
-      JSON.stringify({ ...validConfig, ticketClosure: "code_host" }),
-    );
+    await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+      ...validConfig,
+      ticketClosure: "code_host",
+    });
     const delivery = createCommittedDelivery();
     let parentCancelled = false;
     let releases = 0;

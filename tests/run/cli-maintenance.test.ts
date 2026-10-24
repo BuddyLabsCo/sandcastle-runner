@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
@@ -8,7 +7,12 @@ import {
   createCliDependencies,
   createCommittedDelivery,
 } from "../support/cli-dependencies.ts";
-import { validConfig, createProject } from "../support/cli-project.ts";
+import {
+  validConfig,
+  createProject,
+  readProjectConfig,
+  writeProjectConfig,
+} from "../support/cli-project.ts";
 import { executeCli } from "../../src/cli.ts";
 import { readRecoverySnapshot, recoveryPaths } from "../../src/recovery.ts";
 import type { Ticket } from "../../src/run/contracts.ts";
@@ -17,12 +21,12 @@ test.afterEach(cleanupTempRoots);
 
 async function createMaintenanceProject(): Promise<string> {
   const root = await createProject();
-  const configPath = path.join(root, "projects/demo/config.json");
-  const config = JSON.parse(await readFile(configPath, "utf8")) as {
+  const configPath = path.join(root, "projects/demo/config.yaml");
+  const config = await readProjectConfig<{
     workflow: { docMaintainTriggerLabel: string };
-  };
+  }>(configPath);
   config.workflow.docMaintainTriggerLabel = "documentation";
-  await writeFile(configPath, JSON.stringify(config));
+  await writeProjectConfig(configPath, config);
   return root;
 }
 
@@ -34,17 +38,14 @@ function createMatchingDelivery(ticket = 9) {
 
 test("matching delivery label triggers one clean no_change Maintenance Ticket without a Pull Request", async () => {
   const root = await createMaintenanceProject();
-  await writeFile(
-    path.join(root, "projects/demo/config.json"),
-    JSON.stringify({
-      ...validConfig,
-      ticketClosure: "code_host",
-      workflow: {
-        ...validConfig.workflow,
-        docMaintainTriggerLabel: "documentation",
-      },
-    }),
-  );
+  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+    ...validConfig,
+    ticketClosure: "code_host",
+    workflow: {
+      ...validConfig.workflow,
+      docMaintainTriggerLabel: "documentation",
+    },
+  });
   const delivery = createMatchingDelivery(9);
   const maintenance: Ticket = {
     number: 100,

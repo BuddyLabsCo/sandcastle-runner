@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
@@ -9,7 +9,11 @@ import {
   createAttemptTracker,
   createCommittedDelivery,
 } from "../support/cli-dependencies.ts";
-import { validConfig, createProject } from "../support/cli-project.ts";
+import {
+  validConfig,
+  createProject,
+  writeProjectConfig,
+} from "../support/cli-project.ts";
 import { executeCli } from "../../src/cli.ts";
 import type { AgentExecutor, RequiredCheck } from "../../src/run/contracts.ts";
 
@@ -194,17 +198,14 @@ test("required-check polling repairs terminal failure and cancellation evidence"
 
 test("failed required checks are repaired on the existing branch and Pull Request", async () => {
   const root = await createProject();
-  await writeFile(
-    path.join(root, "projects/demo/config.json"),
-    JSON.stringify({
-      ...validConfig,
-      agents: {
-        ...validConfig.agents,
-        ciRepair: { model: "gpt-5.5", reasoningEffort: "medium" },
-      },
-      timeouts: { ...validConfig.timeouts, requiredChecksMinutes: 1 / 60_000 },
-    }),
-  );
+  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+    ...validConfig,
+    agents: {
+      ...validConfig.agents,
+      ciRepair: { model: "gpt-5.5", reasoningEffort: "medium" },
+    },
+    timeouts: { ...validConfig.timeouts, requiredChecksMinutes: 1 / 60_000 },
+  });
   const { tracker } = createAttemptTracker(9);
   const implementation = {
     sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",

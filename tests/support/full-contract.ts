@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { registerTempRoot } from "../support/temp-cleanup.ts";
+import { writeProjectConfig } from "../support/cli-project.ts";
 
 import type {
   AgentAttemptInput,
@@ -61,7 +62,7 @@ export async function createProject(recovery: boolean): Promise<string> {
       label: "doc-maintain",
     },
   };
-  await writeFile(path.join(project, "config.json"), JSON.stringify(config));
+  await writeProjectConfig(path.join(project, "config.yaml"), config);
   await Promise.all(
     ["implement", "ci-repair", "conflict-repair", "documentation"].map((name) =>
       writeFile(path.join(project, "prompts", `${name}.md`), `${name} prompt`),

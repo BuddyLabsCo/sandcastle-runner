@@ -26,7 +26,7 @@ tests/
 `cli.ts` constructs adapters and passes them to the Run entry point. Keep it
 importable without starting a process so tests can exercise command handling.
 `config.ts` reads and validates Project files and resolves credential references;
-it does not select tickets or start agents. Project JSON, Markdown prompts, and
+it does not select tickets or start agents. Project YAML, Markdown prompts, and
 logs remain external files in their configured locations, not embedded source.
 
 ## Workflow modules
