@@ -147,6 +147,7 @@ export async function publishVerifiedHandoffs(
     removedWorktrees: new Set<string>(),
     deletedBranches: new Set<string>(),
   };
+  input.repairHandoffs ??= new Map();
   const concurrentInput = {
     ...input,
     replacedWorkspaceCleanup: input.replacedWorkspaceCleanup,
@@ -248,14 +249,16 @@ export async function publishVerifiedHandoffs(
         operator: concurrentInput.operator,
         retryPolicy: concurrentInput.retryPolicy,
       });
-      await input.persistPublication?.(handoff.ticket, {
+      const publishedIntent: PublicationIntent = {
         ...intent,
         phase: "pr_created",
         pullRequest: {
           ...pullRequest,
           headSha: intent.intendedHeadSha,
         },
-      });
+      };
+      await input.persistPublication?.(handoff.ticket, publishedIntent);
+      input.publicationIntents?.set(handoff.ticket, publishedIntent);
       let readiness = await observeRequiredChecks(
         concurrentInput,
         handoff,

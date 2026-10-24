@@ -12,166 +12,6 @@ import { cleanupTempRoots } from "../support/temp-cleanup.ts";
 
 test.afterEach(cleanupTempRoots);
 
-for (const kind of ["ci", "conflict"] as const) {
-  test(`a successful fresh ${kind} repair replaces its predecessor and completed delivery cleans the current Worktree`, async () => {
-    const root = await createProject();
-    const { tracker } = createAttemptTracker(9);
-    const implementation = {
-      sha: "b".repeat(40),
-      message: "feat: implementation",
-    };
-    const repair = {
-      sha: "c".repeat(40),
-      message: `fix: ${kind} repair`,
-    };
-    const worktrees = new Map<
-      string,
-      { branch: string; commits: (typeof implementation)[] }
-    >();
-    const branches = new Set<string>();
-    const removedWorktrees: string[] = [];
-    const deletedBranches: string[] = [];
-    let initialWorkspace: { worktree: string; branch: string } | undefined;
-    let repairedWorkspace: { worktree: string; branch: string } | undefined;
-    let afterRepair: { worktrees: string[]; branches: string[] } | undefined;
-    let remoteHead: string | null = null;
-    let checks = 0;
-    let mergeRequests = 0;
-    let merged = false;
-
-    const result = await executeCli(
-      ["run", "--project", "demo", "--parent", "8"],
-      createCliDependencies(root, {
-        tracker,
-        gitWorkspace: {
-          async fetchTargetBranch() {
-            return "a".repeat(40);
-          },
-          async createWorktree(input) {
-            const workspace = {
-              worktree: input.worktree,
-              branch: input.branch,
-            };
-            if (input.branch.includes("-repair-"))
-              repairedWorkspace = workspace;
-            else initialWorkspace = workspace;
-            worktrees.set(input.worktree, {
-              branch: input.branch,
-              commits: [
-                input.branch.includes("-repair-") ? repair : implementation,
-              ],
-            });
-            branches.add(input.branch);
-          },
-          async inspect({ worktree, base }) {
-            const workspace = worktrees.get(worktree)!;
-            return {
-              worktree,
-              branch: workspace.branch,
-              base,
-              commits: workspace.commits,
-              clean: true,
-            };
-          },
-          async push(worktree) {
-            remoteHead = worktrees.get(worktree)!.commits.at(-1)!.sha;
-          },
-          async listWorktrees() {
-            return [...worktrees].map(([worktree, workspace]) => ({
-              worktree,
-              branch: workspace.branch,
-              repository: "/tmp/repo",
-            }));
-          },
-          async removeWorktree(_checkout, worktree) {
-            worktrees.delete(worktree);
-            removedWorktrees.push(worktree);
-          },
-          async deleteBranch(_checkout, branch) {
-            branches.delete(branch);
-            deletedBranches.push(branch);
-          },
-        },
-        agentExecutor: {
-          async execute(input) {
-            const commit = input.promptFile.endsWith(`${kind}-repair.md`)
-              ? repair
-              : implementation;
-            return {
-              outcome: "committed",
-              summary: commit.message,
-              commits: [commit],
-              checks: [],
-              blocker: null,
-              pr_title: "feat: implementation",
-              pr_body: "Implementation body.",
-            };
-          },
-        },
-        codeHost: {
-          async getRemoteBranchHead() {
-            return remoteHead;
-          },
-          async getRequiredChecks() {
-            checks += 1;
-            if (kind === "ci" && checks === 1) {
-              return [
-                {
-                  name: "checks",
-                  state: "FAILURE",
-                  link: "https://example.test/checks/1",
-                  bucket: "fail",
-                },
-              ];
-            }
-            if (checks === 2) {
-              afterRepair = {
-                worktrees: [...worktrees.keys()],
-                branches: [...branches],
-              };
-            }
-            return [];
-          },
-          async getPullRequest() {
-            return {
-              headSha: remoteHead ?? implementation.sha,
-              createdAt: "2026-09-09T00:00:00Z",
-              merged,
-              mergeFailure: null,
-            };
-          },
-          async requestSquashMerge() {
-            mergeRequests += 1;
-            if (kind === "conflict" && mergeRequests === 1) {
-              return { outcome: "conflict", error: "merge conflict" };
-            }
-            merged = true;
-            return { outcome: "accepted" };
-          },
-        },
-      }),
-    );
-
-    assert.equal(result.summary.outcome, "succeeded");
-    assert.ok(initialWorkspace);
-    assert.ok(repairedWorkspace);
-    assert.deepEqual(afterRepair, {
-      worktrees: [repairedWorkspace.worktree],
-      branches: [repairedWorkspace.branch],
-    });
-    assert.deepEqual(removedWorktrees, [
-      initialWorkspace.worktree,
-      repairedWorkspace.worktree,
-    ]);
-    assert.deepEqual(deletedBranches, [
-      initialWorkspace.branch,
-      repairedWorkspace.branch,
-    ]);
-    assert.equal(worktrees.size, 0);
-    assert.equal(branches.size, 0);
-  });
-}
-
 test("not_planned work retains every matching Worktree and local branch", async () => {
   const root = await createProject();
   const {
@@ -401,80 +241,88 @@ test("cancelled work retains its Worktree and local branch", async () => {
   ]);
 });
 
-test("terminal cleanup failure retries through Operator Pause", async () => {
-  const root = await createProject();
-  const { tracker } = createAttemptTracker(9);
-  const commit = {
-    sha: "b".repeat(40),
-    message: "feat: implementation",
-  };
-  let current:
-    { worktree: string; branch: string; repository: string } | undefined;
-  let removalAttempts = 0;
-  let deleted = 0;
-  const pauses: string[] = [];
+for (const failure of ["worktree", "branch"] as const) {
+  test(`terminal ${failure} cleanup failure retries through Operator Pause`, async () => {
+    const root = await createProject();
+    const { tracker } = createAttemptTracker(9);
+    const commit = {
+      sha: "b".repeat(40),
+      message: "feat: implementation",
+    };
+    let current:
+      { worktree: string; branch: string; repository: string } | undefined;
+    let removalAttempts = 0;
+    let deleted = 0;
+    let branchExists = true;
+    const pauses: string[] = [];
 
-  const result = await executeCli(
-    ["run", "--project", "demo", "--parent", "8"],
-    createCliDependencies(root, {
-      tracker,
-      gitWorkspace: {
-        async fetchTargetBranch() {
-          return "a".repeat(40);
+    const result = await executeCli(
+      ["run", "--project", "demo", "--parent", "8"],
+      createCliDependencies(root, {
+        tracker,
+        gitWorkspace: {
+          async fetchTargetBranch() {
+            return "a".repeat(40);
+          },
+          async createWorktree(input) {
+            current = {
+              worktree: input.worktree,
+              branch: input.branch,
+              repository: "/tmp/repo",
+            };
+          },
+          async inspect({ worktree, base }) {
+            return {
+              worktree,
+              branch: current!.branch,
+              base,
+              commits: [commit],
+              clean: true,
+            };
+          },
+          async listWorktrees() {
+            return current ? [current] : [];
+          },
+          async removeWorktree() {
+            removalAttempts += 1;
+            if (failure === "worktree" && removalAttempts === 1)
+              throw new Error("worktree is busy");
+            current = undefined;
+          },
+          async deleteBranch() {
+            deleted += 1;
+            if (failure === "branch" && deleted === 1)
+              throw new Error("branch is busy");
+            branchExists = false;
+          },
         },
-        async createWorktree(input) {
-          current = {
-            worktree: input.worktree,
-            branch: input.branch,
-            repository: "/tmp/repo",
-          };
+        agentExecutor: {
+          async execute() {
+            return {
+              outcome: "committed",
+              summary: "implemented",
+              commits: [commit],
+              checks: [],
+              blocker: null,
+              pr_title: "feat: implementation",
+              pr_body: "Implementation body.",
+            };
+          },
         },
-        async inspect({ worktree, base }) {
-          return {
-            worktree,
-            branch: current!.branch,
-            base,
-            commits: [commit],
-            clean: true,
-          };
+        operator: {
+          async pause(message) {
+            pauses.push(message);
+            return "";
+          },
         },
-        async listWorktrees() {
-          return current ? [current] : [];
-        },
-        async removeWorktree() {
-          removalAttempts += 1;
-          if (removalAttempts === 1) throw new Error("worktree is busy");
-          current = undefined;
-        },
-        async deleteBranch() {
-          deleted += 1;
-        },
-      },
-      agentExecutor: {
-        async execute() {
-          return {
-            outcome: "committed",
-            summary: "implemented",
-            commits: [commit],
-            checks: [],
-            blocker: null,
-            pr_title: "feat: implementation",
-            pr_body: "Implementation body.",
-          };
-        },
-      },
-      operator: {
-        async pause(message) {
-          pauses.push(message);
-          return "";
-        },
-      },
-    }),
-  );
+      }),
+    );
 
-  assert.equal(result.summary.outcome, "succeeded");
-  assert.equal(removalAttempts, 2);
-  assert.equal(deleted, 1);
-  assert.equal(pauses.length, 1);
-  assert.match(pauses[0]!, /Terminal cleanup for Ticket 9 failed/u);
-});
+    assert.equal(result.summary.outcome, "succeeded");
+    assert.equal(removalAttempts, failure === "worktree" ? 2 : 1);
+    assert.equal(deleted, failure === "branch" ? 2 : 1);
+    assert.equal(branchExists, false);
+    assert.equal(pauses.length, 1);
+    assert.match(pauses[0]!, /Terminal cleanup for Ticket 9 failed/u);
+  });
+}

@@ -75,6 +75,12 @@ export interface PublicationInput extends ReadinessInput {
   ) => Promise<void>;
   publicationIntents?: Map<number, PublicationIntent>;
   replacedWorkspaceCleanup?: ReplacedWorkspaceCleanup;
+  repairHandoffs?: Map<number, VerifiedHandoff>;
+  recordReplacementCleanup?: (
+    ticket: number,
+    workspace: Pick<VerifiedHandoff, "worktree" | "branch">,
+    status: "pending" | "cleaned",
+  ) => Promise<void>;
 }
 
 export interface RepairBudget {
@@ -97,6 +103,9 @@ export function repairIntent(
   const current = input.publicationIntents?.get(ticket);
   if (!current || !input.persistPublication) return Promise.resolve();
   repairState = {
+    ...(current.repairState?.head === undefined
+      ? {}
+      : { head: current.repairState.head }),
     ...(current.repairState?.purpose === purpose ? current.repairState : {}),
     ...repairState,
   };

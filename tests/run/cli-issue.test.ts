@@ -346,7 +346,7 @@ test("no-auto-merge publishes, repairs CI, and preserves recovery state without 
   assert.equal(snapshot.phase, "running");
   assert.deepEqual(
     snapshot.publications?.map(({ ticket, phase }) => ({ ticket, phase })),
-    [{ ticket: 9, phase: "pending_pr" }],
+    [{ ticket: 9, phase: "pr_created" }],
   );
   assert.equal(snapshot.terminalCleanup, undefined);
 });

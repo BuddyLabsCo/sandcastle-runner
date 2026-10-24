@@ -370,11 +370,26 @@ async function runProjectInternal(
           });
   };
 
+  const recordReplacementCleanup: NonNullable<
+    PublicationInput["recordReplacementCleanup"]
+  > = async (ticket, workspace, status) => {
+    const candidate = `${workspace.worktree}:${workspace.branch}`;
+    const candidates = new Set(cleanupRecords.get(ticket)?.candidates ?? []);
+    if (status === "pending") candidates.add(candidate);
+    else candidates.delete(candidate);
+    const record: CleanupRecord = {
+      status: "pending",
+      candidates: [...candidates],
+    };
+    await input.persistCleanup?.(ticket, record);
+    cleanupRecords.set(ticket, record);
+  };
+
   const cleanupTerminal = async (ticket: number): Promise<void> => {
-    const previous = cleanupRecords.get(ticket);
-    if (previous?.status === "cleaned" || previous?.status === "accepted")
-      return;
     for (;;) {
+      const previous = cleanupRecords.get(ticket);
+      if (previous?.status === "cleaned" || previous?.status === "accepted")
+        return;
       const pending: CleanupRecord = {
         status: "pending",
         candidates: previous?.candidates ?? [],
@@ -430,7 +445,15 @@ async function runProjectInternal(
   };
 
   for (const [ticket, record] of cleanupRecords) {
-    if (record.status === "pending") await cleanupTerminal(ticket);
+    if (
+      record.status === "pending" &&
+      (input.recoveredCompletedDeliveries?.some(
+        (delivery) => delivery.ticket === ticket,
+      ) ||
+        (input.recoveredMaintenance?.phase === "completed" &&
+          input.recoveredMaintenance.ticket === ticket))
+    )
+      await cleanupTerminal(ticket);
   }
   let maintainedDeliveryTickets = new Set(
     input.recoveredMaintenance?.phase === "completed"
@@ -493,6 +516,7 @@ async function runProjectInternal(
       gitWorkspace: input.gitWorkspace,
       codeHost: input.codeHost,
       agentExecutor: input.agentExecutor,
+      recordReplacementCleanup,
       ...(input.persistPublication === undefined
         ? {}
         : { persistPublication: input.persistPublication }),
@@ -546,6 +570,7 @@ async function runProjectInternal(
     targetBranch,
     event,
     publicationIntents,
+    recordReplacementCleanup,
   );
 
   const integratePublication = async (
