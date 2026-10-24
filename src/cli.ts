@@ -31,6 +31,7 @@ import type {
   Tracker,
 } from "./run/contracts.ts";
 import { OperatorCancelled, supervisedAuditWrite } from "./run/operations.ts";
+import { renderRunReport } from "./run/report.ts";
 import { runProject, type RunSummary } from "./run/run.ts";
 import type { CleanupRecord } from "./run/cleanup.ts";
 
@@ -597,7 +598,7 @@ export async function executeCli(
     targetBranch: summary.targetBranch,
     updatedAt: dependencies.clock.now().toISOString(),
   });
-  dependencies.operator.write(JSON.stringify(summary));
+  dependencies.operator.write(renderRunReport(summary, audit.path));
   return {
     exitCode:
       summary.outcome === "succeeded" || summary.outcome === "no_work" ? 0 : 1,

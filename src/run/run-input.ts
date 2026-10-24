@@ -22,6 +22,18 @@ import type { CleanupRecord } from "./cleanup.ts";
 export type RunOutcome =
   "succeeded" | "no_work" | "incomplete" | "cancelled" | "failed";
 
+export type TicketReportStatus =
+  "completed" | "PR ready" | "failed" | "no_change" | "blocked" | "cancelled";
+
+export interface TicketReport {
+  ticket: number;
+  kind: "delivery" | "maintenance";
+  status: TicketReportStatus;
+  pullRequest: number | null;
+  detail: string;
+  retainedWorktrees: string[];
+}
+
 export interface RunSummary {
   outcome: RunOutcome;
   project: string;
@@ -33,6 +45,7 @@ export interface RunSummary {
   handoffs?: VerifiedHandoff[];
   pullRequests?: PullRequestObservation[];
   completedTickets?: number[];
+  tickets?: TicketReport[];
 }
 
 export interface RunInput {

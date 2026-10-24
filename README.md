@@ -167,7 +167,10 @@ npm ci
 npm exec -- sandcastle-runner run --project <project-key> (--parent <issue-number> | --issue <issue-number> | --document)
 ```
 
-The command prints one JSON summary. `succeeded` and `no_work` exit with status 0; `incomplete`, `cancelled`, and `failed` exit non-zero.
+The command ends with a human-readable report of every processed Delivery and
+Maintenance Ticket, followed by any remaining discovery reasons, Retained
+Worktrees, and the Audit Log path. `succeeded` and `no_work` exit with status 0;
+`incomplete`, `cancelled`, and `failed` exit non-zero.
 
 By default, a standalone Run requests a merge after its Pull Request is CI-ready. With `--no-auto-merge`, the Runner creates and validates the Pull Request, then preserves the Reservation, Worktree, and Recovery Snapshot without adding the ticket to completed deliveries. Explicit auto-merge flags require a value-bearing `--issue <issue-number>` and accept no value.
 

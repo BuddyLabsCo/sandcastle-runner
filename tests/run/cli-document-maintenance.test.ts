@@ -336,7 +336,14 @@ test("matching unfinished automatic maintenance resumes without duplication", as
     }),
   );
 
-  assert.equal(result.summary.outcome, "no_work");
+  assert.equal(result.summary.outcome, "incomplete");
+  assert.ok(
+    result.summary.reasons.includes("No pickable Delivery Tickets remain"),
+  );
+  assert.equal(
+    result.summary.tickets?.find(({ ticket }) => ticket === 100)?.status,
+    "no_change",
+  );
   assert.equal(creates, 0);
   assert.equal(parentCloses, 0);
 });
