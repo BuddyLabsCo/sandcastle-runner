@@ -360,7 +360,16 @@ async function runProjectInternal(
       );
   };
   const applyPublication = (publication: PublicationResult): void => {
+    for (const { ticket, pullRequest, reason } of publication.skipped ?? []) {
+      skippedTickets.add(ticket);
+      updateTicket(ticket, {
+        pullRequest,
+        status: "failed",
+        detail: `skipped Delivery Ticket ${ticket}: ${reason}`,
+      });
+    }
     for (const { observation } of publication.published) {
+      if (skippedTickets.has(observation.ticket)) continue;
       updateTicket(observation.ticket, {
         pullRequest: observation.number,
         status:
@@ -378,7 +387,10 @@ async function runProjectInternal(
     }
     if (publication.outcome === "cancelled" || publication.outcome === "failed")
       for (const { observation } of publication.published)
-        if (observation.readiness !== "ready")
+        if (
+          observation.readiness !== "ready" &&
+          !skippedTickets.has(observation.ticket)
+        )
           updateTicket(observation.ticket, {
             status: publication.outcome,
             detail: publication.reasons[0] ?? "Publication did not complete",
@@ -601,7 +613,9 @@ async function runProjectInternal(
       batchComplete &&
       publication.outcome === "succeeded" &&
       publication.published.every(
-        ({ observation }) => observation.readiness === "ready",
+        ({ observation }) =>
+          observation.readiness === "ready" ||
+          skippedTickets.has(observation.ticket),
       );
     if (!batchReady) {
       if (!batchComplete) {
@@ -622,21 +636,24 @@ async function runProjectInternal(
         input.standaloneIssueList !== undefined)
     ) {
       for (const { observation } of publication.published)
-        updateTicket(observation.ticket, {
-          status: "PR ready",
-          pullRequest: observation.number,
-          detail: `Pull Request #${observation.number} is CI-ready; awaiting manual merge`,
-        });
+        if (!skippedTickets.has(observation.ticket))
+          updateTicket(observation.ticket, {
+            status: "PR ready",
+            pullRequest: observation.number,
+            detail: `Pull Request #${observation.number} is CI-ready; awaiting manual merge`,
+          });
       return null;
     }
     const ordered = await Promise.all(
-      publication.published.map(async (published) => ({
-        ...published,
-        state: await observePullRequestForIntegration(
-          publicationInputs,
-          published.pullRequest.number,
-        ),
-      })),
+      publication.published
+        .filter(({ handoff }) => !skippedTickets.has(handoff.ticket))
+        .map(async (published) => ({
+          ...published,
+          state: await observePullRequestForIntegration(
+            publicationInputs,
+            published.pullRequest.number,
+          ),
+        })),
     );
     ordered.sort(
       (left, right) =>
@@ -656,6 +673,18 @@ async function runProjectInternal(
         if (!(error instanceof OperatorCancelled)) throw error;
         reasons.push("operator cancelled");
         return "cancelled";
+      }
+      if (integration.outcome === "skipped") {
+        skippedTickets.add(handoff.ticket);
+        updateTicket(handoff.ticket, {
+          status: "failed",
+          pullRequest: pullRequest.number,
+          detail: `skipped Delivery Ticket ${handoff.ticket}: ${integration.reason}`,
+        });
+        reasons.push(
+          `skipped Delivery Ticket ${handoff.ticket}: ${integration.reason}`,
+        );
+        continue;
       }
       if (integration.outcome !== "completed") {
         reasons.push(integration.reason);
@@ -809,6 +838,15 @@ async function runProjectInternal(
           ...recoveredPublication.published,
           ...(restartedPublication?.published ?? []),
         ],
+        ...((recoveredPublication.skipped?.length ?? 0) === 0 &&
+        (restartedPublication?.skipped?.length ?? 0) === 0
+          ? {}
+          : {
+              skipped: [
+                ...(recoveredPublication.skipped ?? []),
+                ...(restartedPublication?.skipped ?? []),
+              ],
+            }),
       };
     }
     const outcome = await integratePublication(

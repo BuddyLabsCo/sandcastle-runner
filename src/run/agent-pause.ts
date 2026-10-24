@@ -67,7 +67,7 @@ export async function pauseAgentAttempt(
   phase: AgentOperationPhase,
   message: string,
 ): Promise<TicketAgentPauseDecision> {
-  if (phase === "implement")
+  if (phase !== "maintenance" && input.ticketKind !== "Maintenance Ticket")
     return pauseTicketAgentForOperator(
       input.audit,
       event,
@@ -96,7 +96,7 @@ export class TicketSkipped extends Error {
 
 export async function skipTicketAgentAttempt(
   input: AgentOperationInput,
-  phase: "implement" | "review",
+  phase: AgentOperationPhase | "review",
   event: Omit<AuditEvent, "result" | "error">,
   ticket: number,
   attempt: number,
