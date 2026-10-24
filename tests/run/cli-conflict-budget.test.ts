@@ -251,7 +251,7 @@ test("a trusted conflict-repair override repeats required-check discovery", asyn
   assert.equal(agentCalls, 4);
   assert.equal(checkReads, 2);
   assert.equal(mergeRequests, 2);
-  assert.match(pauses[0]!, /Agent Attempt blocked/u);
+  assert.match(pauses[0]!, /^Outcome: blocked$/mu);
 });
 
 test("blocked conflict repairs pause without consuming the repair budget", async () => {
@@ -368,7 +368,7 @@ test("blocked conflict repairs pause without consuming the repair budget", async
   assert.equal(result.summary.outcome, "cancelled");
   assert.equal(agentCalls, 2);
   assert.equal(mergeRequests, 1);
-  assert.match(pauses[0]!, /Agent Attempt blocked/u);
+  assert.match(pauses[0]!, /^Outcome: blocked$/mu);
   assert.ok(result.logPath);
   const attempts = (await readFile(result.logPath, "utf8"))
     .trim()

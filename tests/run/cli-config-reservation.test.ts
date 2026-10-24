@@ -336,6 +336,7 @@ test("an accepted audit creation gap does not suppress later appends", async () 
 
 test("invalid CLI arguments return a structured startup failure", async () => {
   let externalCalls = 0;
+  const messages: string[] = [];
   const result = await executeCli(
     ["run", "--project", "demo"],
     createCliDependencies("/unused", {
@@ -360,6 +361,9 @@ test("invalid CLI arguments return a structured startup failure", async () => {
         },
       },
       operator: {
+        write(message) {
+          messages.push(message);
+        },
         async pause() {
           externalCalls += 1;
           return "q";
@@ -373,6 +377,9 @@ test("invalid CLI arguments return a structured startup failure", async () => {
   assert.match(result.summary.reasons[0] ?? "", /usage:/u);
   assert.equal(result.logPath, null);
   assert.equal(externalCalls, 0);
+  assert.equal(messages.length, 1);
+  assert.match(messages[0]!, /^Startup failed: usage:/u);
+  assert.doesNotMatch(messages[0]!, /^\{/u);
 });
 
 test("an omitted Target Branch is resolved once through CodeHost and fixed for the Run", async () => {

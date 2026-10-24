@@ -60,44 +60,50 @@ export interface AttemptInput extends AgentOperationInput {
   reviewAgent?: AgentConfig;
 }
 
-function diagnosticValue(value: unknown): string {
-  if (typeof value !== "string" || value.length === 0) return "unavailable";
-  return value;
+function availableValue(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    if (value.trim().length > 0) return value;
+  }
+  return "unavailable";
 }
 
-function assistantReplyValue(value: unknown): string {
-  if (typeof value !== "string" || value.length === 0)
-    return "no assistant reply captured";
-  return value;
+function firstLine(...values: unknown[]): string {
+  const value = availableValue(...values);
+  return value === "unavailable" ? value : value.replace(/\s+/gu, " ").trim();
+}
+
+function shellArgument(value: string): string {
+  const argument = value.replace(/^\\\\/u, "//");
+  const prefix = /^[A-Za-z0-9_./:@%+=,-]*/u.exec(argument)![0];
+  // An unquoted prefix lets sh and PowerShell join the following quote segments.
+  return prefix === argument
+    ? argument
+    : `${prefix}'${argument.slice(prefix.length).replaceAll("'", "'\"'\"'")}'`;
 }
 
 export function agentPauseMessage(
-  prefix: string,
+  outcome: "blocked" | "failed",
   diagnostics: AgentDiagnostics | undefined,
-  result?: Pick<
-    AgentAttemptResult,
-    "outcome" | "summary" | "blocker" | "commits" | "checks"
-  >,
+  worktree: string,
+  result?: Pick<AgentAttemptResult, "summary" | "blocker">,
+  actions = "Enter to continue, q to cancel, or provide recovery instructions.",
 ): string {
   const d = diagnostics ?? {};
-  const reply = assistantReplyValue(d.assistantReply);
-  const previous = d.assistantReply
-    ? ""
-    : d.previousAssistantReply
-      ? `\nPrevious complete assistant reply (no new reply): ${d.previousAssistantReply}`
-      : "";
+  const session = availableValue(d.sessionId);
+  const resume =
+    session === "unavailable"
+      ? "unavailable"
+      : `codex resume -C ${shellArgument(availableValue(worktree, d.workingDirectory))} ${shellArgument(session)}`;
   return [
-    `${prefix}: ${diagnosticValue(d.error)}`,
-    `Operation: ${diagnosticValue(d.operation)}; error category: ${diagnosticValue(d.errorCategory)}`,
-    `Attempt: ${d.attemptOrdinal ?? "unavailable"}; retryable: ${d.retryable ?? "unavailable"}`,
-    `Attempt Result: ${diagnosticValue(result?.outcome)}; summary: ${diagnosticValue(result?.summary)}; blocker: ${diagnosticValue(result?.blocker)}`,
-    `Claimed commits: ${result?.commits ? JSON.stringify(result.commits) : "unavailable"}; checks: ${result?.checks ? JSON.stringify(result.checks) : "unavailable"}`,
-    `Run: ${diagnosticValue(d.runId)}; Agent Attempt: ${diagnosticValue(d.agentAttemptId)}`,
-    `Provider/model: ${diagnosticValue(d.provider)}/${diagnosticValue(d.model)}; working directory: ${diagnosticValue(d.workingDirectory)}`,
-    `Provider session: ${diagnosticValue(d.sessionId)}; resume: codex resume ${diagnosticValue(d.sessionId)}`,
-    `Assistant reply: ${reply}${previous}`,
-    `Diagnostic log: ${diagnosticValue(d.diagnosticLogPath)}`,
-    "Enter to continue, q to cancel, or provide recovery instructions.",
+    `Outcome: ${outcome}`,
+    `Reason: ${firstLine(result?.blocker, result?.summary, d.error)}`,
+    `Provider session: ${session}`,
+    `Resume command: ${resume}`,
+    ...(session === "unavailable"
+      ? [`Diagnostic log: ${availableValue(d.diagnosticLogPath)}`]
+      : []),
+    `Actions: ${actions}`,
   ].join("\n");
 }
 
@@ -255,6 +261,7 @@ export async function runAgentOperation(
       undefined,
       resumePrompt === undefined ? undefined : "resumed",
     );
+    let resultDiagnostics: AgentDiagnostics | undefined;
     try {
       const gitDirectory = await mkdtemp(
         path.join(tmpdir(), "sandcastle-runner-git-"),
@@ -286,6 +293,7 @@ export async function runAgentOperation(
           signal: operation.signal,
           ...(resumePrompt === undefined ? {} : { resumePrompt }),
         });
+        resultDiagnostics = result.diagnostics;
       } finally {
         await rm(gitDirectory, { recursive: true, force: true });
       }
@@ -308,8 +316,9 @@ export async function runAgentOperation(
           event,
           input.operator,
           agentPauseMessage(
-            "Agent Attempt blocked",
+            "blocked",
             result.diagnostics,
+            operation.worktree,
             result,
           ),
         );
@@ -395,6 +404,7 @@ export async function runAgentOperation(
         throw error;
       }
       const diagnostics: AgentDiagnostics = {
+        ...resultDiagnostics,
         error: error instanceof Error ? error.message : "Agent Attempt failed",
         errorCategory: "agent_attempt",
         attemptOrdinal: attemptNumber,
@@ -426,7 +436,13 @@ export async function runAgentOperation(
             input.audit,
             event,
             input.operator,
-            "Operation failed. Enter to retry, q to cancel, or supply a trusted result.",
+            agentPauseMessage(
+              "failed",
+              diagnostics,
+              operation.worktree,
+              undefined,
+              "Enter to retry, q to cancel, or supply a trusted result.",
+            ),
           );
           if (response === "") break;
           try {
@@ -452,7 +468,7 @@ export async function runAgentOperation(
           input.audit,
           event,
           input.operator,
-          agentPauseMessage("Agent Attempt failed", diagnostics),
+          agentPauseMessage("failed", diagnostics, operation.worktree),
         );
         if (response === "") {
           continuationPrompt = "continue";

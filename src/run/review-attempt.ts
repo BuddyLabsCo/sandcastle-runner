@@ -143,6 +143,7 @@ export async function reviewHandoff(
       undefined,
       resumePrompt === undefined ? undefined : "resumed",
     );
+    let resultDiagnostics: AgentDiagnostics | undefined;
     try {
       const [deliveryTicket, governingSpecification, standardsSources] =
         await Promise.all([
@@ -198,6 +199,7 @@ export async function reviewHandoff(
           signal,
           ...(resumePrompt === undefined ? {} : { resumePrompt }),
         });
+        resultDiagnostics = result.diagnostics;
       } finally {
         await rm(gitDirectory, { recursive: true, force: true });
       }
@@ -218,17 +220,10 @@ export async function reviewHandoff(
           input.audit,
           event,
           input.operator,
-          agentPauseMessage(
-            "Review Agent Attempt blocked",
-            result.diagnostics,
-            {
-              outcome: result.outcome,
-              summary: result.summary,
-              blocker: result.blocker,
-              commits: [],
-              checks: result.checks,
-            },
-          ),
+          agentPauseMessage("blocked", result.diagnostics, handoff.worktree, {
+            summary: result.summary,
+            blocker: result.blocker,
+          }),
         );
         continuationPrompt = response === "" ? "continue" : response;
         continue;
@@ -255,6 +250,7 @@ export async function reviewHandoff(
         throw error;
       }
       const diagnostics: AgentDiagnostics = {
+        ...resultDiagnostics,
         error:
           error instanceof Error
             ? error.message
@@ -283,7 +279,7 @@ export async function reviewHandoff(
           input.audit,
           event,
           input.operator,
-          agentPauseMessage("Review Agent Attempt failed", diagnostics),
+          agentPauseMessage("failed", diagnostics, handoff.worktree),
         );
         continuationPrompt = response === "" ? "continue" : response;
         break;
