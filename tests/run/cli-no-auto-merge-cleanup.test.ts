@@ -23,12 +23,11 @@ test("a CI-ready no-auto-merge Run removes local artifacts and preserves manual 
     branch: "sandcastle/run-historical/ticket-9",
     repository,
   };
-  const historicalLog = path.join(
-    root,
-    "projects/demo/logs/agent-9-historical.log",
+  const historicalLogs = ["agent", "merge", "doc"].map((stage) =>
+    path.join(root, `projects/demo/logs/${stage}-9-historical.log`),
   );
-  await mkdir(path.dirname(historicalLog), { recursive: true });
-  await writeFile(historicalLog, "keep");
+  await mkdir(path.dirname(historicalLogs[0]!), { recursive: true });
+  for (const logFile of historicalLogs) await writeFile(logFile, "keep");
   const workspaces = new Map<
     string,
     { worktree: string; branch: string; repository: string }
@@ -188,7 +187,8 @@ test("a CI-ready no-auto-merge Run removes local artifacts and preserves manual 
       assert.rejects(access(logFile)),
     ),
   );
-  assert.equal(await readFile(historicalLog, "utf8"), "keep");
+  for (const logFile of historicalLogs)
+    assert.equal(await readFile(logFile, "utf8"), "keep");
 
   const snapshot = await readRecoverySnapshot(
     recoveryPaths(path.join(root, "projects/demo"), 9, "issue").snapshot,
@@ -355,3 +355,96 @@ test("no-auto-merge retries a failed Agent log cleanup through Operator Pause", 
   assert.match(pauses[0]!, /cleanup for Ticket 9 failed/u);
   await assert.rejects(access(logFile));
 });
+
+for (const decision of ["q", null]) {
+  test(`no-auto-merge cleanup cancellation via ${decision ?? "EOF"} retains ownership for restart`, async () => {
+    const root = await createProject();
+    const { tracker } = createAttemptTracker(9);
+    const commit = { sha: "b".repeat(40), message: "feat: implementation" };
+    let workspace:
+      { worktree: string; branch: string; repository: string } | undefined;
+    let listAttempts = 0;
+    let agentCalls = 0;
+    const deletedBranches: string[] = [];
+    const dependencies = createCliDependencies(root, {
+      tracker,
+      gitWorkspace: {
+        async fetchTargetBranch() {
+          return "a".repeat(40);
+        },
+        async createWorktree(input) {
+          workspace = { ...input, repository: "/tmp/repo" };
+        },
+        async inspect({ worktree, base }) {
+          return {
+            worktree,
+            base,
+            branch: workspace!.branch,
+            commits: [commit],
+            clean: true,
+          };
+        },
+        async listWorktrees() {
+          listAttempts += 1;
+          if (listAttempts === 1) throw new Error("cannot enumerate Worktrees");
+          return workspace ? [workspace] : [];
+        },
+        async removeWorktree(_checkout, worktree) {
+          assert.equal(worktree, workspace!.worktree);
+          workspace = undefined;
+        },
+        async deleteBranch(_checkout, branch) {
+          deletedBranches.push(branch);
+        },
+      },
+      codeHost: {
+        async getRemoteBranchHead() {
+          return commit.sha;
+        },
+      },
+      agentExecutor: {
+        async execute() {
+          agentCalls += 1;
+          return {
+            outcome: "committed",
+            summary: "implemented",
+            commits: [commit],
+            checks: [],
+            blocker: null,
+            pr_title: "feat: implementation",
+            pr_body: "Implementation body.",
+          };
+        },
+      },
+      operator: {
+        async pause(message) {
+          assert.match(message, /cleanup for Ticket 9 failed/u);
+          return decision;
+        },
+      },
+    });
+    const args = [
+      "run",
+      "--issue",
+      "9",
+      "--project",
+      "demo",
+      "--no-auto-merge",
+    ];
+    const cancelled = await executeCli(args, dependencies);
+    const original = { ...workspace! };
+    const resumed = await executeCli(args, dependencies);
+
+    assert.equal(cancelled.summary.outcome, "cancelled");
+    assert.equal(cancelled.exitCode, 1);
+    assert.deepEqual(cancelled.summary.tickets?.[0]?.retainedWorktrees, [
+      original.worktree,
+    ]);
+    assert.equal(resumed.summary.outcome, "succeeded");
+    assert.equal(resumed.exitCode, 0);
+    assert.equal(resumed.summary.tickets?.[0]?.status, "PR ready");
+    assert.equal(workspace, undefined);
+    assert.deepEqual(deletedBranches, [original.branch]);
+    assert.equal(agentCalls, 1);
+  });
+}

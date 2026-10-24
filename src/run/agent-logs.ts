@@ -41,13 +41,20 @@ export async function deleteAgentLogs(
   projectDirectory: string,
   ticket: number,
   stage: AgentLogStage,
+  runIds?: string[],
 ): Promise<AgentLogDeletionFailure[]> {
   const logsDirectory = path.join(projectDirectory, "logs");
   const prefix = `${stage}-${ticket}-`;
   let logFiles: string[];
   try {
     logFiles = (await readdir(logsDirectory))
-      .filter((name) => name.startsWith(prefix) && name.endsWith(".log"))
+      .filter(
+        (name) =>
+          name.startsWith(prefix) &&
+          name.endsWith(".log") &&
+          (runIds === undefined ||
+            runIds.some((runId) => name.startsWith(`${prefix}${runId}-`))),
+      )
       .map((name) => path.join(logsDirectory, name));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
@@ -76,10 +83,13 @@ export async function deleteAgentLogs(
 export async function deleteTicketAgentLogs(
   projectDirectory: string,
   ticket: number,
+  runIds: string[],
 ): Promise<AgentLogDeletionFailure[]> {
   const failures: AgentLogDeletionFailure[] = [];
   for (const stage of ["implement", "review", "ci", "merge", "doc"] as const) {
-    failures.push(...(await deleteAgentLogs(projectDirectory, ticket, stage)));
+    failures.push(
+      ...(await deleteAgentLogs(projectDirectory, ticket, stage, runIds)),
+    );
   }
   return failures;
 }
