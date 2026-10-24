@@ -215,6 +215,13 @@ export class LocalGitWorkspace implements GitWorkspace {
   }
 
   async deleteBranch(checkout: string, branch: string): Promise<void> {
+    const ref = `refs/heads/${branch}`;
+    const branches = await this.command(
+      checkout,
+      ["for-each-ref", "--format=%(refname)", ref],
+      { timeout: 60_000 },
+    );
+    if (!branches.split(/\r?\n/u).includes(ref)) return;
     await this.command(checkout, ["branch", "-D", branch], {
       timeout: 60_000,
     });
