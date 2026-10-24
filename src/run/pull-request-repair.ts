@@ -63,7 +63,7 @@ function replacedWorkspaceCleanup(input: PublicationInput) {
   });
 }
 
-function currentRepairHandoff(
+export function currentRepairHandoff(
   input: PublicationInput,
   handoff: VerifiedHandoff,
 ): VerifiedHandoff {
@@ -83,7 +83,7 @@ function currentRepairHandoff(
   };
 }
 
-async function retireReplacedWorkspace(
+export async function retireReplacedWorkspace(
   input: PublicationInput,
   phase: "ci_repair" | "conflict_repair",
   workspace: VerifiedHandoff,
@@ -293,15 +293,25 @@ export async function repairRequiredChecks(
         budget.consumed,
       );
       if (boundary) return boundary;
-      await repairIntent(input, handoff.ticket, "ci", {
-        consumed: budget.consumed,
-        generation: budget.generation,
-        attempt: budget.attempts.value,
-        ...(repair.handoff.commits.at(-1)?.sha === undefined
-          ? {}
-          : { head: repair.handoff.commits.at(-1)!.sha }),
-        pendingPush: null,
-      });
+      if (replaced)
+        await input.recordReplacementCleanup?.(
+          handoff.ticket,
+          currentHandoff,
+          "pending",
+        );
+      await repairIntent(
+        input,
+        handoff.ticket,
+        "ci",
+        {
+          consumed: budget.consumed,
+          generation: budget.generation,
+          attempt: budget.attempts.value,
+          head: repair.handoff.commits.at(-1)?.sha ?? repair.handoff.base,
+          pendingPush: null,
+        },
+        "accepted",
+      );
       if (replaced) {
         await retireReplacedWorkspace(input, "ci_repair", currentHandoff);
       }
@@ -475,16 +485,26 @@ export async function repairMergeConflict(
         budget.consumed,
       );
       if (boundary) return boundary;
-      await repairIntent(input, handoff.ticket, "conflict", {
-        consumed: budget.consumed,
-        generation: budget.generation,
-        attempt: budget.attempts.value,
-        ...(repair.handoff.commits.at(-1)?.sha === undefined
-          ? {}
-          : { head: repair.handoff.commits.at(-1)!.sha }),
-        targetBase,
-        pendingPush: null,
-      });
+      if (replaced)
+        await input.recordReplacementCleanup?.(
+          handoff.ticket,
+          currentHandoff,
+          "pending",
+        );
+      await repairIntent(
+        input,
+        handoff.ticket,
+        "conflict",
+        {
+          consumed: budget.consumed,
+          generation: budget.generation,
+          attempt: budget.attempts.value,
+          head: repair.handoff.commits.at(-1)?.sha ?? repair.handoff.base,
+          targetBase,
+          pendingPush: null,
+        },
+        "accepted",
+      );
       if (replaced) {
         await retireReplacedWorkspace(input, "conflict_repair", currentHandoff);
       }

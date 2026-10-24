@@ -16,6 +16,8 @@ test.afterEach(cleanupTempRoots);
 const repairScenarios: {
   stages: ("ci" | "conflict")[];
   interruptCleanup?: boolean;
+  cancelRepair?: boolean;
+  interruptPush?: boolean;
 }[] = [
   { stages: ["ci"] },
   { stages: ["conflict"] },
@@ -24,10 +26,18 @@ const repairScenarios: {
   { stages: ["conflict", "ci", "conflict"] },
   { stages: ["ci"], interruptCleanup: true },
   { stages: ["ci", "conflict"], interruptCleanup: true },
+  { stages: ["ci", "conflict"], cancelRepair: true },
+  { stages: ["conflict", "conflict"], cancelRepair: true },
+  { stages: ["ci", "conflict"], interruptPush: true },
 ];
 
-for (const { stages, interruptCleanup = false } of repairScenarios) {
-  test(`successful fresh ${stages.join(" then ")} repairs replace their predecessors before completed cleanup${interruptCleanup ? " across interrupted branch deletion" : ""}`, async () => {
+for (const {
+  stages,
+  interruptCleanup = false,
+  cancelRepair = false,
+  interruptPush = false,
+} of repairScenarios) {
+  test(`successful fresh ${stages.join(" then ")} repairs replace their predecessors before completed cleanup${interruptCleanup ? " across interrupted branch deletion" : ""}${cancelRepair ? " across a cancelled repair" : ""}${interruptPush ? " across uncertain push confirmation" : ""}`, async () => {
     const root = await createProject();
     const { tracker } = createAttemptTracker(9);
     const implementation = {
@@ -43,7 +53,13 @@ for (const { stages, interruptCleanup = false } of repairScenarios) {
     const deletedBranches: string[] = [];
     let initialWorkspace: { worktree: string; branch: string } | undefined;
     const repairedWorkspaces: { worktree: string; branch: string }[] = [];
-    const afterRepairs: { worktrees: string[]; branches: string[] }[] = [];
+    const acceptedWorkspaces: { worktree: string; branch: string }[] = [];
+    const afterRepairs: { worktrees: Set<string>; branches: Set<string> }[] =
+      [];
+    const expectedAfterRepairs: typeof afterRepairs = [];
+    let failedWorkspace: { worktree: string; branch: string } | undefined;
+    let cancel = cancelRepair;
+    let uncertainPush = interruptPush;
     let repairs = 0;
     let interrupt = interruptCleanup;
     const pauses: string[] = [];
@@ -117,7 +133,19 @@ for (const { stages, interruptCleanup = false } of repairScenarios) {
             assert.ok(
               input.promptFile.endsWith(`${stages[repairs]}-repair.md`),
             );
+            if (cancel && repairs === 1) {
+              cancel = false;
+              failedWorkspace = repairedWorkspaces.at(-1)!;
+              return {
+                outcome: "blocked",
+                summary: "repair blocked",
+                blocker: "needs input",
+                commits: [],
+                checks: [],
+              };
+            }
             repairs += 1;
+            acceptedWorkspaces.push(repairedWorkspaces.at(-1)!);
           }
           const commit = worktrees.get(input.worktree)!.commits[0]!;
           return {
@@ -138,14 +166,31 @@ for (const { stages, interruptCleanup = false } of repairScenarios) {
           );
         },
         async getRemoteBranchHead() {
+          if (uncertainPush && repairs > 0) {
+            remoteHead = worktrees
+              .get(acceptedWorkspaces.at(-1)!.worktree)!
+              .commits.at(-1)!.sha;
+            throw new Error("repair push confirmation unavailable");
+          }
           return remoteHead;
         },
         async getRequiredChecks() {
           assert.equal(merged, false);
           if (repairs > 0) {
             afterRepairs.push({
-              worktrees: [...worktrees.keys()],
-              branches: [...branches],
+              worktrees: new Set(worktrees.keys()),
+              branches: new Set(branches),
+            });
+            const retained = [
+              ...(failedWorkspace ? [failedWorkspace] : []),
+              acceptedWorkspaces.at(-1)!,
+            ];
+            expectedAfterRepairs.push({
+              worktrees: new Set(retained.map(({ worktree }) => worktree)),
+              branches: new Set([
+                ...(interruptCleanup ? [initialWorkspace!.branch] : []),
+                ...retained.map(({ branch }) => branch),
+              ]),
             });
           }
           if (stages[repairs] === "ci") {
@@ -178,6 +223,7 @@ for (const { stages, interruptCleanup = false } of repairScenarios) {
       },
       operator: {
         async pause(message) {
+          uncertainPush = false;
           pauses.push(message);
           return "q";
         },
@@ -202,6 +248,25 @@ for (const { stages, interruptCleanup = false } of repairScenarios) {
       assert.equal(branches.size, 2);
       result = await executeCli(args, dependencies);
     }
+    if (cancelRepair) {
+      assert.equal(result.summary.outcome, "cancelled");
+      assert.ok(failedWorkspace);
+      assert.equal(worktrees.size, 2);
+      result = await executeCli(args, dependencies);
+    }
+    if (interruptPush) {
+      assert.equal(result.summary.outcome, "cancelled");
+      assert.equal(worktrees.size, 2);
+      const snapshot = await readRecoverySnapshot(
+        recoveryPaths(path.join(root, "projects", "demo"), 8).snapshot,
+      );
+      assert.equal(
+        snapshot?.publications?.[0]?.repairBudgets?.ci?.pendingPush,
+        remoteHead,
+      );
+      assert.equal(snapshot?.publications?.[0]?.repairState, undefined);
+      result = await executeCli(args, dependencies);
+    }
 
     assert.equal(
       result.summary.outcome,
@@ -209,22 +274,15 @@ for (const { stages, interruptCleanup = false } of repairScenarios) {
       [...result.summary.reasons, ...pauses].join("\n"),
     );
     assert.ok(initialWorkspace);
-    const initialBranch = initialWorkspace.branch;
-    assert.equal(repairedWorkspaces.length, stages.length);
+    assert.equal(acceptedWorkspaces.length, stages.length);
+    assert.deepEqual(afterRepairs, expectedAfterRepairs);
     assert.deepEqual(
-      afterRepairs,
-      repairedWorkspaces.map((workspace) => ({
-        worktrees: [workspace.worktree],
-        branches: [
-          ...(interruptCleanup ? [initialBranch] : []),
-          workspace.branch,
-        ],
-      })),
+      new Set(removedWorktrees),
+      new Set([
+        initialWorkspace.worktree,
+        ...repairedWorkspaces.map(({ worktree }) => worktree),
+      ]),
     );
-    assert.deepEqual(removedWorktrees, [
-      initialWorkspace.worktree,
-      ...repairedWorkspaces.map(({ worktree }) => worktree),
-    ]);
     assert.deepEqual(
       new Set(deletedBranches),
       new Set([

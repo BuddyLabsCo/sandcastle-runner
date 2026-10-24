@@ -99,14 +99,13 @@ export function repairIntent(
     NonNullable<PublicationIntent["repairState"]>,
     "pendingPush"
   > & { pendingPush?: string | null },
+  status: "attempt" | "accepted" = "attempt",
 ): Promise<void> {
   const current = input.publicationIntents?.get(ticket);
   if (!current || !input.persistPublication) return Promise.resolve();
   repairState = {
-    ...(current.repairState?.head === undefined
-      ? {}
-      : { head: current.repairState.head }),
-    ...(current.repairState?.purpose === purpose ? current.repairState : {}),
+    ...(current.repairBudgets?.[purpose] ??
+      (current.repairState?.purpose === purpose ? current.repairState : {})),
     ...repairState,
   };
   repairState.purpose = purpose;
@@ -116,12 +115,13 @@ export function repairIntent(
   >;
   const next = {
     ...current,
-    repairState: persistedRepairState,
+    ...(status === "accepted" ? { repairState: persistedRepairState } : {}),
     repairBudgets: {
       ...current.repairBudgets,
       [purpose]: persistedRepairState,
     },
-    ...(persistedRepairState.head === undefined ||
+    ...(status !== "accepted" ||
+    persistedRepairState.head === undefined ||
     current.pullRequest === undefined
       ? {}
       : {
