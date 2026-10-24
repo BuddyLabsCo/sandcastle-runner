@@ -284,6 +284,7 @@ test("blocked, dirty, or invalid review pauses before publication", async () => 
     const delivery = createCommittedDelivery(9);
     let pushes = 0;
     let pauses = 0;
+    let pauseMessage = "";
     const result = await executeCli(
       ["run", "--project", "demo", "--parent", "8"],
       createCliDependencies(root, {
@@ -326,6 +327,7 @@ test("blocked, dirty, or invalid review pauses before publication", async () => 
               : {
                   outcome: "passed",
                   summary: "Axes pass but files are dirty.",
+                  diagnostics: { sessionId: "review-session" },
                   standards: { verdict: "passed", unresolved_findings: [] },
                   spec: { verdict: "passed", unresolved_findings: [] },
                   checks: [],
@@ -334,7 +336,8 @@ test("blocked, dirty, or invalid review pauses before publication", async () => 
           },
         },
         operator: {
-          async pause() {
+          async pause(message) {
+            pauseMessage = message;
             pauses += 1;
             return "q";
           },
@@ -344,6 +347,11 @@ test("blocked, dirty, or invalid review pauses before publication", async () => 
     assert.equal(result.summary.outcome, "cancelled");
     assert.equal(pauses, 1);
     assert.equal(pushes, 0);
+    if (failure === "dirty") {
+      assert.match(pauseMessage, /^Provider session: review-session$/mu);
+      assert.match(pauseMessage, /^Resume command: codex resume -C /mu);
+      assert.match(pauseMessage, /^Reason: Review left a dirty Worktree$/mu);
+    }
   }
 });
 

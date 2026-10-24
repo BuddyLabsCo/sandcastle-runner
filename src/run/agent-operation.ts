@@ -74,9 +74,12 @@ function firstLine(...values: unknown[]): string {
 }
 
 function shellArgument(value: string): string {
-  return /^[A-Za-z0-9_./:@%+=,-]+$/u.test(value)
-    ? value
-    : `'${value.replaceAll("'", "'\\''")}'`;
+  const argument = value.replace(/^\\\\/u, "//");
+  const prefix = /^[A-Za-z0-9_./:@%+=,-]*/u.exec(argument)![0];
+  // An unquoted prefix lets sh and PowerShell join the following quote segments.
+  return prefix === argument
+    ? argument
+    : `${prefix}'${argument.slice(prefix.length).replaceAll("'", "'\"'\"'")}'`;
 }
 
 export function agentPauseMessage(
@@ -258,6 +261,7 @@ export async function runAgentOperation(
       undefined,
       resumePrompt === undefined ? undefined : "resumed",
     );
+    let resultDiagnostics: AgentDiagnostics | undefined;
     try {
       const gitDirectory = await mkdtemp(
         path.join(tmpdir(), "sandcastle-runner-git-"),
@@ -289,6 +293,7 @@ export async function runAgentOperation(
           signal: operation.signal,
           ...(resumePrompt === undefined ? {} : { resumePrompt }),
         });
+        resultDiagnostics = result.diagnostics;
       } finally {
         await rm(gitDirectory, { recursive: true, force: true });
       }
@@ -399,6 +404,7 @@ export async function runAgentOperation(
         throw error;
       }
       const diagnostics: AgentDiagnostics = {
+        ...resultDiagnostics,
         error: error instanceof Error ? error.message : "Agent Attempt failed",
         errorCategory: "agent_attempt",
         attemptOrdinal: attemptNumber,

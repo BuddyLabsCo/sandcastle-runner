@@ -143,6 +143,7 @@ export async function reviewHandoff(
       undefined,
       resumePrompt === undefined ? undefined : "resumed",
     );
+    let resultDiagnostics: AgentDiagnostics | undefined;
     try {
       const [deliveryTicket, governingSpecification, standardsSources] =
         await Promise.all([
@@ -198,6 +199,7 @@ export async function reviewHandoff(
           signal,
           ...(resumePrompt === undefined ? {} : { resumePrompt }),
         });
+        resultDiagnostics = result.diagnostics;
       } finally {
         await rm(gitDirectory, { recursive: true, force: true });
       }
@@ -248,6 +250,7 @@ export async function reviewHandoff(
         throw error;
       }
       const diagnostics: AgentDiagnostics = {
+        ...resultDiagnostics,
         error:
           error instanceof Error
             ? error.message

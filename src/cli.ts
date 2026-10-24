@@ -375,7 +375,21 @@ export async function executeCli(
     if (paths !== undefined)
       await writeRecoverySnapshot(paths.snapshot, snapshot);
   };
-  await writeSnapshot(currentSnapshot);
+  try {
+    await writeSnapshot(currentSnapshot);
+  } catch (error) {
+    const summary: RunSummary = {
+      outcome: "failed",
+      project,
+      parentTicket: effectiveParentTicket,
+      targetBranch: loaded.config.targetBranch ?? "unresolved",
+      reasons: [
+        error instanceof Error ? error.message : "recovery startup failed",
+      ],
+    };
+    dependencies.operator.write(startupFailureMessage(summary.reasons[0]));
+    return { exitCode: 1, summary, logPath: null };
+  }
   const audit = new AuditLog(
     loaded.directory,
     timestamp,

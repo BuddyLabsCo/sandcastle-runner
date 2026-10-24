@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import test from "node:test";
 
 import { cleanupTempRoots } from "../support/temp-cleanup.ts";
@@ -8,6 +9,7 @@ import {
 } from "../support/cli-dependencies.ts";
 import { createProject } from "../support/cli-project.ts";
 import { executeCli } from "../../src/cli.ts";
+import { agentPauseMessage } from "../../src/run/agent-operation.ts";
 
 test.afterEach(cleanupTempRoots);
 
@@ -75,9 +77,8 @@ test("blocked Agent Pause shows the decision without diagnostic metadata", async
   assert.match(message, /^Outcome: blocked$/mu);
   assert.match(message, /^Reason: API contract is unresolved Second line$/mu);
   assert.match(message, /^Provider session: session-123$/mu);
-  assert.ok(
-    message.includes(`Resume command: codex resume -C ${worktree} session-123`),
-  );
+  assert.match(message, /^Resume command: codex resume -C .+ session-123$/mu);
+  assert.ok(message.includes(path.basename(worktree)));
   assert.match(
     message,
     /^Actions: Enter to continue, q to cancel, or provide recovery instructions\.$/mu,
@@ -94,6 +95,19 @@ test("blocked Agent Pause shows the decision without diagnostic metadata", async
     "/forbidden/diagnostic.log",
   ])
     assert.equal(message.includes(omitted), false, omitted);
+});
+
+test("resume command quotes spaces and apostrophes for sh and PowerShell", () => {
+  const message = agentPauseMessage(
+    "blocked",
+    { sessionId: "session-123" },
+    String.raw`C:\Users\O'Brien\work tree`,
+  );
+  assert.ok(
+    message.includes(
+      `Resume command: codex resume -C C:'\\Users\\O'"'"'Brien\\work tree' session-123`,
+    ),
+  );
 });
 
 test("Agent Pause falls back from a missing blocker to a one-line summary", async () => {
