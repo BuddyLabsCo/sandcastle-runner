@@ -208,8 +208,13 @@ async function runProjectInternal(
       });
     }
   }
-  if (maintenanceRecovery?.ticket !== undefined)
+  if (maintenanceRecovery?.ticket !== undefined) {
     recordTicket(maintenanceRecovery.ticket, "maintenance");
+    if (maintenancePublication?.pullRequest !== undefined)
+      updateTicket(maintenanceRecovery.ticket, {
+        pullRequest: maintenancePublication.pullRequest.number,
+      });
+  }
   const sourceGitWorkspace = input.gitWorkspace;
   const trackedGitWorkspace: GitWorkspace = new Proxy(sourceGitWorkspace, {
     get(target, property): unknown {
@@ -487,7 +492,7 @@ async function runProjectInternal(
     if (result.handoff) handoffs.push(result.handoff);
     if (result.pullRequest) pullRequests.push(result.pullRequest);
     if (result.ticket !== undefined) {
-      recordTicket(result.ticket, "maintenance");
+      const report = recordTicket(result.ticket, "maintenance");
       const detail =
         result.reasons.join("; ") ||
         (result.outcome === "succeeded"
@@ -496,7 +501,7 @@ async function runProjectInternal(
       updateTicket(result.ticket, {
         status:
           result.outcome === "succeeded"
-            ? result.pullRequest === undefined
+            ? result.pullRequest === undefined && report.pullRequest === null
               ? "no_change"
               : "completed"
             : result.outcome === "cancelled"

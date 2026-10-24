@@ -1,15 +1,103 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import test from "node:test";
 
 import { executeCli } from "../../src/cli.ts";
 import {
+  readRecoverySnapshot,
+  writeRecoverySnapshot,
+} from "../../src/recovery.ts";
+import {
   createCliDependencies,
   createCommittedBatch,
 } from "../support/cli-dependencies.ts";
-import { createProject } from "../support/cli-project.ts";
+import {
+  createProject,
+  publicationIntent,
+  validConfig,
+  writeProjectConfig,
+  writePublicationState,
+} from "../support/cli-project.ts";
 import { cleanupTempRoots } from "../support/temp-cleanup.ts";
 
 test.afterEach(cleanupTempRoots);
+
+for (const completed of [false, true]) {
+  test(`recovered Maintenance PR evidence survives ${completed ? "completed closure" : "early cancellation"}`, async () => {
+    const root = await createProject();
+    await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+      ...validConfig,
+      workflow: {
+        ...validConfig.workflow,
+        docMaintainTriggerLabel: "documentation",
+      },
+    });
+    const intent = {
+      ...publicationIntent("pr_created", 1000),
+      kind: "maintenance" as const,
+    };
+    const snapshotPath = await writePublicationState(root, []);
+    const snapshot = await readRecoverySnapshot(snapshotPath);
+    assert.ok(snapshot);
+    await writeRecoverySnapshot(snapshotPath, {
+      ...snapshot,
+      batch: [9],
+      completedDeliveries: [{ ticket: 9, labels: ["documentation"] }],
+      publications: [intent],
+      maintenance: {
+        phase: "attempting",
+        ticket: 1000,
+        deliveryTickets: [9],
+        barrier: true,
+      },
+    });
+    const delivery = {
+      ...createCommittedBatch(9).tickets[0]!,
+      state: "closed" as const,
+      stateReason: "completed" as const,
+      labels: ["documentation"],
+    };
+    const messages: string[] = [];
+    const result = await executeCli(
+      ["run", "--project", "demo", "--parent", "8"],
+      createCliDependencies(root, {
+        tracker: {
+          async getParent() {
+            if (!completed) throw new Error("Parent read unavailable");
+            return { number: 8, state: "open", stateReason: null };
+          },
+          async getTicket() {
+            return { ...delivery, number: 1000 };
+          },
+          async listChildrenPage() {
+            return { children: [delivery], nextPage: null };
+          },
+        },
+        operator: {
+          write(message) {
+            messages.push(message);
+          },
+          async pause() {
+            return "q";
+          },
+        },
+      }),
+    );
+
+    assert.equal(result.summary.outcome, completed ? "succeeded" : "cancelled");
+    const report = result.summary.tickets?.find(
+      ({ ticket }) => ticket === 1000,
+    );
+    assert.equal(report?.pullRequest, 4);
+    assert.equal(report?.status, completed ? "completed" : "cancelled");
+    assert.match(
+      messages.at(-1)!,
+      completed
+        ? /^1000\s+completed\s+#4\s+Documentation:/mu
+        : /^1000\s+cancelled\s+#4\s+Documentation:/mu,
+    );
+  });
+}
 
 for (const documentOnly of [false, true]) {
   test(`cancelling checks preserves the ${documentOnly ? "Maintenance" : "Delivery"} Ticket's PR number`, async () => {
