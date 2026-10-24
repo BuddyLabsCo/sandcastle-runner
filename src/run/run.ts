@@ -664,7 +664,6 @@ async function runProjectInternal(
       );
       for (const { observation, handoff } of publication.published) {
         await cleanupTerminal(observation.ticket, worktreeRoot, [
-          handoff,
           currentRepairHandoff(publicationInputs, handoff),
         ]);
         updateTicket(observation.ticket, {

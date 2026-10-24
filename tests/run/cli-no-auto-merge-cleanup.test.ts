@@ -33,6 +33,7 @@ test("a CI-ready no-auto-merge Run removes local artifacts and preserves manual 
     { worktree: string; branch: string; repository: string }
   >();
   const createdBranches = new Set<string>();
+  const localBranches = new Set<string>();
   const removedWorktrees: string[] = [];
   const removedBranches: string[] = [];
   const logFiles: string[] = [];
@@ -71,6 +72,7 @@ test("a CI-ready no-auto-merge Run removes local artifacts and preserves manual 
             repository,
           });
           createdBranches.add(input.branch);
+          localBranches.add(input.branch);
         },
         async inspect({ worktree, base }) {
           return {
@@ -93,6 +95,10 @@ test("a CI-ready no-auto-merge Run removes local artifacts and preserves manual 
           workspaces.delete(worktree);
         },
         async deleteBranch(_checkout, branch) {
+          assert.ok(
+            localBranches.delete(branch),
+            `branch not found: ${branch}`,
+          );
           removedBranches.push(branch);
         },
       },
