@@ -12,12 +12,17 @@ import type {
 } from "./contracts.ts";
 import { agentLogFile } from "./agent-logs.ts";
 import {
+  agentPauseMessage,
+  skipTicketAgentAttempt,
+  TicketSkipped,
+  ticketAgentContinueActions,
+} from "./agent-pause.ts";
+import {
   externalRead,
   OperatorCancelled,
-  pauseForOperator,
+  pauseTicketAgentForOperator,
 } from "./operations.ts";
 import {
-  agentPauseMessage,
   boundary,
   BoundaryStop,
   type AttemptInput,
@@ -219,16 +224,32 @@ export async function reviewHandoff(
           null,
           result.diagnostics,
         );
-        const response = await pauseForOperator(
+        const decision = await pauseTicketAgentForOperator(
           input.audit,
           event,
           input.operator,
-          agentPauseMessage("blocked", result.diagnostics, handoff.worktree, {
-            summary: result.summary,
-            blocker: result.blocker,
-          }),
+          agentPauseMessage(
+            "blocked",
+            result.diagnostics,
+            handoff.worktree,
+            {
+              summary: result.summary,
+              blocker: result.blocker,
+            },
+            ticketAgentContinueActions,
+          ),
         );
-        continuationPrompt = response === "" ? "continue" : response;
+        if (decision.decision === "skip")
+          return await skipTicketAgentAttempt(
+            input,
+            "review",
+            event,
+            handoff.ticket,
+            attemptNumber,
+            result.blocker ?? result.summary,
+          );
+        continuationPrompt =
+          decision.decision === "retry" ? "continue" : decision.response;
         continue;
       }
       const reviewed = await acceptReview(
@@ -254,7 +275,8 @@ export async function reviewHandoff(
       );
       return reviewed;
     } catch (error) {
-      if (error instanceof OperatorCancelled) throw error;
+      if (error instanceof OperatorCancelled || error instanceof TicketSkipped)
+        throw error;
       if (error instanceof BoundaryStop) {
         await appendOperation(input, event, error.result.outcome, null);
         throw error;
@@ -285,13 +307,29 @@ export async function reviewHandoff(
         diagnostics,
       );
       for (;;) {
-        const response = await pauseForOperator(
+        const decision = await pauseTicketAgentForOperator(
           input.audit,
           event,
           input.operator,
-          agentPauseMessage("failed", diagnostics, handoff.worktree),
+          agentPauseMessage(
+            "failed",
+            diagnostics,
+            handoff.worktree,
+            undefined,
+            ticketAgentContinueActions,
+          ),
         );
-        continuationPrompt = response === "" ? "continue" : response;
+        if (decision.decision === "skip")
+          return await skipTicketAgentAttempt(
+            input,
+            "review",
+            event,
+            handoff.ticket,
+            attemptNumber,
+            diagnostics.error ?? "Review Agent Attempt failed",
+          );
+        continuationPrompt =
+          decision.decision === "retry" ? "continue" : decision.response;
         break;
       }
     }

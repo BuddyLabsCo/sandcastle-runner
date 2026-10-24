@@ -9,7 +9,7 @@ import {
 } from "../support/cli-dependencies.ts";
 import { createProject } from "../support/cli-project.ts";
 import { executeCli } from "../../src/cli.ts";
-import { agentPauseMessage } from "../../src/run/agent-operation.ts";
+import { agentPauseMessage } from "../../src/run/agent-pause.ts";
 
 test.afterEach(cleanupTempRoots);
 
@@ -81,7 +81,7 @@ test("blocked Agent Pause shows the decision without diagnostic metadata", async
   assert.ok(message.includes(path.basename(worktree)));
   assert.match(
     message,
-    /^Actions: Enter to continue, q to cancel, or provide recovery instructions\.$/mu,
+    /^Actions: Enter to continue, s to skip, q to cancel, or provide recovery instructions\.$/mu,
   );
   for (const omitted of [
     "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -191,7 +191,7 @@ test("failed Agent Pause labels the failure and falls back to its diagnostic log
   assert.match(message, /^Diagnostic log: .+implement-9-.+\.log$/mu);
   assert.match(
     message,
-    /^Actions: Enter to continue, q to cancel, or provide recovery instructions\.$/mu,
+    /^Actions: Enter to continue, s to skip, q to cancel, or provide recovery instructions\.$/mu,
   );
 });
 
@@ -237,6 +237,6 @@ test("non-retryable Agent Pause keeps the full decision summary and its accepted
   assert.match(message, /^Resume command: codex resume -C .+ session-456$/mu);
   assert.match(
     message,
-    /^Actions: Enter to retry, q to cancel, or supply a trusted result\.$/mu,
+    /^Actions: Enter to retry, s to skip, q to cancel, or supply a trusted result\.$/mu,
   );
 });

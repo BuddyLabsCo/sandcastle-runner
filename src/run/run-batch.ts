@@ -1,4 +1,5 @@
 import { implementReservedBatch } from "./attempt.ts";
+import type { AttemptBatchResult } from "./agent-operation.ts";
 import type { createEvent, RunInput } from "./run-input.ts";
 
 export function implementBatch(
@@ -40,4 +41,16 @@ export function implementBatch(
     gitWorkspace: input.gitWorkspace,
     agentExecutor: input.agentExecutor,
   });
+}
+
+export function batchBarrierResolved(
+  attempts: AttemptBatchResult,
+  batch: number[],
+): boolean {
+  const resolved = new Set(
+    attempts.tickets
+      .filter(({ outcome }) => outcome === "handoff" || outcome === "skipped")
+      .map(({ ticket }) => ticket),
+  );
+  return batch.every((ticket) => resolved.has(ticket));
 }

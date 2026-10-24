@@ -11,7 +11,7 @@ import {
 } from "./pull-request.ts";
 import type { RunInput, RunOutcome, RunSummary } from "./run-input.ts";
 import type { createEvent } from "./run-input.ts";
-import { implementBatch } from "./run-batch.ts";
+import { batchBarrierResolved, implementBatch } from "./run-batch.ts";
 import type { AttemptBatchResult } from "./agent-operation.ts";
 
 export interface StandaloneRunContext {
@@ -33,6 +33,7 @@ export interface StandaloneRunContext {
   completedDeliveries: CompletedDelivery[];
   reasons: string[];
   applyAttempts: (attempts: AttemptBatchResult) => void;
+  skippedTickets: ReadonlySet<number>;
 }
 
 export async function runStandaloneIssue(
@@ -42,9 +43,14 @@ export async function runStandaloneIssue(
   const selected = input.standaloneIssueList ?? [input.issueTicket!];
   for (;;) {
     const remaining = selected.filter(
-      (ticket) => !context.completedTickets.includes(ticket),
+      (ticket) =>
+        !context.completedTickets.includes(ticket) &&
+        !context.skippedTickets.has(ticket),
     );
-    if (remaining.length === 0) return context.summary("succeeded");
+    if (remaining.length === 0)
+      return context.summary(
+        context.skippedTickets.size === 0 ? "succeeded" : "incomplete",
+      );
     const discovery = input.standaloneIssueList
       ? await discoverAndReserveStandaloneBatch({
           repository: input.repository,
@@ -76,7 +82,9 @@ export async function runStandaloneIssue(
           cleanupTerminal: context.cleanupTerminal,
         });
     if (discovery.outcome === "no_work" && context.batches.length > 0)
-      return context.summary("succeeded");
+      return context.summary(
+        context.skippedTickets.size === 0 ? "succeeded" : "incomplete",
+      );
     if (discovery.outcome !== "incomplete" || discovery.batch.length === 0)
       return context.summary(
         discovery.outcome === "close_parent" ? "succeeded" : discovery.outcome,
@@ -92,9 +100,7 @@ export async function runStandaloneIssue(
     );
     context.applyAttempts(attempts);
     context.handoffs.push(...attempts.handoffs);
-    const batchComplete =
-      attempts.handoffs.length === discovery.batch.length &&
-      attempts.reasons.length === 0;
+    const batchComplete = batchBarrierResolved(attempts, discovery.batch);
     const publicationInputs = context.publicationInput(attempts.handoffs);
     const publication =
       attempts.handoffs.length === 0
@@ -109,6 +115,9 @@ export async function runStandaloneIssue(
       discovery.batch,
     );
     if (outcome) return context.summary(outcome);
-    if (!input.autoMerge) return context.summary("succeeded");
+    if (!input.autoMerge)
+      return context.summary(
+        context.skippedTickets.size === 0 ? "succeeded" : "incomplete",
+      );
   }
 }

@@ -6,6 +6,14 @@ import path from "node:path";
 import type { AuditEvent } from "../audit.ts";
 import type { AgentConfig } from "../config.ts";
 import { agentLogFile, agentLogStage } from "./agent-logs.ts";
+import {
+  agentPauseMessage,
+  pauseAgentAttempt,
+  skipTicketAgentAttempt,
+  TicketSkipped,
+  ticketAgentContinueActions,
+  ticketAgentRetryActions,
+} from "./agent-pause.ts";
 import type {
   AgentAttemptResult,
   AgentDiagnostics,
@@ -18,12 +26,10 @@ import {
   type DiscoveryInput,
   revalidateActiveTicket,
 } from "./discovery.ts";
-import {
-  OperatorCancelled,
-  pauseForOperator,
-  workflowWrite,
-} from "./operations.ts";
+import { OperatorCancelled, workflowWrite } from "./operations.ts";
 import { appendOperation, discardAgentLogs } from "./operation-audit.ts";
+
+export { agentPauseMessage } from "./agent-pause.ts";
 
 export interface VerifiedHandoff {
   ticket: number;
@@ -61,53 +67,6 @@ export interface AttemptInput extends AgentOperationInput {
   reviewAgent?: AgentConfig;
 }
 
-function availableValue(...values: unknown[]): string {
-  for (const value of values) {
-    if (typeof value !== "string") continue;
-    if (value.trim().length > 0) return value;
-  }
-  return "unavailable";
-}
-
-function firstLine(...values: unknown[]): string {
-  const value = availableValue(...values);
-  return value === "unavailable" ? value : value.replace(/\s+/gu, " ").trim();
-}
-
-function shellArgument(value: string): string {
-  const argument = value.replace(/^\\\\/u, "//");
-  const prefix = /^[A-Za-z0-9_./:@%+=,-]*/u.exec(argument)![0];
-  // An unquoted prefix lets sh and PowerShell join the following quote segments.
-  return prefix === argument
-    ? argument
-    : `${prefix}'${argument.slice(prefix.length).replaceAll("'", "'\"'\"'")}'`;
-}
-
-export function agentPauseMessage(
-  outcome: "blocked" | "failed",
-  diagnostics: AgentDiagnostics | undefined,
-  worktree: string,
-  result?: Pick<AgentAttemptResult, "summary" | "blocker">,
-  actions = "Enter to continue, q to cancel, or provide recovery instructions.",
-): string {
-  const d = diagnostics ?? {};
-  const session = availableValue(d.sessionId);
-  const resume =
-    session === "unavailable"
-      ? "unavailable"
-      : `codex resume -C ${shellArgument(availableValue(worktree, d.workingDirectory))} ${shellArgument(session)}`;
-  return [
-    `Outcome: ${outcome}`,
-    `Reason: ${firstLine(result?.blocker, result?.summary, d.error)}`,
-    `Provider session: ${session}`,
-    `Resume command: ${resume}`,
-    ...(session === "unavailable"
-      ? [`Diagnostic log: ${availableValue(d.diagnosticLogPath)}`]
-      : []),
-    `Actions: ${actions}`,
-  ].join("\n");
-}
-
 export interface AttemptBatchResult {
   outcome: "incomplete" | "cancelled" | "failed";
   reasons: string[];
@@ -117,7 +76,8 @@ export interface AttemptBatchResult {
 
 export interface TicketAttemptOutcome {
   ticket: number;
-  outcome: "handoff" | "no_change" | "blocked" | "failed" | "cancelled";
+  outcome:
+    "handoff" | "no_change" | "blocked" | "failed" | "cancelled" | "skipped";
   detail: string;
   handoff?: VerifiedHandoff;
 }
@@ -222,6 +182,9 @@ export async function runAgentOperation(
   let attemptId = "";
   let logFile = "";
   let event!: Omit<AuditEvent, "result" | "error">;
+  const allowsSkip = operation.phase === "implement";
+  const pause = (message: string) =>
+    pauseAgentAttempt(input, event, operation.phase, message);
   for (;;) {
     await boundary(input, operation.ticket);
     const resumePrompt = continuationPrompt;
@@ -296,18 +259,26 @@ export async function runAgentOperation(
           null,
           result.diagnostics,
         );
-        const response = await pauseForOperator(
-          input.audit,
-          event,
-          input.operator,
+        const decision = await pause(
           agentPauseMessage(
             "blocked",
             result.diagnostics,
             operation.worktree,
             result,
+            allowsSkip ? ticketAgentContinueActions : undefined,
           ),
         );
-        continuationPrompt = response === "" ? "continue" : response;
+        if (decision.decision === "skip")
+          return await skipTicketAgentAttempt(
+            input,
+            "implement",
+            event,
+            operation.ticket,
+            attemptNumber,
+            result.blocker ?? result.summary,
+          );
+        continuationPrompt =
+          decision.decision === "retry" ? "continue" : decision.response;
         continue;
       }
       const observed = await input.gitWorkspace.inspect({
@@ -398,7 +369,8 @@ export async function runAgentOperation(
       );
       return handoff;
     } catch (error) {
-      if (error instanceof OperatorCancelled) throw error;
+      if (error instanceof OperatorCancelled || error instanceof TicketSkipped)
+        throw error;
       if (error instanceof BoundaryStop) {
         await appendOperation(input, event, error.result.outcome, null);
         throw error;
@@ -428,19 +400,28 @@ export async function runAgentOperation(
       );
       if (diagnostics.retryable === false) {
         for (;;) {
-          const response = await pauseForOperator(
-            input.audit,
-            event,
-            input.operator,
+          const decision = await pause(
             agentPauseMessage(
               "failed",
               diagnostics,
               operation.worktree,
               undefined,
-              "Enter to retry, q to cancel, or supply a trusted result.",
+              allowsSkip
+                ? ticketAgentRetryActions
+                : "Enter to retry, q to cancel, or supply a trusted result.",
             ),
           );
-          if (response === "") break;
+          if (decision.decision === "skip")
+            return await skipTicketAgentAttempt(
+              input,
+              "implement",
+              event,
+              operation.ticket,
+              attemptNumber,
+              diagnostics.error ?? "Agent Attempt failed",
+            );
+          if (decision.decision === "retry") break;
+          const response = decision.response;
           try {
             await boundary(input, operation.ticket);
             const handoff = trustedHandoff(
@@ -467,16 +448,29 @@ export async function runAgentOperation(
         continue;
       }
       for (;;) {
-        const response = await pauseForOperator(
-          input.audit,
-          event,
-          input.operator,
-          agentPauseMessage("failed", diagnostics, operation.worktree),
+        const decision = await pause(
+          agentPauseMessage(
+            "failed",
+            diagnostics,
+            operation.worktree,
+            undefined,
+            allowsSkip ? ticketAgentContinueActions : undefined,
+          ),
         );
-        if (response === "") {
+        if (decision.decision === "skip")
+          return await skipTicketAgentAttempt(
+            input,
+            "implement",
+            event,
+            operation.ticket,
+            attemptNumber,
+            diagnostics.error ?? "Agent Attempt failed",
+          );
+        if (decision.decision === "retry") {
           continuationPrompt = "continue";
           break;
         }
+        const response = decision.response;
         try {
           await boundary(input, operation.ticket);
           const handoff = trustedHandoff(

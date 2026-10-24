@@ -62,3 +62,14 @@ export async function discardAgentLogs(
     );
   }
 }
+
+export async function discardTicketAgentLogs(
+  input: AgentOperationInput,
+  phase: AgentOperationPhase | "review",
+  ticket: number,
+  attempt: number,
+): Promise<void> {
+  for (const stage of ["implement", "review", "ci", "merge", "doc"] as const) {
+    await discardAgentLogs(input, phase, ticket, stage, attempt);
+  }
+}
