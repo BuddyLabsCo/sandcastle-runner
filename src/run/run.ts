@@ -249,7 +249,10 @@ async function runProjectInternal(
     gitWorkspace: trackedGitWorkspace,
     persistBatch: async (batch, completed) => {
       recordBatch(batch);
-      await sourcePersistBatch?.(batch, completed);
+      await sourcePersistBatch?.(
+        batch.filter((ticket) => !skippedTickets.has(ticket)),
+        completed,
+      );
     },
     persistMaintenance: async (state) => {
       if (state.ticket !== undefined) recordTicket(state.ticket, "maintenance");
@@ -317,9 +320,9 @@ async function runProjectInternal(
         updateTicket(report.ticket, { detail: reason });
     return summary(outcome);
   };
-  const applyAttempts = (
+  const applyAttempts = async (
     attempts: Awaited<ReturnType<typeof implementBatch>>,
-  ): void => {
+  ): Promise<void> => {
     for (const result of attempts.tickets) {
       if (result.outcome === "skipped") skippedTickets.add(result.ticket);
       updateTicket(result.ticket, {
@@ -335,6 +338,11 @@ async function runProjectInternal(
             : result.detail,
       });
     }
+    if (attempts.tickets.some(({ outcome }) => outcome === "skipped"))
+      await input.persistBatch?.(
+        attempts.tickets.map(({ ticket }) => ticket),
+        completedDeliveries,
+      );
   };
   const applyPublication = (publication: PublicationResult): void => {
     for (const { observation } of publication.published) {
@@ -735,7 +743,7 @@ async function runProjectInternal(
         event,
         recoveredPublication.restarted,
       );
-      applyAttempts(attempts);
+      await applyAttempts(attempts);
       handoffs.push(...attempts.handoffs);
       batchComplete = batchBarrierResolved(
         attempts,
@@ -747,7 +755,9 @@ async function runProjectInternal(
           ? null
           : await publishVerifiedHandoffs(inputs);
       publication = {
-        outcome: restartedPublication?.outcome ?? attempts.outcome,
+        outcome:
+          restartedPublication?.outcome ??
+          (batchComplete ? recoveredPublication.outcome : attempts.outcome),
         reasons: [
           ...recoveredPublication.reasons,
           ...attempts.reasons,
@@ -868,7 +878,7 @@ async function runProjectInternal(
       event,
       discovery.batch,
     );
-    applyAttempts(attempts);
+    await applyAttempts(attempts);
     handoffs.push(...attempts.handoffs);
     const batchComplete = batchBarrierResolved(attempts, discovery.batch);
     const publicationInputs = publicationInput(attempts.handoffs);
@@ -877,7 +887,10 @@ async function runProjectInternal(
         ? null
         : await publishVerifiedHandoffs(publicationInputs);
     reasons.push(...discovery.reasons, ...attempts.reasons);
-    if (!publication) return summary(attempts.outcome);
+    if (!publication) {
+      if (batchComplete) continue;
+      return summary(attempts.outcome);
+    }
     const outcome = await integratePublication(
       publication,
       batchComplete,

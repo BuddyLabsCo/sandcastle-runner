@@ -10,37 +10,57 @@ import {
 } from "../support/cli-dependencies.ts";
 import {
   createProject,
+  publicationIntent,
   validConfig,
+  writePublicationState,
   writeProjectConfig,
 } from "../support/cli-project.ts";
 import { cleanupTempRoots } from "../support/temp-cleanup.ts";
 
 test.afterEach(cleanupTempRoots);
 
-test("skip releases a pre-PR ticket while its Batch peer completes", async () => {
-  const root = await createProject();
-  const { tickets, tracker } = createAttemptTracker(9, 10);
-  const branches = new Map<number, string>();
-  const worktrees = new Map<number, string>();
-  const pauses: string[] = [];
-  const agentCalls = new Map<number, number>();
-  const removedWorktrees: string[] = [];
-  const deletedBranches: string[] = [];
-  let comments = 0;
-  let parentCloses = 0;
-  let merged = false;
-  let checksReads = 0;
-  let mergeRequests = 0;
-  const logs = path.join(root, "projects", "demo", "logs");
-  await mkdir(logs, { recursive: true });
-  const historicalLog = path.join(logs, "agent-9-historical.log");
-  const reviewLog = path.join(logs, "review-9-current.log");
-  await writeFile(historicalLog, "historical");
-  await writeFile(reviewLog, "review");
+for (const scenario of [
+  "peer",
+  "later-parent",
+  "later-standalone",
+  "recovered",
+]) {
+  test(`skip releases a pre-PR ticket while independent work completes: ${scenario}`, async () => {
+    const root = await createProject();
+    await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+      ...validConfig,
+      maxBatchSize: scenario.startsWith("later") ? 1 : 3,
+      issueList: scenario === "later-standalone" ? [9, 10] : [],
+    });
+    const { tickets, tracker } = createAttemptTracker(9, 10);
+    if (scenario === "recovered") {
+      await writePublicationState(root, [publicationIntent("pending_push", 9)]);
+      tickets[0]!.labels.push("sandcastle:reserved");
+      tickets[0]!.assignees.push("runner");
+    }
+    const branches = new Map<number, string>();
+    const worktrees = new Map<number, string>();
+    const pauses: string[] = [];
+    const agentCalls = new Map<number, number>();
+    const removedWorktrees: string[] = [];
+    const deletedBranches: string[] = [];
+    let comments = 0;
+    let parentCloses = 0;
+    let merged = false;
+    let checksReads = 0;
+    let mergeRequests = 0;
+    const logs = path.join(root, "projects", "demo", "logs");
+    await mkdir(logs, { recursive: true });
+    const historicalLog = path.join(logs, "agent-9-historical.log");
+    const reviewLog = path.join(logs, "review-9-current.log");
+    await writeFile(historicalLog, "historical");
+    await writeFile(reviewLog, "review");
 
-  const result = await executeCli(
-    ["run", "--project", "demo", "--parent", "8"],
-    createCliDependencies(root, {
+    const args =
+      scenario === "later-standalone"
+        ? ["run", "--project", "demo", "--issue"]
+        : ["run", "--project", "demo", "--parent", "8"];
+    const dependencies = createCliDependencies(root, {
       tracker: {
         ...tracker,
         async addComment() {
@@ -145,44 +165,54 @@ test("skip releases a pre-PR ticket while its Batch peer completes", async () =>
           return "s";
         },
       },
-    }),
-  );
+    });
+    const result = await executeCli(args, dependencies);
 
-  assert.equal(
-    result.summary.outcome,
-    "incomplete",
-    result.summary.reasons.join("; "),
-  );
-  assert.deepEqual(result.summary.completedTickets, [10]);
-  assert.deepEqual(
-    result.summary.tickets?.map(({ ticket, status }) => ({ ticket, status })),
-    [
-      { ticket: 9, status: "failed" },
-      { ticket: 10, status: "completed" },
-    ],
-  );
-  const skipped = result.summary.tickets?.find(({ ticket }) => ticket === 9);
-  assert.match(skipped?.detail ?? "", /^skipped/u);
-  assert.deepEqual(skipped?.retainedWorktrees, [worktrees.get(9)]);
-  assert.equal(pauses.length, 1);
-  assert.match(pauses[0]!, /s to skip/u);
-  assert.equal(agentCalls.get(9), 1);
-  assert.equal(comments, 0);
-  assert.equal(parentCloses, 0);
-  assert.equal(checksReads, 1);
-  assert.equal(mergeRequests, 1);
-  assert.equal(tickets[0]!.state, "open");
-  assert.deepEqual(tickets[0]!.labels, ["ready-for-agent"]);
-  assert.deepEqual(tickets[0]!.assignees, []);
-  assert.equal(removedWorktrees.includes(worktrees.get(9)!), false);
-  assert.equal(deletedBranches.includes(branches.get(9)!), false);
-  assert.deepEqual(removedWorktrees, [worktrees.get(10)]);
-  assert.deepEqual(deletedBranches, [branches.get(10)]);
-  assert.equal(tickets[1]!.state, "closed");
-  assert.equal(tickets[1]!.stateReason, "completed");
-  await assert.rejects(access(reviewLog));
-  assert.equal(await readFile(historicalLog, "utf8"), "historical");
-});
+    assert.equal(
+      result.summary.outcome,
+      "incomplete",
+      result.summary.reasons.join("; "),
+    );
+    assert.deepEqual(result.summary.completedTickets, [10]);
+    assert.deepEqual(
+      result.summary.tickets?.map(({ ticket, status }) => ({ ticket, status })),
+      [
+        { ticket: 9, status: "failed" },
+        { ticket: 10, status: "completed" },
+      ],
+    );
+    const skipped = result.summary.tickets?.find(({ ticket }) => ticket === 9);
+    assert.match(skipped?.detail ?? "", /^skipped/u);
+    assert.deepEqual(skipped?.retainedWorktrees, [worktrees.get(9)]);
+    assert.equal(pauses.length, 1);
+    assert.match(pauses[0]!, /s to skip/u);
+    assert.equal(agentCalls.get(9), 1);
+    assert.equal(comments, 0);
+    assert.equal(parentCloses, 0);
+    assert.equal(checksReads, 1);
+    assert.equal(mergeRequests, 1);
+    assert.equal(tickets[0]!.state, "open");
+    assert.deepEqual(tickets[0]!.labels, ["ready-for-agent"]);
+    assert.deepEqual(tickets[0]!.assignees, []);
+    assert.equal(removedWorktrees.includes(worktrees.get(9)!), false);
+    assert.equal(deletedBranches.includes(branches.get(9)!), false);
+    assert.deepEqual(removedWorktrees, [worktrees.get(10)]);
+    assert.deepEqual(deletedBranches, [branches.get(10)]);
+    assert.equal(tickets[1]!.state, "closed");
+    assert.equal(tickets[1]!.stateReason, "completed");
+    await assert.rejects(access(reviewLog));
+    assert.equal(await readFile(historicalLog, "utf8"), "historical");
+
+    const laterRun = await executeCli(args, dependencies);
+    assert.equal(laterRun.summary.outcome, "incomplete");
+    assert.equal(
+      agentCalls.get(9),
+      2,
+      "a later Run must retry the skipped ticket",
+    );
+    assert.match(laterRun.summary.tickets?.[0]?.detail ?? "", /^skipped/u);
+  });
+}
 
 for (const instruction of ["S", "skip"]) {
   test(`"${instruction}" is recovery input rather than a skip token`, async () => {

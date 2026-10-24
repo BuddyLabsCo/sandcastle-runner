@@ -32,7 +32,7 @@ export interface StandaloneRunContext {
   completedTickets: number[];
   completedDeliveries: CompletedDelivery[];
   reasons: string[];
-  applyAttempts: (attempts: AttemptBatchResult) => void;
+  applyAttempts: (attempts: AttemptBatchResult) => Promise<void>;
   skippedTickets: ReadonlySet<number>;
 }
 
@@ -98,7 +98,7 @@ export async function runStandaloneIssue(
       context.event,
       discovery.batch,
     );
-    context.applyAttempts(attempts);
+    await context.applyAttempts(attempts);
     context.handoffs.push(...attempts.handoffs);
     const batchComplete = batchBarrierResolved(attempts, discovery.batch);
     const publicationInputs = context.publicationInput(attempts.handoffs);
@@ -107,7 +107,10 @@ export async function runStandaloneIssue(
         ? null
         : await publishVerifiedHandoffs(publicationInputs);
     context.reasons.push(...discovery.reasons, ...attempts.reasons);
-    if (!publication) return context.summary(attempts.outcome);
+    if (!publication) {
+      if (batchComplete) continue;
+      return context.summary(attempts.outcome);
+    }
     const outcome = await context.integratePublication(
       publication,
       batchComplete,
