@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- recovery and publication transitions remain explicit. */
 import type { AgentConfig } from "../config.ts";
 import { runMaintenanceAttempt, type VerifiedHandoff } from "./attempt.ts";
 import type { LabelPage, Ticket } from "./contracts.ts";
@@ -31,11 +32,11 @@ interface MaintenanceInput extends Omit<
   documentationAgent: AgentConfig;
   recovery?: MaintenanceState;
   recoveryPublication?: PublicationIntent;
-  persistMaintenance?: (state: MaintenanceState) => Promise<void>;
+  persistMaintenance?: (state: MaintenanceState | null) => Promise<void>;
 }
 
 export interface MaintenanceResult {
-  outcome: "succeeded" | "incomplete" | "cancelled" | "failed";
+  outcome: "succeeded" | "incomplete" | "cancelled" | "failed" | "skipped";
   reasons: string[];
   ticket?: number;
   handoff?: VerifiedHandoff;
@@ -84,6 +85,23 @@ function stopped(
           : "incomplete",
     reasons: [boundary.reason],
     ...(ticket === undefined ? {} : { ticket }),
+  };
+}
+
+async function skipMaintenance(
+  input: MaintenanceInput,
+  ticket: number,
+  reason: string,
+  handoff?: VerifiedHandoff,
+  pullRequest?: PullRequestObservation,
+): Promise<MaintenanceResult> {
+  await input.persistMaintenance?.(null);
+  return {
+    outcome: "skipped",
+    reasons: [`skipped Maintenance Ticket ${ticket}: ${reason}`],
+    ticket,
+    ...(handoff === undefined ? {} : { handoff }),
+    ...(pullRequest === undefined ? {} : { pullRequest }),
   };
 }
 
@@ -375,6 +393,14 @@ export async function runDocumentationMaintenance(
         pullRequest: published.observation,
       };
     }
+    if (integration.outcome === "skipped")
+      return skipMaintenance(
+        input,
+        ticket.number,
+        integration.reason,
+        published.handoff,
+        published.observation,
+      );
     await persist({
       phase: "blocked",
       ticket: ticket.number,
@@ -402,6 +428,8 @@ export async function runDocumentationMaintenance(
   });
   if (attempt.outcome === "boundary")
     return stopped(attempt.boundary, ticket.number);
+  if (attempt.outcome === "skipped")
+    return skipMaintenance(input, ticket.number, attempt.reason);
   if (attempt.outcome === "blocked") {
     await persist({
       phase: "blocked",
@@ -432,6 +460,15 @@ export async function runDocumentationMaintenance(
   };
   const publication = await publishVerifiedHandoffs(publicationInput);
   const published = publication.published[0];
+  const skipped = publication.skipped?.[0];
+  if (skipped)
+    return skipMaintenance(
+      input,
+      ticket.number,
+      skipped.reason,
+      attempt.handoff,
+      published?.observation,
+    );
   if (
     publication.outcome !== "succeeded" ||
     published?.observation.readiness !== "ready"
@@ -475,6 +512,14 @@ export async function runDocumentationMaintenance(
       pullRequest: published.observation,
     };
   }
+  if (integration.outcome === "skipped")
+    return skipMaintenance(
+      input,
+      ticket.number,
+      integration.reason,
+      attempt.handoff,
+      published.observation,
+    );
   await persist({
     phase: "blocked",
     ticket: ticket.number,

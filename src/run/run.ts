@@ -119,6 +119,7 @@ async function runProjectInternal(
   let hadChildren = false;
   const batches: number[] = [...(input.recoveredRunTickets ?? [])];
   const skippedTickets = new Set<number>();
+  const skippedMaintenance = new Set<number>();
   const handoffs: VerifiedHandoff[] = [];
   const pullRequests: PullRequestObservation[] = [];
   const completedDeliveries: CompletedDelivery[] = [
@@ -272,7 +273,8 @@ async function runProjectInternal(
       );
     },
     persistMaintenance: async (state) => {
-      if (state.ticket !== undefined) recordTicket(state.ticket, "maintenance");
+      if (state?.ticket !== undefined)
+        recordTicket(state.ticket, "maintenance");
       await sourcePersistMaintenance?.(state);
     },
     persistPublication: async (ticket, intent) => {
@@ -611,7 +613,9 @@ async function runProjectInternal(
               ? "cancelled"
               : result.outcome === "failed"
                 ? "failed"
-                : "blocked",
+                : result.outcome === "skipped"
+                  ? "failed"
+                  : "blocked",
         ...(result.pullRequest === undefined
           ? {}
           : { pullRequest: result.pullRequest.number }),
@@ -620,6 +624,16 @@ async function runProjectInternal(
     }
     if (result.outcome === "succeeded") {
       if (result.ticket !== undefined) await cleanupTerminal(result.ticket);
+      maintainedDeliveryTickets = new Set(recovery.deliveryTickets);
+      maintenanceRecovery = undefined;
+      maintenancePublication = undefined;
+      return null;
+    }
+    if (result.outcome === "skipped") {
+      if (result.ticket !== undefined) {
+        skippedMaintenance.add(result.ticket);
+        publicationIntents.delete(result.ticket);
+      }
       maintainedDeliveryTickets = new Set(recovery.deliveryTickets);
       maintenanceRecovery = undefined;
       maintenancePublication = undefined;
@@ -812,7 +826,9 @@ async function runProjectInternal(
       barrier: true,
     };
     const outcome = await maintain();
-    return summary(outcome ?? "succeeded");
+    return summary(
+      skippedMaintenance.size > 0 ? "incomplete" : (outcome ?? "succeeded"),
+    );
   }
 
   if (
@@ -922,6 +938,7 @@ async function runProjectInternal(
       reasons,
       applyAttempts,
       skippedTickets,
+      skippedMaintenance,
     });
   }
 
@@ -941,6 +958,7 @@ async function runProjectInternal(
       reasons,
       applyAttempts,
       skippedTickets,
+      skippedMaintenance,
     });
   }
 
@@ -964,7 +982,8 @@ async function runProjectInternal(
     if (discovery.outcome === "incomplete") hasBatchState = true;
     if (discovery.outcome === "close_parent") {
       reasons.push(...discovery.reasons);
-      if (skippedTickets.size > 0) return summary("incomplete");
+      if (skippedTickets.size > 0 || skippedMaintenance.size > 0)
+        return summary("incomplete");
       await workflowWrite({
         action: () =>
           input.tracker.closeParent(input.repository, input.parentTicket),

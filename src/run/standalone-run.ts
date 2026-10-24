@@ -33,6 +33,7 @@ export interface StandaloneRunContext {
   reasons: string[];
   applyAttempts: (attempts: AttemptBatchResult) => Promise<void>;
   skippedTickets: ReadonlySet<number>;
+  skippedMaintenance: ReadonlySet<number>;
 }
 
 export async function runStandaloneIssue(
@@ -40,6 +41,8 @@ export async function runStandaloneIssue(
 ): Promise<RunSummary> {
   const { input } = context;
   const selected = input.standaloneIssueList ?? [input.issueTicket!];
+  const skippedWork = () =>
+    context.skippedTickets.size > 0 || context.skippedMaintenance.size > 0;
   for (;;) {
     const remaining = selected.filter(
       (ticket) =>
@@ -47,9 +50,7 @@ export async function runStandaloneIssue(
         !context.skippedTickets.has(ticket),
     );
     if (remaining.length === 0)
-      return context.summary(
-        context.skippedTickets.size === 0 ? "succeeded" : "incomplete",
-      );
+      return context.summary(skippedWork() ? "incomplete" : "succeeded");
     const discovery = input.standaloneIssueList
       ? await discoverAndReserveStandaloneBatch({
           repository: input.repository,
@@ -79,14 +80,15 @@ export async function runStandaloneIssue(
           reservationLabel: input.reservationLabel,
         });
     if (discovery.outcome === "no_work" && context.batches.length > 0)
+      return context.summary(skippedWork() ? "incomplete" : "succeeded");
+    if (discovery.outcome !== "incomplete" || discovery.batch.length === 0) {
+      const outcome =
+        discovery.outcome === "close_parent" ? "succeeded" : discovery.outcome;
       return context.summary(
-        context.skippedTickets.size === 0 ? "succeeded" : "incomplete",
-      );
-    if (discovery.outcome !== "incomplete" || discovery.batch.length === 0)
-      return context.summary(
-        discovery.outcome === "close_parent" ? "succeeded" : discovery.outcome,
+        outcome === "succeeded" && skippedWork() ? "incomplete" : outcome,
         [...context.reasons, ...discovery.reasons],
       );
+    }
     context.batches.push(...discovery.batch);
     await input.persistBatch?.(discovery.batch, context.completedDeliveries);
     const attempts = await implementBatch(
@@ -116,8 +118,6 @@ export async function runStandaloneIssue(
     );
     if (outcome) return context.summary(outcome);
     if (!input.autoMerge)
-      return context.summary(
-        context.skippedTickets.size === 0 ? "succeeded" : "incomplete",
-      );
+      return context.summary(skippedWork() ? "incomplete" : "succeeded");
   }
 }

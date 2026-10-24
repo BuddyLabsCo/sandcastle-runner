@@ -4,7 +4,6 @@ import type { AgentOperationPhase } from "./agent-logs.ts";
 import type { AgentAttemptResult, AgentDiagnostics } from "./contracts.ts";
 import { appendOperation, discardTicketAgentLogs } from "./operation-audit.ts";
 import {
-  pauseForOperator,
   pauseTicketAgentForOperator,
   type TicketAgentPauseDecision,
 } from "./operations.ts";
@@ -64,25 +63,14 @@ export const ticketAgentRetryActions =
 export async function pauseAgentAttempt(
   input: AgentOperationInput,
   event: Omit<AuditEvent, "result" | "error">,
-  phase: AgentOperationPhase,
   message: string,
 ): Promise<TicketAgentPauseDecision> {
-  if (phase !== "maintenance" && input.ticketKind !== "Maintenance Ticket")
-    return pauseTicketAgentForOperator(
-      input.audit,
-      event,
-      input.operator,
-      message,
-    );
-  const response = await pauseForOperator(
+  return pauseTicketAgentForOperator(
     input.audit,
     event,
     input.operator,
     message,
   );
-  return response === ""
-    ? { decision: "retry" }
-    : { decision: "continue", response };
 }
 
 export class TicketSkipped extends Error {

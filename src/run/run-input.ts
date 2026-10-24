@@ -105,7 +105,7 @@ export interface RunInput {
   recoveredCompletedDeliveries?: CompletedDelivery[];
   persistCleanup?: (ticket: number, record: CleanupRecord) => Promise<void>;
   recoveredCleanup?: Record<string, CleanupRecord>;
-  persistMaintenance?: (state: MaintenanceState) => Promise<void>;
+  persistMaintenance?: (state: MaintenanceState | null) => Promise<void>;
   recoveredMaintenance?: MaintenanceState;
 }
 
