@@ -132,6 +132,13 @@ export function releaseTerminalReservation(
   );
 }
 
+export function releasePrePublicationReservation(
+  input: DiscoveryInput,
+  ticket: number,
+): Promise<void> {
+  return releaseReservation(input, ticket, true, true);
+}
+
 export function revalidateActiveTicket(
   input: DiscoveryInput,
   ticket: number,
@@ -404,15 +411,16 @@ async function finalScan(
     return { outcome: "close_parent", reasons: reasons(selection, []) };
   }
   const remainingReasons = reasons(selection, []);
+  if (remainingReasons.length > 0)
+    return { outcome: "incomplete", batch: [], reasons: remainingReasons };
+  if (excluded.size === 0)
+    return { outcome: "incomplete", batch: [], reasons: [] };
   return {
     outcome: "incomplete",
     batch: [],
-    reasons:
-      remainingReasons.length > 0
-        ? remainingReasons
-        : [
-            `Delivery Tickets changed during reservation: ${[...excluded].sort((left, right) => left - right).join(", ")}`,
-          ],
+    reasons: [
+      `Delivery Tickets changed during reservation: ${[...excluded].sort((left, right) => left - right).join(", ")}`,
+    ],
   };
 }
 

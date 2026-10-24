@@ -129,6 +129,33 @@ export async function pauseForOperator(
   operator: OperatorIO,
   message: string,
 ): Promise<string> {
+  return waitForOperator(audit, event, operator, message, false);
+}
+
+export type TicketAgentPauseDecision =
+  | { decision: "retry" }
+  | { decision: "continue"; response: string }
+  | { decision: "skip" };
+
+export async function pauseTicketAgentForOperator(
+  audit: AuditLog,
+  event: Omit<AuditEvent, "result" | "error">,
+  operator: OperatorIO,
+  message: string,
+): Promise<TicketAgentPauseDecision> {
+  const response = await waitForOperator(audit, event, operator, message, true);
+  if (response === "") return { decision: "retry" };
+  if (response === "s") return { decision: "skip" };
+  return { decision: "continue", response };
+}
+
+async function waitForOperator(
+  audit: AuditLog,
+  event: Omit<AuditEvent, "result" | "error">,
+  operator: OperatorIO,
+  message: string,
+  allowsSkip: boolean,
+): Promise<string> {
   await supervisedAuditWrite(
     () =>
       audit.append({
@@ -160,9 +187,19 @@ export async function pauseForOperator(
       audit.append({
         ...event,
         operation: "operator_pause",
-        result: response === "" ? "retry" : "continue",
+        result:
+          response === ""
+            ? "retry"
+            : allowsSkip && response === "s"
+              ? "skipped"
+              : "continue",
         error: null,
-        transition: response === "" ? "retry" : "operator_prompt",
+        transition:
+          response === ""
+            ? "retry"
+            : allowsSkip && response === "s"
+              ? "skipped"
+              : "operator_prompt",
       }),
     operator,
   );

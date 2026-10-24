@@ -37,6 +37,7 @@ export interface DiscoveryInput {
 
 export interface BatchDiscoveryInput extends DiscoveryInput {
   maxBatchSize: number;
+  excludedTickets?: ReadonlySet<number>;
 }
 
 export const readyForAgentLabel = "ready-for-agent";
@@ -325,6 +326,7 @@ export async function inspect(
     if (hasOpenBlocker) blocked.push(child.number);
     if (
       !excluded.has(child.number) &&
+      !input.excludedTickets?.has(child.number) &&
       (allowed === undefined || allowed.has(child.number)) &&
       !hasExternalOwner &&
       !hasOpenBlocker &&
