@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { access, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
@@ -79,55 +79,74 @@ test("empty input starts a fresh Agent Attempt with a new Git configuration", as
   assert.deepEqual(sessionNames, ["implement issue 9", "implement issue 9"]);
 });
 
-test("a trusted committed override extracts only downstream metadata and bypasses Git verification", async () => {
-  const root = await createProject();
-  const responses = [
-    "not json",
-    JSON.stringify({
-      outcome: "committed",
-      pr_title: "feat: trusted result",
-      pr_body: "Operator supplied metadata.",
-      ignored: "not copied downstream",
-    }),
-  ];
-  let inspections = 0;
-  const { tracker } = createAttemptTracker(9);
-  const result = await executeCli(
-    ["run", "--project", "demo", "--parent", "8"],
-    createCliDependencies(root, {
-      tracker,
-      gitWorkspace: {
-        async fetchTargetBranch() {
-          return "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+for (const retryable of [true, false]) {
+  test(`a trusted committed override cleans logs and bypasses Git verification (retryable=${retryable})`, async () => {
+    const root = await createProject();
+    const responses = [
+      "not json",
+      JSON.stringify({
+        outcome: "committed",
+        pr_title: "feat: trusted result",
+        pr_body: "Operator supplied metadata.",
+        ignored: "not copied downstream",
+      }),
+    ];
+    let inspections = 0;
+    const logFiles = new Set<string>();
+    const { tracker } = createAttemptTracker(9);
+    const result = await executeCli(
+      ["run", "--project", "demo", "--parent", "8"],
+      createCliDependencies(root, {
+        tracker,
+        gitWorkspace: {
+          async fetchTargetBranch() {
+            return "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+          },
+          async inspect() {
+            inspections += 1;
+            throw new Error("must be bypassed");
+          },
         },
-        async inspect() {
-          inspections += 1;
-          throw new Error("must be bypassed");
+        agentExecutor: {
+          async execute(input) {
+            const superseded = path.join(
+              path.dirname(input.logFile),
+              "implement-9-superseded.log",
+            );
+            for (const logFile of [input.logFile, superseded]) {
+              logFiles.add(logFile);
+              await writeFile(logFile, "failed attempt");
+            }
+            throw Object.assign(new Error("Sandcastle failed"), {
+              diagnostics: { retryable },
+            });
+          },
         },
-      },
-      agentExecutor: {
-        async execute() {
-          throw new Error("Sandcastle failed");
+        operator: {
+          async pause() {
+            return responses.shift() ?? "q";
+          },
         },
-      },
-      operator: {
-        async pause() {
-          return responses.shift() ?? "q";
-        },
-      },
-    }),
-  );
+      }),
+    );
 
-  assert.equal(inspections, 0);
-  assert.equal(result.summary.handoffs?.[0]?.verification, "operator_override");
-  assert.equal(result.summary.handoffs?.[0]?.prTitle, "feat: trusted result");
-  assert.deepEqual(result.summary.handoffs?.[0]?.commits, []);
-  assert.ok(result.logPath);
-  const audit = await readFile(result.logPath, "utf8");
-  assert.match(audit, /operator_override/u);
-  assert.equal(audit.includes("not json"), false);
-  assert.equal(audit.includes("not copied downstream"), false);
-});
+    await Promise.all(
+      [...logFiles].map((logFile) => assert.rejects(access(logFile))),
+    );
+    assert.equal(inspections, 0);
+    assert.equal(
+      result.summary.handoffs?.[0]?.verification,
+      "operator_override",
+    );
+    assert.equal(result.summary.handoffs?.[0]?.prTitle, "feat: trusted result");
+    assert.deepEqual(result.summary.handoffs?.[0]?.commits, []);
+    assert.ok(result.logPath);
+    const audit = await readFile(result.logPath, "utf8");
+    assert.match(audit, /operator_override/u);
+    assert.equal(audit.includes("not json"), false);
+    assert.equal(audit.includes("not copied downstream"), false);
+  });
+}
 
 test("a reserved Batch runs its Agent Attempts concurrently", async () => {
   const root = await createProject();

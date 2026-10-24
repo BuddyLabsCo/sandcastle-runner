@@ -188,7 +188,7 @@ test("failed Agent Pause labels the failure and falls back to its diagnostic log
   assert.match(message, /^Reason: Sandcastle failed with process detail$/mu);
   assert.match(message, /^Provider session: unavailable$/mu);
   assert.match(message, /^Resume command: unavailable$/mu);
-  assert.match(message, /^Diagnostic log: .+agent-9-.+\.log$/mu);
+  assert.match(message, /^Diagnostic log: .+implement-9-.+\.log$/mu);
   assert.match(
     message,
     /^Actions: Enter to continue, q to cancel, or provide recovery instructions\.$/mu,
