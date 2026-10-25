@@ -64,6 +64,14 @@ function abortReason(signal: AbortSignal, fallback: string): Error {
   return signal.reason instanceof Error ? signal.reason : new Error(fallback);
 }
 
+function isUsableSessionId(value: unknown): value is string {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function firstUsableSessionId(...values: unknown[]): string | undefined {
+  return values.find(isUsableSessionId);
+}
+
 export class SandcastleAgentExecutor implements AgentExecutor {
   private readonly run: SandcastleRun;
   private readonly wait: Delay;
@@ -137,7 +145,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
       provider,
       model: input.model,
       workingDirectory: input.worktree,
-      ...(resumeSession === undefined ? {} : { sessionId: resumeSession }),
+      ...(isUsableSessionId(resumeSession) ? { sessionId: resumeSession } : {}),
       diagnosticLogPath: input.logFile,
       raw: error instanceof Error ? error.message : String(error),
     };
@@ -214,9 +222,11 @@ export class SandcastleAgentExecutor implements AgentExecutor {
           throw cleanupFailure(
             input,
             provider.name,
-            resultSessionId ??
-              sessionFromError(invocation.runError) ??
+            firstUsableSessionId(
+              resultSessionId,
+              sessionFromError(invocation.runError),
               this.sessions.get(input.logFile),
+            ),
             invocation.runError,
             invocation.settlement,
           );
@@ -227,7 +237,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
         if (result === undefined)
           throw new Error("Sandcastle returned no probe result");
         const sessionId = result.iterations.at(-1)?.sessionId;
-        if (sessionId === undefined)
+        if (!isUsableSessionId(sessionId))
           throw new Error("session probe returned no session ID");
         if (input.signal.aborted)
           throw abortReason(input.signal, "Agent Attempt cancelled");
@@ -302,7 +312,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
       );
       prompt = `${template.trimEnd()}\n\n${outputPrompt}`;
     }
-    if (prompt !== undefined && resumeSession === undefined) {
+    if (prompt !== undefined && !isUsableSessionId(resumeSession)) {
       throw new AgentOutputError(
         "Provider session unavailable for continuation",
         {
@@ -369,16 +379,18 @@ export class SandcastleAgentExecutor implements AgentExecutor {
               schema,
               maxRetries: 0,
             }),
-            ...(resumeSession === undefined ? {} : { resumeSession }),
+            ...(isUsableSessionId(resumeSession) ? { resumeSession } : {}),
             signal: controller.signal,
           });
           if (invocation.settlement.outcome === "failed")
             throw cleanupFailure(
               input,
               provider.name,
-              invocation.result?.iterations.at(-1)?.sessionId ??
-                sessionFromError(invocation.runError) ??
+              firstUsableSessionId(
+                invocation.result?.iterations.at(-1)?.sessionId,
+                sessionFromError(invocation.runError),
                 resumeSession,
+              ),
               invocation.runError,
               invocation.settlement,
             );
@@ -411,10 +423,13 @@ export class SandcastleAgentExecutor implements AgentExecutor {
               input,
               provider.name,
               controller.signal,
-              error.sessionId ?? resumeSession,
+              firstUsableSessionId(error.sessionId, resumeSession),
             );
             if (stopAfterValidation !== undefined) throw stopAfterValidation;
-            if (structuredRetryRemaining > 0 && error.sessionId !== undefined) {
+            if (
+              structuredRetryRemaining > 0 &&
+              isUsableSessionId(error.sessionId)
+            ) {
               structuredRetryRemaining -= 1;
               const nextRecoveryAttempt = await this.waitForContinuation(
                 input,
@@ -459,7 +474,9 @@ export class SandcastleAgentExecutor implements AgentExecutor {
                 input,
                 provider.name,
                 controller.signal,
-                error.sessionId ?? resumeSession,
+                isUsableSessionId(error.sessionId)
+                  ? error.sessionId
+                  : resumeSession,
               );
               if (stopped !== undefined) throw stopped;
               const diagnostics = structuredDiagnostics(
@@ -484,9 +501,10 @@ export class SandcastleAgentExecutor implements AgentExecutor {
             throw new AgentOutputError(error.message, diagnostics);
           }
           if (
+            // Recovery is state-based; Sandcastle error text is deliberately opaque.
             !controller.signal.aborted &&
             !input.signal.aborted &&
-            resumeSession !== undefined &&
+            isUsableSessionId(resumeSession) &&
             recoveryAttempt < policy.agentRetry
           ) {
             const nextRecoveryAttempt = await this.waitForContinuation(
@@ -517,7 +535,8 @@ export class SandcastleAgentExecutor implements AgentExecutor {
           throw this.agentFailure(input, provider.name, resumeSession, error);
         }
         const sessionId = result.iterations.at(-1)?.sessionId;
-        if (sessionId) this.sessions.set(input.logFile, sessionId);
+        if (isUsableSessionId(sessionId))
+          this.sessions.set(input.logFile, sessionId);
         const openingTags = result.stdout.split(`<${tag}>`).length - 1;
         const closingTags = result.stdout.split(`</${tag}>`).length - 1;
         if (
@@ -557,7 +576,8 @@ export class SandcastleAgentExecutor implements AgentExecutor {
     const openingTags = result.stdout.split(`<${tag}>`).length - 1;
     const closingTags = result.stdout.split(`</${tag}>`).length - 1;
     const sessionId = result.iterations.at(-1)?.sessionId;
-    if (sessionId) this.sessions.set(input.logFile, sessionId);
+    if (isUsableSessionId(sessionId))
+      this.sessions.set(input.logFile, sessionId);
     const assistantReply = result.stdout.trim() || undefined;
     const previousAssistantReply = this.replies.get(input.logFile);
     if (assistantReply) this.replies.set(input.logFile, assistantReply);
@@ -574,7 +594,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
       provider: provider.name,
       model: input.model,
       workingDirectory: input.worktree,
-      ...(sessionId === undefined ? {} : { sessionId }),
+      ...(isUsableSessionId(sessionId) ? { sessionId } : {}),
       ...(assistantReply === undefined ? {} : { assistantReply }),
       ...(previousAssistantReply === undefined
         ? {}
