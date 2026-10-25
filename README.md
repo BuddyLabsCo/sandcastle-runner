@@ -1,8 +1,13 @@
 # Sandcastle Runner
 
-Sandcastle Runner is a local CLI that discovers eligible GitHub tickets, runs
-isolated implementation and review attempts, publishes pull requests, repairs
-required checks or merge conflicts, and confirms delivery.
+Sandcastle Runner is a local CLI that uses code to manage the routine steps of
+delivering GitHub tickets. It selects eligible tickets, prepares isolated
+worktrees, verifies and pushes commits, publishes pull requests, waits for CI,
+and coordinates merges and ticket closure.
+
+This keeps AI agents focused on writing, reviewing, and repairing code while
+reducing unnecessary token use for workflow coordination. Runner invokes agents
+through Sandcastle when a task needs code changes or review.
 
 ## Workflow
 
@@ -206,3 +211,9 @@ npm run format           # format source files
 
 The test suite uses scripted adapters and harmless local processes. It does not
 call authenticated agents or mutate a remote GitHub repository.
+
+## Acknowledgements
+
+Thanks to [Sandcastle](https://github.com/mattpocock/sandcastle) and its
+contributors for the agent orchestration library that Runner depends on.
+Runner uses Sandcastle's native agent factories to run coding agents.
