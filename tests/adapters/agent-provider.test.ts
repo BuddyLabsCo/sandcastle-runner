@@ -4,12 +4,63 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import { StructuredOutputError } from "@ai-hero/sandcastle";
+
 import { nativeAgent } from "../../src/adapters/agent-provider.ts";
 import { SandcastleAgentExecutor } from "../../src/adapters/sandcastle.ts";
 import { committed, input } from "../support/sandcastle.ts";
 import { cleanupTempRoots, registerTempRoot } from "../support/temp-cleanup.ts";
 
 test.afterEach(cleanupTempRoots);
+
+const identities = [
+  { agent: "codex", model: "gpt-5", options: { effort: "max" } },
+  { agent: "claude-code", model: "claude-sonnet", options: { effort: "high" } },
+  { agent: "pi", model: "pi-model", options: { thinking: "high" } },
+] as const;
+
+type Identity = (typeof identities)[number];
+
+const noRetries = {
+  operationRetry: 0,
+  agentRetry: 0,
+  operationRetryDelay: [1],
+  agentRetryDelay: [1],
+};
+
+function profile(identity: Identity) {
+  return {
+    ...input(),
+    agent: identity.agent,
+    model: identity.model,
+    options: identity.options,
+  };
+}
+
+function probeResult() {
+  return {
+    iterations: [{ sessionId: "probe-session" }],
+    stdout: "SESSION_READY",
+    commits: [],
+    branch: input().branch,
+    output: undefined,
+  };
+}
+
+async function failureDiagnostics(execution: Promise<unknown>) {
+  try {
+    await execution;
+  } catch (error) {
+    const diagnostics = (
+      error as {
+        diagnostics?: { errorCategory?: string; provider?: string };
+      }
+    ).diagnostics;
+    assert.ok(diagnostics, "expected failure diagnostics");
+    return diagnostics;
+  }
+  assert.fail("expected the Agent Attempt to fail");
+}
 
 function command(
   agent: string,
@@ -103,36 +154,111 @@ test("probe and task use the same selected profile and session", async () => {
   ]);
 });
 
-test("diagnostics attribute the selected native agent", async () => {
-  const executor = new SandcastleAgentExecutor(
-    async (options) => {
-      if (options.prompt === "Reply with exactly: SESSION_READY")
+test("result diagnostics attribute the selected native agent", async () => {
+  for (const identity of identities) {
+    const executor = new SandcastleAgentExecutor(
+      async (options) => {
+        if (options.prompt === "Reply with exactly: SESSION_READY")
+          return probeResult();
         return {
           iterations: [{ sessionId: "probe-session" }],
-          stdout: "SESSION_READY",
+          stdout: `<agent_attempt_result>${JSON.stringify(committed)}</agent_attempt_result>`,
+          commits: committed.commits,
+          branch: input().branch,
+          output: { ...committed },
+        };
+      },
+      async () => {},
+      async () => {},
+      async () => {},
+    );
+
+    const result = await executor.execute(profile(identity));
+    assert.equal(result.diagnostics?.provider, identity.agent);
+    assert.equal(result.diagnostics?.model, identity.model);
+    assert.equal(result.diagnostics?.sessionId, "probe-session");
+  }
+});
+
+test("probe failures attribute the selected native agent", async () => {
+  for (const identity of identities) {
+    const executor = new SandcastleAgentExecutor(
+      async () => {
+        throw new Error("probe failed");
+      },
+      async () => {},
+      async () => {},
+      async () => {},
+    );
+    const diagnostics = await failureDiagnostics(
+      executor.execute({ ...profile(identity), retryPolicy: noRetries }),
+    );
+    assert.equal(diagnostics.provider, identity.agent);
+    assert.equal(diagnostics.errorCategory, "operation_retry");
+  }
+});
+
+test("substantive invocation failures attribute the selected native agent", async () => {
+  for (const identity of identities) {
+    const executor = new SandcastleAgentExecutor(
+      async (options) => {
+        if (options.prompt === "Reply with exactly: SESSION_READY")
+          return probeResult();
+        throw new Error("agent process exited");
+      },
+      async () => {},
+      async () => {},
+      async () => {},
+    );
+    const diagnostics = await failureDiagnostics(
+      executor.execute({ ...profile(identity), retryPolicy: noRetries }),
+    );
+    assert.equal(diagnostics.provider, identity.agent);
+    assert.equal(diagnostics.errorCategory, "agent_retry");
+  }
+});
+
+test("unavailable continuation attributes the selected native agent", async () => {
+  for (const identity of identities) {
+    const executor = new SandcastleAgentExecutor(
+      async () => {
+        throw new Error("agent must not run");
+      },
+      async () => {},
+      async () => {},
+      async () => {},
+    );
+    const diagnostics = await failureDiagnostics(
+      executor.execute({ ...profile(identity), resumePrompt: "continue" }),
+    );
+    assert.equal(diagnostics.provider, identity.agent);
+    assert.equal(diagnostics.errorCategory, "agent_retry");
+  }
+});
+
+test("structured-output diagnostics attribute the selected native agent", async () => {
+  for (const identity of identities) {
+    const executor = new SandcastleAgentExecutor(
+      async (options) => {
+        if (options.prompt === "Reply with exactly: SESSION_READY")
+          return probeResult();
+        throw new StructuredOutputError("invalid structured output", {
+          tag: "agent_attempt_result",
+          rawMatched: "{}",
+          cause: [{ message: "outcome is required" }],
           commits: [],
           branch: input().branch,
-          output: undefined,
-        };
-      return {
-        iterations: [{ sessionId: "probe-session" }],
-        stdout: `<agent_attempt_result>${JSON.stringify(committed)}</agent_attempt_result>`,
-        commits: committed.commits,
-        branch: input().branch,
-        output: { ...committed },
-      };
-    },
-    async () => {},
-    async () => {},
-    async () => {},
-  );
-
-  const result = await executor.execute({
-    ...input(),
-    agent: "pi",
-    model: "pi-model",
-    options: { thinking: "high" },
-  });
-  assert.equal(result.diagnostics?.provider, "pi");
-  assert.equal(result.diagnostics?.model, "pi-model");
+          sessionId: "session-id",
+        });
+      },
+      async () => {},
+      async () => {},
+      async () => {},
+    );
+    const diagnostics = await failureDiagnostics(
+      executor.execute({ ...profile(identity), retryPolicy: noRetries }),
+    );
+    assert.equal(diagnostics.provider, identity.agent);
+    assert.equal(diagnostics.errorCategory, "agent_attempt");
+  }
 });

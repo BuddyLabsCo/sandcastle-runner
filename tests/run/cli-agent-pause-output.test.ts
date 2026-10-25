@@ -10,7 +10,11 @@ import {
 import { createProject } from "../support/cli-project.ts";
 import { executeCli } from "../../src/cli.ts";
 import { AgentOutputError } from "../../src/adapters/process-errors.ts";
-import { agentPauseMessage } from "../../src/run/agent-pause.ts";
+import {
+  agentPauseMessage,
+  ticketAgentContinueActions,
+  ticketAgentRetryActions,
+} from "../../src/run/agent-pause.ts";
 
 test.afterEach(cleanupTempRoots);
 
@@ -99,15 +103,107 @@ test("blocked Agent Pause shows the decision without diagnostic metadata", async
     assert.equal(message.includes(omitted), false, omitted);
 });
 
-test("Agent Pause shows the selected agent and working directory", () => {
-  const message = agentPauseMessage(
-    "blocked",
-    { provider: "claude-code", sessionId: "session-123" },
-    String.raw`C:\Users\O'Brien\work tree`,
-  );
-  assert.match(message, /^Agent: claude-code$/mu);
-  assert.match(message, /^Provider session: session-123$/mu);
-  assert.equal(message.includes("Resume command"), false);
+test("Agent Pause identifies the selected native agent with session and log availability", () => {
+  for (const agent of ["codex", "claude-code", "pi"]) {
+    const message = agentPauseMessage(
+      "blocked",
+      {
+        provider: agent,
+        sessionId: "session-123",
+        workingDirectory: "/diagnostic/worktree",
+        diagnosticLogPath: "/runner/logs/agent.log",
+      },
+      String.raw`C:\Users\O'Brien\work tree`,
+      undefined,
+      ticketAgentContinueActions,
+    );
+    assert.match(message, new RegExp(`^Agent: ${agent}$`, "mu"));
+    assert.match(message, /^Provider session: session-123$/mu);
+    assert.match(
+      message,
+      /^Working directory: C:\\Users\\O'Brien\\work tree$/mu,
+    );
+    assert.match(message, /^Diagnostic log: \/runner\/logs\/agent\.log$/mu);
+    assert.match(
+      message,
+      /^Actions: Enter to continue, s to skip, q to cancel, or provide recovery instructions\.$/mu,
+    );
+    assert.equal(message.includes("Resume command"), false);
+    assert.equal(message.includes("codex resume"), false);
+
+    const failed = agentPauseMessage(
+      "failed",
+      { provider: agent },
+      "/runner/worktree",
+      undefined,
+      ticketAgentRetryActions,
+    );
+    assert.match(failed, new RegExp(`^Agent: ${agent}$`, "mu"));
+    assert.match(failed, /^Provider session: unavailable$/mu);
+    assert.match(failed, /^Working directory: \/runner\/worktree$/mu);
+    assert.match(failed, /^Diagnostic log: unavailable$/mu);
+    assert.match(
+      failed,
+      /^Actions: Enter to retry, s to skip, q to cancel, or supply a trusted result\.$/mu,
+    );
+  }
+});
+
+test("blocked Agent Pause renders each executed agent from its diagnostics", async () => {
+  for (const agent of ["codex", "claude-code", "pi"]) {
+    const root = await createProject();
+    const { tracker } = createAttemptTracker(9);
+    const pauses: string[] = [];
+
+    const result = await executeCli(
+      ["run", "--project", "demo", "--parent", "8"],
+      createCliDependencies(root, {
+        tracker,
+        gitWorkspace: {
+          async fetchTargetBranch() {
+            return "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+          },
+        },
+        agentExecutor: {
+          async execute() {
+            return {
+              outcome: "blocked",
+              summary: "cannot proceed",
+              commits: [],
+              checks: [],
+              blocker: "blocked by policy",
+              diagnostics: {
+                provider: agent,
+                sessionId: `${agent}-session`,
+                workingDirectory: `/diagnostic/${agent}`,
+                diagnosticLogPath: `/logs/${agent}.log`,
+              },
+            };
+          },
+        },
+        operator: {
+          async pause(message) {
+            pauses.push(message);
+            return "q";
+          },
+        },
+      }),
+    );
+
+    assert.equal(result.summary.outcome, "cancelled");
+    assert.equal(pauses.length, 1);
+    const message = pauses[0]!;
+    assert.match(message, new RegExp(`^Agent: ${agent}$`, "mu"));
+    assert.match(
+      message,
+      new RegExp(`^Provider session: ${agent}-session$`, "mu"),
+    );
+    assert.match(message, /^Working directory: .+/mu);
+    assert.match(
+      message,
+      new RegExp(`^Diagnostic log: /logs/${agent}\\.log$`, "mu"),
+    );
+  }
 });
 
 test("Agent Pause falls back from a missing blocker to a one-line summary", async () => {
@@ -215,6 +311,7 @@ test("non-retryable Agent Pause keeps the full decision summary and its accepted
           throw Object.assign(new Error("provider session was lost"), {
             diagnostics: {
               retryable: false,
+              provider: "pi",
               sessionId: "session-456",
             },
           });
@@ -234,6 +331,7 @@ test("non-retryable Agent Pause keeps the full decision summary and its accepted
   const message = pauses[0]!;
   assert.match(message, /^Outcome: failed$/mu);
   assert.match(message, /^Reason: provider session was lost$/mu);
+  assert.match(message, /^Agent: pi$/mu);
   assert.match(message, /^Provider session: session-456$/mu);
   assert.match(message, /^Diagnostic log: .+implement-9-.+\.log$/mu);
   assert.match(

@@ -245,7 +245,9 @@ owns invocation and session resumption; Runner owns bounded retry and Operator
 Pause policy. When automatic recovery cannot continue, Operator Pause shows the
 selected agent, session ID when available, working directory, diagnostic log,
 and the Runner actions currently permitted. Runner does not print a
-copyable agent-specific resume command.
+copyable agent-specific resume command; to take over manually, use the selected
+agent's own recovery interface with the displayed session, working directory,
+and diagnostic log.
 
 Install dependencies and run a parent issue:
 
