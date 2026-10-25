@@ -73,9 +73,10 @@ function command(
   }).command;
 }
 
-test("nativeAgent selects each supported Sandcastle factory", () => {
+test("nativeAgent resolves each supported Sandcastle factory", () => {
   assert.equal(nativeAgent("codex", "gpt-5").name, "codex");
   assert.equal(nativeAgent("claude-code", "claude-sonnet").name, "claude-code");
+  assert.equal(nativeAgent("claudeCode", "claude-sonnet").name, "claude-code");
   assert.equal(nativeAgent("pi", "pi-model").name, "pi");
   assert.match(
     command("codex", "gpt-5", { effort: "max" }),
