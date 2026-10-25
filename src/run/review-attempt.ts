@@ -198,8 +198,11 @@ export async function reviewHandoff(
               implementationReportedChecks: handoff.checks,
             }),
           },
+          agent: input.reviewAgent.agent,
           model: input.reviewAgent.model,
-          effort: input.reviewAgent.reasoningEffort,
+          ...(input.reviewAgent.options === undefined
+            ? {}
+            : { options: input.reviewAgent.options }),
           gitConfigGlobal,
           logFile,
           timeoutMs: input.timeoutMs,

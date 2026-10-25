@@ -16,9 +16,11 @@ npm exec -- sandcastle-runner run --project <project-key> (--parent <issue-numbe
 ```
 
 The root contract requires Node.js **>=22.18.0** with its bundled npm, Git,
-GitHub CLI (`gh`), an installed and authenticated Codex CLI, and an absolute
-checkout path. Keep all executables on `PATH` in the terminal that invokes the
-Runner; no Codex version floor is claimed here.
+GitHub CLI (`gh`), an installed and authenticated CLI for each configured
+agent, and an absolute checkout path. Keep all executables on `PATH` in the
+terminal that invokes the Runner. Runner supports the native Sandcastle
+`codex`, `claude-code`, and `pi` agents; it does not support OpenCode, Cursor,
+or Copilot.
 
 Set the environment variable named by both `tracker.tokenEnv` and
 `codeHost.tokenEnv` in this template's `config.yaml` before invoking the Runner:
@@ -49,13 +51,21 @@ WSL-specific behavior are unsupported; see the root contract for details.
 - `codeHost`: GitHub settings; `tokenEnv` names the credential variable and `adminMerge` controls administrative merge requests.
 - `workflow.review`: enable or disable the review attempt.
 - `workflow.docMaintainTriggerLabel`: exact, case-sensitive label that triggers automatic Documentation Maintenance after a successful Batch. Omitted, empty, or whitespace-only values disable automatic maintenance.
-- `agents`: model and reasoning effort for `implement`, `review`, `ciRepair`, `conflictRepair`, and `documentation` attempts. `review` is needed when enabled; `documentation` is needed for a nonempty trigger label or `--document`.
+- `agents`: an `agent`, `model`, and optional native `options` for `implement`, `review`, `ciRepair`, `conflictRepair`, and `documentation` attempts. `review` is needed when enabled; `documentation` is needed for a nonempty trigger label or `--document`.
 - `timeouts`: positive minute limits for agent attempts, required checks, and merge queue confirmation.
 - `operationRetry` and `agentRetry`: non-negative automatic retry counts; the corresponding `*Delay` arrays are positive delays in seconds.
 - `ticketClosure`: `runner` or `code_host`.
 - `maintenanceTicket`: title, body, and `doc-maintain` label for maintenance tickets.
 
 Keep credentials in the environment, for example `export GH_TOKEN=...`. `workflow.review` defaults to `true`; `workflow.docMaintainTriggerLabel` defaults to an empty string. Use YAML `#` comments for explanations; the loader ignores them.
+
+Each profile forwards `options` to its Sandcastle factory unchanged. Codex and
+Claude Code accept native `effort`; Pi accepts native `thinking`. A profile must
+name its agent explicitly, and the obsolete `reasoningEffort` field is rejected
+rather than converted. If Sandcastle's default session lookup does not match the
+agent's actual storage, set the native `options.sessionStorage.hostSessionsDir`
+(or `hostProjectsDir` for Claude Code); this selects the lookup root and does
+not relocate agent storage.
 
 ## Documentation Maintenance workflow
 

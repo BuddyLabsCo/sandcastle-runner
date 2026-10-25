@@ -348,7 +348,8 @@ test("a Verified Handoff is published unchanged and becomes CI-ready after check
     PROJECT_TARGET_BRANCH: "main",
   });
   assert.equal(agentInput.model, "gpt-5.6-sol");
-  assert.equal(agentInput.effort, "high");
+  assert.equal(agentInput.agent, "codex");
+  assert.deepEqual(agentInput.options, { effort: "high" });
   assert.equal(agentInput.timeoutMs, 120 * 60_000);
   assert.equal(gitConfigContents, "");
   await assert.rejects(readFile(agentInput.gitConfigGlobal, "utf8"));

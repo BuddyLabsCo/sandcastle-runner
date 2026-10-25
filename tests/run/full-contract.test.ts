@@ -144,6 +144,72 @@ test(
 );
 
 test(
+  "mixed purpose profiles reach the execution boundary unchanged",
+  { timeout: 5_000 },
+  async () => {
+    const root = await createProject(true);
+    const configPath = path.join(root, "projects", "demo", "config.yaml");
+    const config = await readProjectConfig<{
+      agents: Record<string, unknown>;
+    }>(configPath);
+    config.agents = {
+      implement: {
+        agent: "claude-code",
+        model: "claude-opus-4-8",
+        options: {
+          effort: "max",
+          sessionStorage: { hostProjectsDir: "/explicit/claude" },
+        },
+      },
+      ciRepair: {
+        agent: "codex",
+        model: "gpt-6-sol",
+        options: { effort: "max" },
+      },
+      conflictRepair: {
+        agent: "pi",
+        model: "claude-sonnet-4-6",
+        options: { thinking: "high" },
+      },
+      documentation: {
+        agent: "claude-code",
+        model: "claude-sonnet-4-6",
+      },
+    };
+    await writeProjectConfig(configPath, config);
+    const scenario = createFiveTicketScenario(root, true);
+
+    const result = await executeCli(
+      ["run", "--project", "demo", "--parent", "8"],
+      scenario.dependencies,
+    );
+
+    assert.equal(result.summary.outcome, "succeeded");
+    const profiles = scenario.operations.filter((operation) =>
+      operation.startsWith("agent-profile:"),
+    );
+    assert.ok(
+      profiles.includes(
+        'agent-profile:implement:claude-code:claude-opus-4-8:{"effort":"max","sessionStorage":{"hostProjectsDir":"/explicit/claude"}}',
+      ),
+    );
+    assert.ok(
+      profiles.includes('agent-profile:ci:codex:gpt-6-sol:{"effort":"max"}'),
+    );
+    assert.ok(
+      profiles.includes(
+        'agent-profile:conflict:pi:claude-sonnet-4-6:{"thinking":"high"}',
+      ),
+    );
+    assert.ok(
+      profiles.includes(
+        "agent-profile:maintenance:claude-code:claude-sonnet-4-6:null",
+      ),
+    );
+  },
+);
+
+test(
   "the five-ticket topology succeeds through the composed recovery path",
   { timeout: 5_000 },
   async () => {

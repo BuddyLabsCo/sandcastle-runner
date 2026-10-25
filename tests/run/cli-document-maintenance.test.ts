@@ -3,8 +3,9 @@ import path from "node:path";
 import test from "node:test";
 
 import { executeCli } from "../../src/cli.ts";
+import type { AgentConfig } from "../../src/config.ts";
 import { recoveryPaths, writeRecoverySnapshot } from "../../src/recovery.ts";
-import type { Ticket } from "../../src/run/contracts.ts";
+import type { AgentExecutor, Ticket } from "../../src/run/contracts.ts";
 import {
   createCliDependencies,
   createCommittedBatch,
@@ -88,7 +89,13 @@ test("--document starts fresh after an interrupted Parent-independent occurrence
   const configPath = path.join(root, "projects/demo/config.yaml");
   const config = await readProjectConfig<{
     issueList: number[];
+    agents: Record<string, AgentConfig>;
   }>(configPath);
+  config.agents.documentation = {
+    agent: "pi",
+    model: "claude-sonnet-4-6",
+    options: { thinking: "high" },
+  };
   config.issueList = [41];
   await writeProjectConfig(configPath, config);
   const tickets = new Map<number, Ticket>();
@@ -96,6 +103,7 @@ test("--document starts fresh after an interrupted Parent-independent occurrence
   let parentReads = 0;
   let pullRequestCreates = 0;
   let agentCalls = 0;
+  let documentationInput: Parameters<AgentExecutor["execute"]>[0] | undefined;
   let branch = "";
   const dependencies = createCliDependencies(root, {
     tracker: {
@@ -135,8 +143,9 @@ test("--document starts fresh after an interrupted Parent-independent occurrence
       },
     },
     agentExecutor: {
-      async execute() {
+      async execute(input) {
         agentCalls += 1;
+        documentationInput = input;
         return agentCalls === 1
           ? {
               outcome: "blocked",
@@ -175,6 +184,9 @@ test("--document starts fresh after an interrupted Parent-independent occurrence
   assert.equal(creates, 2);
   assert.equal(parentReads, 0);
   assert.equal(pullRequestCreates, 0);
+  assert.equal(documentationInput?.agent, "pi");
+  assert.equal(documentationInput?.model, "claude-sonnet-4-6");
+  assert.deepEqual(documentationInput?.options, { thinking: "high" });
 });
 
 test("standalone matching delivery triggers automatic maintenance once", async () => {

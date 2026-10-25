@@ -36,27 +36,37 @@ codeHost:
   tokenEnv: GH_TOKEN
   adminMerge: true
 agents:
-  # Each Agent Attempt selects a supported model and low, medium, high, or xhigh reasoning. Review and documentation profiles are required only while their workflow nodes are enabled.
+  # Each Agent Attempt selects a supported native agent, model, and optional native options. Review and documentation profiles are required only while their workflow nodes are enabled.
   implement:
     # Initial Delivery Ticket implementation.
+    agent: codex
     model: gpt-6-astra
-    reasoningEffort: high
+    options:
+      effort: high
   review:
     # Fresh-context Standards and Spec review.
+    agent: codex
     model: gpt-6-sol
-    reasoningEffort: high
+    options:
+      effort: high
   ciRepair:
     # Repair of failed required CI checks.
+    agent: codex
     model: gpt-6-sol
-    reasoningEffort: medium
+    options:
+      effort: medium
   conflictRepair:
     # Repair of an explicit merge conflict.
+    agent: codex
     model: gpt-6-sol
-    reasoningEffort: medium
+    options:
+      effort: medium
   documentation:
     # Documentation Maintenance.
+    agent: codex
     model: gpt-6-astra
-    reasoningEffort: high
+    options:
+      effort: high
 timeouts:
   # Positive minute limits for Agent Attempts, required-check readiness, and merge-queue confirmation.
   agentMinutes: 120

@@ -21,15 +21,6 @@ function firstLine(...values: unknown[]): string {
   return value === "unavailable" ? value : value.replace(/\s+/gu, " ").trim();
 }
 
-function shellArgument(value: string): string {
-  const argument = value.replace(/^\\\\/u, "//");
-  const prefix = /^[A-Za-z0-9_./:@%+=,-]*/u.exec(argument)![0];
-  // An unquoted prefix lets sh and PowerShell join the following quote segments.
-  return prefix === argument
-    ? argument
-    : `${prefix}'${argument.slice(prefix.length).replaceAll("'", "'\"'\"'")}'`;
-}
-
 export function agentPauseMessage(
   outcome: "blocked" | "failed",
   diagnostics: AgentDiagnostics | undefined,
@@ -39,18 +30,13 @@ export function agentPauseMessage(
 ): string {
   const d = diagnostics ?? {};
   const session = availableValue(d.sessionId);
-  const resume =
-    session === "unavailable"
-      ? "unavailable"
-      : `codex resume -C ${shellArgument(availableValue(worktree, d.workingDirectory))} ${shellArgument(session)}`;
   return [
     `Outcome: ${outcome}`,
     `Reason: ${firstLine(result?.blocker, result?.summary, d.error)}`,
+    `Agent: ${availableValue(d.provider)}`,
     `Provider session: ${session}`,
-    `Resume command: ${resume}`,
-    ...(session === "unavailable"
-      ? [`Diagnostic log: ${availableValue(d.diagnosticLogPath)}`]
-      : []),
+    `Working directory: ${availableValue(worktree, d.workingDirectory)}`,
+    `Diagnostic log: ${availableValue(d.diagnosticLogPath)}`,
     `Actions: ${actions}`,
   ].join("\n");
 }

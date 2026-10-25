@@ -201,7 +201,7 @@ test("failed cleanup after a substantive process error prevents agent retry", as
         outcome: "failed",
         error: "agent process remains alive",
       });
-      throw new Error("codex exited with code 1");
+      throw new Error("agent process exited with code 1");
     },
     async (milliseconds) => {
       waits.push(milliseconds);

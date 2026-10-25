@@ -295,6 +295,7 @@ export function recoverStructuredOutput<T>(
 export function structuredDiagnostics(
   input: ReviewAttemptInput,
   error: StructuredOutputError,
+  provider: string,
 ): AgentDiagnostics {
   return {
     ...(input.promptArgs.OPERATION === undefined
@@ -303,7 +304,7 @@ export function structuredDiagnostics(
     errorCategory: "agent_attempt",
     attemptOrdinal: 1,
     retryable: true,
-    provider: "codex",
+    provider,
     model: input.model,
     workingDirectory: input.worktree,
     ...(error.sessionId === undefined ? {} : { sessionId: error.sessionId }),
