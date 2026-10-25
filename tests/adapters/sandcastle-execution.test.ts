@@ -185,7 +185,7 @@ test("SandcastleAgentExecutor recovers a process failure with continue", async (
           output: undefined,
         };
       calls += 1;
-      if (calls === 1) throw new Error("codex exited with code 1");
+      if (calls === 1) throw new Error("agent process exited with code 1");
       return makeResult(
         `<agent_attempt_result>${JSON.stringify(committed)}</agent_attempt_result>`,
         committed,
@@ -217,7 +217,7 @@ test("SandcastleAgentExecutor stops process recovery when total timeout expires"
           branch: input().branch,
           output: undefined,
         };
-      throw new Error("codex exited with code 1");
+      throw new Error("agent process exited with code 1");
     },
     async () => new Promise((resolve) => setTimeout(resolve, 5)),
     async () => {},
@@ -362,7 +362,7 @@ test("prompt logs separate probe and real prompts", async () => {
     await rm(directory, { recursive: true, force: true });
   }
 });
-test("SandcastleAgentExecutor supplies the complete controlled Codex invocation", async () => {
+test("SandcastleAgentExecutor supplies the complete controlled invocation", async () => {
   let options: RunOptions | undefined;
   const executor = createExecutor(async (received) => {
     options = received;

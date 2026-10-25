@@ -211,7 +211,11 @@ test("an explicit merge conflict is repaired on the original branch and Pull Req
     workflow: { ...validConfig.workflow, review: true },
     agents: {
       ...validConfig.agents,
-      conflictRepair: { model: "gpt-5.5", reasoningEffort: "medium" },
+      conflictRepair: {
+        agent: "codex",
+        model: "gpt-5.5",
+        options: { effort: "medium" },
+      },
     },
   });
   const { tracker } = createAttemptTracker(9);
@@ -361,7 +365,8 @@ test("an explicit merge conflict is repaired on the original branch and Pull Req
     path.join(root, "projects/demo/prompts/conflict-repair.md"),
   );
   assert.equal(agentInputs[1]?.model, "gpt-5.5");
-  assert.equal(agentInputs[1]?.effort, "medium");
+  assert.equal(agentInputs[1]?.agent, "codex");
+  assert.deepEqual(agentInputs[1]?.options, { effort: "medium" });
   assert.equal(agentInputs[1]?.branch, branch);
   assert.equal(agentInputs[1]?.base, implementation.sha);
   assert.deepEqual(agentInputs[1]?.promptArgs, {

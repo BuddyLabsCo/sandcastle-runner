@@ -11,8 +11,9 @@ const reviewConfigurationError =
   "Review is enabled; supply agents.review and prompts/review.md";
 
 export interface AgentConfig {
+  agent: string;
   model: string;
-  reasoningEffort: string;
+  options?: Record<string, unknown>;
 }
 
 export interface ProjectConfig {
@@ -123,9 +124,22 @@ function switchValue(
 
 function agent(value: unknown, name: string): AgentConfig {
   const input = record(value, name);
+  if ("reasoningEffort" in input) {
+    throw new Error(
+      `${name}.reasoningEffort is no longer supported; migrate it to ${name}.options.effort and add ${name}.agent`,
+    );
+  }
+  const selectedAgent = text(input.agent, `${name}.agent`);
   const model = text(input.model, `${name}.model`);
-  const effort = text(input.reasoningEffort, `${name}.reasoningEffort`);
-  return { model, reasoningEffort: effort };
+  const options =
+    input.options === undefined
+      ? undefined
+      : record(input.options, `${name}.options`);
+  return {
+    agent: selectedAgent,
+    model,
+    ...(options === undefined ? {} : { options }),
+  };
 }
 
 function parseConfig(

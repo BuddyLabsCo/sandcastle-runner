@@ -60,6 +60,16 @@ test("a clean fresh-context review gates publication and preserves implementatio
   const root = await createProject();
   const config = structuredClone(validConfig);
   config.workflow.review = true;
+  config.agents.implement = {
+    agent: "claude-code",
+    model: "claude-opus-4-8",
+    options: { effort: "max" },
+  };
+  config.agents.review = {
+    agent: "pi",
+    model: "claude-sonnet-4-6",
+    options: { thinking: "high" },
+  } as unknown as NonNullable<typeof config.agents.review>;
   await writeProjectConfig(
     path.join(root, "projects/demo/config.yaml"),
     config,
@@ -169,6 +179,12 @@ test("a clean fresh-context review gates publication and preserves implementatio
     "pr:feat: implementation:Implementation body.",
   ]);
   assert.ok(reviewInput);
+  assert.equal(implementationInput?.agent, "claude-code");
+  assert.equal(implementationInput?.model, "claude-opus-4-8");
+  assert.deepEqual(implementationInput?.options, { effort: "max" });
+  assert.equal(reviewInput.agent, "pi");
+  assert.equal(reviewInput.model, "claude-sonnet-4-6");
+  assert.deepEqual(reviewInput.options, { thinking: "high" });
   assert.deepEqual(Object.keys(reviewInput.promptArgs), ["REVIEW_HANDOFF"]);
   const reviewHandoff = JSON.parse(
     String(reviewInput.promptArgs.REVIEW_HANDOFF),
@@ -352,7 +368,7 @@ test("blocked, dirty, or invalid review pauses before publication", async () => 
     assert.equal(pushes, 0);
     if (failure === "dirty") {
       assert.match(pauseMessage, /^Provider session: review-session$/mu);
-      assert.match(pauseMessage, /^Resume command: codex resume -C /mu);
+      assert.match(pauseMessage, /^Diagnostic log: .+review-9-.+\.log$/mu);
       assert.match(pauseMessage, /^Reason: Review left a dirty Worktree$/mu);
     }
   }

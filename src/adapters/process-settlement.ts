@@ -52,6 +52,7 @@ export async function invokeSandbox(
 
 export function cleanupFailure(
   input: ReviewAttemptInput,
+  provider: string,
   sessionId: string | undefined,
   runError: Error | undefined,
   settlement: Extract<ProcessSettlement, { outcome: "failed" }>,
@@ -60,7 +61,7 @@ export function cleanupFailure(
   return new ProcessCleanupError(message, {
     errorCategory: "process_cleanup",
     retryable: false,
-    provider: "codex",
+    provider,
     model: input.model,
     workingDirectory: input.worktree,
     ...(sessionId === undefined ? {} : { sessionId }),

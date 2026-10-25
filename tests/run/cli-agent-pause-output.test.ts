@@ -77,7 +77,9 @@ test("blocked Agent Pause shows the decision without diagnostic metadata", async
   assert.match(message, /^Outcome: blocked$/mu);
   assert.match(message, /^Reason: API contract is unresolved Second line$/mu);
   assert.match(message, /^Provider session: session-123$/mu);
-  assert.match(message, /^Resume command: codex resume -C .+ session-123$/mu);
+  assert.match(message, /^Agent: unavailable$/mu);
+  assert.match(message, /^Working directory: .+/mu);
+  assert.match(message, /^Diagnostic log: \/forbidden\/diagnostic\.log$/mu);
   assert.ok(message.includes(path.basename(worktree)));
   assert.match(
     message,
@@ -92,22 +94,19 @@ test("blocked Agent Pause shows the decision without diagnostic metadata", async
     "forbidden-attempt",
     "forbidden assistant reply",
     "the implementation cannot proceed",
-    "/forbidden/diagnostic.log",
   ])
     assert.equal(message.includes(omitted), false, omitted);
 });
 
-test("resume command quotes spaces and apostrophes for sh and PowerShell", () => {
+test("Agent Pause shows the selected agent and working directory", () => {
   const message = agentPauseMessage(
     "blocked",
-    { sessionId: "session-123" },
+    { provider: "claude-code", sessionId: "session-123" },
     String.raw`C:\Users\O'Brien\work tree`,
   );
-  assert.ok(
-    message.includes(
-      `Resume command: codex resume -C C:'\\Users\\O'"'"'Brien\\work tree' session-123`,
-    ),
-  );
+  assert.match(message, /^Agent: claude-code$/mu);
+  assert.match(message, /^Provider session: session-123$/mu);
+  assert.equal(message.includes("Resume command"), false);
 });
 
 test("Agent Pause falls back from a missing blocker to a one-line summary", async () => {
@@ -187,7 +186,8 @@ test("failed Agent Pause labels the failure and falls back to its diagnostic log
   assert.match(message, /^Outcome: failed$/mu);
   assert.match(message, /^Reason: Sandcastle failed with process detail$/mu);
   assert.match(message, /^Provider session: unavailable$/mu);
-  assert.match(message, /^Resume command: unavailable$/mu);
+  assert.match(message, /^Agent: unavailable$/mu);
+  assert.match(message, /^Working directory: .+/mu);
   assert.match(message, /^Diagnostic log: .+implement-9-.+\.log$/mu);
   assert.match(
     message,
@@ -234,7 +234,7 @@ test("non-retryable Agent Pause keeps the full decision summary and its accepted
   assert.match(message, /^Outcome: failed$/mu);
   assert.match(message, /^Reason: provider session was lost$/mu);
   assert.match(message, /^Provider session: session-456$/mu);
-  assert.match(message, /^Resume command: codex resume -C .+ session-456$/mu);
+  assert.match(message, /^Diagnostic log: .+implement-9-.+\.log$/mu);
   assert.match(
     message,
     /^Actions: Enter to retry, s to skip, q to cancel, or supply a trusted result\.$/mu,

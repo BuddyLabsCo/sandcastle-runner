@@ -43,7 +43,14 @@ export async function createProject(recovery: boolean): Promise<string> {
     workflow: { review: false, docMaintainTriggerLabel: "documentation" },
     agents: Object.fromEntries(
       ["implement", "ciRepair", "conflictRepair", "documentation"].map(
-        (name) => [name, { model: "gpt-5.6-sol", reasoningEffort: "high" }],
+        (name) => [
+          name,
+          {
+            agent: "codex",
+            model: "gpt-5.6-sol",
+            options: { effort: "high" },
+          },
+        ],
       ),
     ),
     timeouts: {

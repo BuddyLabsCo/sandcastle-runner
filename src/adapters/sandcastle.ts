@@ -1,4 +1,5 @@
 import {
+  type AgentProvider,
   Output,
   StructuredOutputError,
   run as runSandcastle,
@@ -22,8 +23,8 @@ import type {
   AgentExecutor,
   ReviewAttemptInput,
 } from "../run/contracts.ts";
-import { codexWithRunnerEffort } from "./codex-agent.ts";
-import { AgentOutputError, isAgentProcessFailure } from "./process-errors.ts";
+import { nativeAgent } from "./agent-provider.ts";
+import { AgentOutputError } from "./process-errors.ts";
 import { OperatorCancelled } from "../run/operations.ts";
 import { noShellSandbox } from "./no-shell-sandbox.ts";
 import {
@@ -115,6 +116,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
 
   private agentFailure(
     input: ReviewAttemptInput,
+    provider: string,
     resumeSession: string | undefined,
     error: unknown,
   ): AgentOutputError {
@@ -122,7 +124,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
       errorCategory: "agent_retry",
       attemptOrdinal: 1,
       retryable: input.resumePrompt !== undefined ? false : true,
-      provider: "codex",
+      provider,
       model: input.model,
       workingDirectory: input.worktree,
       ...(resumeSession === undefined ? {} : { sessionId: resumeSession }),
@@ -139,7 +141,10 @@ export class SandcastleAgentExecutor implements AgentExecutor {
     );
   }
 
-  private async prepareSession(input: ReviewAttemptInput): Promise<string> {
+  private async prepareSession(
+    input: ReviewAttemptInput,
+    provider: AgentProvider,
+  ): Promise<string> {
     const existing = this.sessions.get(input.logFile);
     if (existing !== undefined) return existing;
 
@@ -155,7 +160,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
           env: { GIT_CONFIG_GLOBAL: input.gitConfigGlobal },
         });
         const invocation = await invokeSandbox(this.run, {
-          agent: codexWithRunnerEffort(input.model, input.effort),
+          agent: provider,
           sandbox,
           cwd: input.worktree,
           name: input.runName,
@@ -171,6 +176,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
         if (invocation.settlement.outcome === "failed")
           throw cleanupFailure(
             input,
+            provider.name,
             resultSessionId ??
               sessionFromError(invocation.runError) ??
               this.sessions.get(input.logFile),
@@ -188,6 +194,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
         return sessionId;
       } catch (error) {
         if (error instanceof ProcessCleanupError) throw error;
+        if (error instanceof OperatorCancelled) throw error;
         lastError = error;
         if (attempt === policy.operationRetry) break;
         const delaySeconds =
@@ -202,7 +209,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
       {
         errorCategory: "operation_retry",
         retryable: false,
-        provider: "codex",
+        provider: provider.name,
         model: input.model,
         workingDirectory: input.worktree,
         diagnosticLogPath: input.logFile,
@@ -216,6 +223,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
     tag: string,
     schema: StandardSchema<T>,
   ): Promise<T> {
+    const provider = nativeAgent(input.agent, input.model, input.options);
     let resumeSession = this.sessions.get(input.logFile);
     let prompt = input.resumePrompt;
     const pullRequestMetadata =
@@ -238,7 +246,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
       },
     ).trim();
     if (prompt === undefined) {
-      resumeSession ??= await this.prepareSession(input);
+      resumeSession ??= await this.prepareSession(input, provider);
       const template = replacePromptPlaceholders(
         await readFile(input.promptFile, "utf8"),
         {
@@ -255,7 +263,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
         {
           errorCategory: "agent_retry",
           retryable: false,
-          provider: "codex",
+          provider: provider.name,
           model: input.model,
           workingDirectory: input.worktree,
           diagnosticLogPath: input.logFile,
@@ -287,7 +295,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
             env: { GIT_CONFIG_GLOBAL: input.gitConfigGlobal },
           });
           const invocation = await invokeSandbox(this.run, {
-            agent: codexWithRunnerEffort(input.model, input.effort),
+            agent: provider,
             sandbox,
             cwd: input.worktree,
             name: input.runName,
@@ -308,6 +316,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
           if (invocation.settlement.outcome === "failed")
             throw cleanupFailure(
               input,
+              provider.name,
               invocation.result?.iterations.at(-1)?.sessionId ??
                 sessionFromError(invocation.runError) ??
                 resumeSession,
@@ -333,7 +342,12 @@ export class SandcastleAgentExecutor implements AgentExecutor {
                 controller.signal,
               );
               if (nextRecoveryAttempt === undefined)
-                throw this.agentFailure(input, error.sessionId, error);
+                throw this.agentFailure(
+                  input,
+                  provider.name,
+                  error.sessionId,
+                  error,
+                );
               structuredRetryAttempt = nextRecoveryAttempt;
               prompt = [
                 `The previous structured output failed validation. Specific validation errors: ${formatStructuredCause(error.cause)}`,
@@ -353,7 +367,11 @@ export class SandcastleAgentExecutor implements AgentExecutor {
                 input.logFile,
                 "Recovered the final structured output from the retry result.",
               );
-              const diagnostics = structuredDiagnostics(input, error);
+              const diagnostics = structuredDiagnostics(
+                input,
+                error,
+                provider.name,
+              );
               Object.defineProperty(recovered, "diagnostics", {
                 value: diagnostics,
                 enumerable: false,
@@ -361,7 +379,11 @@ export class SandcastleAgentExecutor implements AgentExecutor {
               });
               return recovered;
             }
-            const diagnostics = structuredDiagnostics(input, error);
+            const diagnostics = structuredDiagnostics(
+              input,
+              error,
+              provider.name,
+            );
             diagnostics.error =
               formatStructuredCause(error.cause) || error.message;
             throw new AgentOutputError(error.message, diagnostics);
@@ -375,7 +397,6 @@ export class SandcastleAgentExecutor implements AgentExecutor {
           if (
             !controller.signal.aborted &&
             !input.signal.aborted &&
-            isAgentProcessFailure(error) &&
             resumeSession !== undefined &&
             recoveryAttempt < policy.agentRetry
           ) {
@@ -387,6 +408,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
             if (nextRecoveryAttempt === undefined)
               throw this.agentFailure(
                 input,
+                provider.name,
                 resumeSession,
                 controller.signal.reason ?? error,
               );
@@ -395,7 +417,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
             resumeSession = this.sessions.get(input.logFile) ?? resumeSession;
             continue;
           }
-          throw this.agentFailure(input, resumeSession, error);
+          throw this.agentFailure(input, provider.name, resumeSession, error);
         }
         const sessionId = result.iterations.at(-1)?.sessionId;
         if (sessionId) this.sessions.set(input.logFile, sessionId);
@@ -415,6 +437,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
         if (nextRecoveryAttempt === undefined)
           throw this.agentFailure(
             input,
+            provider.name,
             resumeSession,
             controller.signal.reason,
           );
@@ -443,7 +466,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
       ...(input.promptArgs.RUN_ID === undefined
         ? {}
         : { runId: input.promptArgs.RUN_ID.toString() }),
-      provider: "codex",
+      provider: provider.name,
       model: input.model,
       workingDirectory: input.worktree,
       ...(sessionId === undefined ? {} : { sessionId }),

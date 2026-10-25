@@ -36,27 +36,37 @@ codeHost:
   tokenEnv: GH_TOKEN
   adminMerge: true
 agents:
-  # Each Agent Attempt selects a supported model and low, medium, high, or xhigh reasoning. Review and documentation profiles are required only while their workflow nodes are enabled.
+  # Each Agent Attempt selects a supported native agent, model, and optional native options. Review and documentation profiles are required only while their workflow nodes are enabled.
   implement:
     # Initial Delivery Ticket implementation.
+    agent: codex
     model: group/deepseek-v4.1-flash
-    reasoningEffort: max
+    options:
+      effort: max
   review:
     # Fresh-context Standards and Spec review.
+    agent: codex
     model: group/deepseek-v4.1-flash
-    reasoningEffort: max
+    options:
+      effort: max
   ciRepair:
     # Repair of failed required CI checks.
+    agent: codex
     model: group/deepseek-v4.1-flash
-    reasoningEffort: max
+    options:
+      effort: max
   conflictRepair:
     # Repair of an explicit merge conflict.
+    agent: codex
     model: group/deepseek-v4.1-flash
-    reasoningEffort: max
+    options:
+      effort: max
   documentation:
     # Documentation Maintenance.
+    agent: codex
     model: group/deepseek-v4.1-flash
-    reasoningEffort: max
+    options:
+      effort: max
 timeouts:
   # Positive minute limits for Agent Attempts, required-check readiness, and merge-queue confirmation.
   agentMinutes: 120
