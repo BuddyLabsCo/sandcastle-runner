@@ -14,7 +14,7 @@ import { executeCli } from "../../src/cli.ts";
 test.afterEach(cleanupTempRoots);
 
 test("cancelling an exhausted conflict budget stops before republishing or remerge", async () => {
-  const sessionNames: string[] = [];
+  const runNames: string[] = [];
   const root = await createProject();
   const delivery = createCommittedDelivery();
   let agentCalls = 0;
@@ -40,7 +40,7 @@ test("cancelling an exhausted conflict budget stops before republishing or remer
       },
       agentExecutor: {
         async execute(input) {
-          sessionNames.push(input.sessionName);
+          runNames.push(input.runName);
           agentCalls += 1;
           if (agentCalls === 2) {
             return {
@@ -94,7 +94,7 @@ test("cancelling an exhausted conflict budget stops before republishing or remer
   assert.equal(agentCalls, 2);
   assert.equal(pushes, 1);
   assert.equal(mergeRequests, 1);
-  assert.equal(sessionNames[1], "resolve conflict for pr 1");
+  assert.equal(runNames[1], "resolve conflict for pr 1");
 });
 
 test("Parent cancellation after conflict repair verification prevents its first push", async () => {

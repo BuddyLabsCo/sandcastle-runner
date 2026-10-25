@@ -77,7 +77,7 @@ async function implementTicket(
     });
     const result = await runAgentOperation(ticketInput, {
       phase: "implement",
-      sessionName: `implement issue ${ticket}`,
+      runName: `implement issue ${ticket}`,
       ticket,
       worktree,
       branch,
@@ -144,7 +144,7 @@ export async function runCiRepairAttempt(
   try {
     const result = await runAgentOperation(input, {
       phase: "ci_repair",
-      sessionName: `fix ci for pr ${input.pullRequest.number}`,
+      runName: `fix ci for pr ${input.pullRequest.number}`,
       ticket: input.handoff.ticket,
       worktree: input.handoff.worktree,
       branch: input.handoff.branch,
@@ -217,7 +217,7 @@ export async function runConflictRepairAttempt(
   try {
     const result = await runAgentOperation(input, {
       phase: "conflict_repair",
-      sessionName: `resolve conflict for pr ${input.pullRequest.number}`,
+      runName: `resolve conflict for pr ${input.pullRequest.number}`,
       ticket: input.handoff.ticket,
       worktree: input.handoff.worktree,
       branch: input.handoff.branch,
@@ -320,7 +320,7 @@ export async function runMaintenanceAttempt(
     });
     const result = await runAgentOperation(input, {
       phase: "maintenance",
-      sessionName: `document maintain issue ${input.ticket}`,
+      runName: `document maintain issue ${input.ticket}`,
       ticket: input.ticket,
       worktree,
       branch,

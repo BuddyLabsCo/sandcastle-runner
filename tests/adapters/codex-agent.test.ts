@@ -96,7 +96,6 @@ test("Agent execution resumes the persisted Codex session found in CODEX_HOME", 
       async () => {},
       async () => {},
       async () => {},
-      async () => {},
     );
     await executor.execute(input());
   } finally {

@@ -334,7 +334,6 @@ export function createFiveTicketScenario(
               undefined,
               undefined,
               undefined,
-              async () => {},
             );
             return ticket2Executor.execute(input);
           }

@@ -54,7 +54,6 @@ test("SandcastleAgentExecutor retries session probe with exponential backoff", a
     },
     async () => {},
     async () => {},
-    async () => {},
   );
   await executor.execute(input());
   assert.deepEqual(waits, [10_000, 20_000, 40_000, 80_000]);
@@ -91,7 +90,6 @@ test("SandcastleAgentExecutor uses the configured operation retry policy", async
     },
     async () => {},
     async () => {},
-    async () => {},
   );
   await executor.execute({
     ...input(),
@@ -116,7 +114,6 @@ test("session probe exhaustion requests a non-agent operator pause", async () =>
     },
     async () => {},
     undefined,
-    async () => {},
   );
   await assert.rejects(executor.execute(input()), (error: unknown) => {
     const diagnostics = (
@@ -162,7 +159,6 @@ test("SandcastleAgentExecutor recovers a missing output tag with continue", asyn
     async (_logFile, message) => {
       statuses.push(message);
     },
-    async () => {},
   );
   await executor.execute(input());
   assert.deepEqual(waits, [10_000]);
@@ -200,7 +196,6 @@ test("SandcastleAgentExecutor recovers a process failure with continue", async (
     },
     async () => {},
     async () => {},
-    async () => {},
   );
 
   await executor.execute(input());
@@ -225,7 +220,6 @@ test("SandcastleAgentExecutor stops process recovery when total timeout expires"
       throw new Error("codex exited with code 1");
     },
     async () => new Promise((resolve) => setTimeout(resolve, 5)),
-    async () => {},
     async () => {},
     async () => {},
   );
@@ -263,7 +257,6 @@ test("missing output tag with zero agent retries does not continue", async () =>
     async (milliseconds) => {
       waits.push(milliseconds);
     },
-    async () => {},
     async () => {},
     async () => {},
   );
@@ -308,7 +301,6 @@ test("SandcastleAgentExecutor logs every prompt it sends", async () => {
       logged.push(prompt);
     },
     undefined,
-    async () => {},
   );
   await executor.execute(input());
   await executor.execute({ ...input(), resumePrompt: "operator instruction" });
@@ -345,7 +337,6 @@ test("prompt logs separate probe and real prompts", async () => {
       async () => {},
       undefined,
       undefined,
-      async () => {},
     );
     const logFile = path.join(directory, "prompts.log");
     await executor.execute({ ...input(), logFile });
@@ -474,7 +465,6 @@ test("SandcastleAgentExecutor accepts a valid final retry payload from an output
     async (_logFile, message) => {
       statuses.push(message);
     },
-    async () => {},
   );
 
   const result = await executor.execute({

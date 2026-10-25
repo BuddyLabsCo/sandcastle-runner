@@ -23,7 +23,6 @@ import type {
   ReviewAttemptInput,
 } from "../run/contracts.ts";
 import { codexWithRunnerEffort } from "./codex-agent.ts";
-import { renameCodexSession } from "./codex-session-name.ts";
 import { AgentOutputError, isAgentProcessFailure } from "./process-errors.ts";
 import { OperatorCancelled } from "../run/operations.ts";
 import { noShellSandbox } from "./no-shell-sandbox.ts";
@@ -61,7 +60,6 @@ export class SandcastleAgentExecutor implements AgentExecutor {
   private readonly wait: Delay;
   private readonly logPrompt: PromptLogger;
   private readonly logStatus: StatusLogger;
-  private readonly renameSession: typeof renameCodexSession;
   private readonly sessions = new Map<string, string>();
   private readonly replies = new Map<string, string>();
 
@@ -70,9 +68,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
     wait: Delay = delay,
     promptLogger: PromptLogger = logPrompt,
     statusLogger: StatusLogger = logStatus,
-    renameSession: typeof renameCodexSession = renameCodexSession,
   ) {
-    this.renameSession = renameSession;
     this.run = run;
     this.wait = wait;
     this.logPrompt = promptLogger;
@@ -158,6 +154,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
             env: { GIT_CONFIG_GLOBAL: input.gitConfigGlobal },
           }),
           cwd: input.worktree,
+          name: input.runName,
           prompt: "Reply with exactly: SESSION_READY",
           maxIterations: 1,
           completionSignal: ["SESSION_READY"],
@@ -222,18 +219,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
       },
     ).trim();
     if (prompt === undefined) {
-      if (resumeSession === undefined) {
-        resumeSession = await this.prepareSession(input);
-        try {
-          await this.renameSession(resumeSession, input.sessionName, input);
-        } catch (error) {
-          input.signal.throwIfAborted();
-          await this.logStatus(
-            input.logFile,
-            `Warning: could not name Codex session ${resumeSession}: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-      }
+      resumeSession ??= await this.prepareSession(input);
       const template = replacePromptPlaceholders(
         await readFile(input.promptFile, "utf8"),
         {
@@ -284,6 +270,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
               env: { GIT_CONFIG_GLOBAL: input.gitConfigGlobal },
             }),
             cwd: input.worktree,
+            name: input.runName,
             prompt: runPrompt,
             maxIterations: 1,
             completionSignal: [],

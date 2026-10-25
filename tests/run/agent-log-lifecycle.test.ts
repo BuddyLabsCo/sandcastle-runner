@@ -238,9 +238,9 @@ test("a successful CI repair retry removes superseded ci logs", async () => {
       agentExecutor: {
         async execute(input) {
           agentCalls += 1;
-          if (input.sessionName.startsWith("fix ci")) {
+          if (input.runName.startsWith("fix ci")) {
             ciLogs.push(input.logFile);
-            await writeFile(input.logFile, input.sessionName);
+            await writeFile(input.logFile, input.runName);
           }
           if (agentCalls === 1) {
             return {

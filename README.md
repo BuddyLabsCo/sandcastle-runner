@@ -133,6 +133,10 @@ Codex state defaults to the current Windows user profile when `HOME` is absent.
 If `CODEX_HOME` is set, its `sessions` directory is used instead. Keep that state
 location on a supported path.
 
+Agent Attempt task identities are passed as native Sandcastle run names and
+identify tasks in log output. They do not guarantee Runner-assigned titles in
+the agent application's session list. This loss is intentional.
+
 Enable long paths in the selected repository only when its files require them.
 The setting must be repository-local because Agent Attempts run with isolated
 Git configuration:

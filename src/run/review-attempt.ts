@@ -175,7 +175,7 @@ export async function reviewHandoff(
         await writeFile(gitConfigGlobal, "");
         result = await input.agentExecutor.executeReview({
           ticket: handoff.ticket,
-          sessionName: `review issue ${handoff.ticket}`,
+          runName: `review issue ${handoff.ticket}`,
           worktree: handoff.worktree,
           branch: handoff.branch,
           base: handoff.base,

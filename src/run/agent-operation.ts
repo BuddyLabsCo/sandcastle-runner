@@ -163,7 +163,7 @@ export async function runAgentOperation(
   input: AgentOperationInput,
   operation: {
     phase: "implement" | "ci_repair" | "conflict_repair" | "maintenance";
-    sessionName: string;
+    runName: string;
     ticket: number;
     worktree: string;
     branch: string;
@@ -223,7 +223,7 @@ export async function runAgentOperation(
         await writeFile(gitConfigGlobal, "");
         result = await input.agentExecutor.execute({
           ticket: operation.ticket,
-          sessionName: operation.sessionName,
+          runName: operation.runName,
           worktree: operation.worktree,
           branch: operation.branch,
           base: operation.base,
