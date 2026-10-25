@@ -10,6 +10,7 @@ import {
 import { createProject } from "../support/cli-project.ts";
 import { executeCli } from "../../src/cli.ts";
 import { AgentOutputError } from "../../src/adapters/process-errors.ts";
+import { SandcastleAgentExecutor } from "../../src/adapters/sandcastle.ts";
 import {
   agentPauseMessage,
   ticketAgentContinueActions,
@@ -378,6 +379,61 @@ test("a timed-out Agent Attempt enters one Operator Pause", async () => {
   assert.equal(agentCalls, 1);
   assert.equal(pauses.length, 1);
   assert.match(pauses[0]!, /^Reason: Agent Attempt timed out$/mu);
+  assert.match(
+    pauses[0]!,
+    /^Actions: Enter to continue, s to skip, q to cancel, or provide recovery instructions\.$/mu,
+  );
+});
+
+test("exhausted generic session recovery enters one Operator Pause", async () => {
+  const root = await createProject();
+  const { tracker } = createAttemptTracker(9);
+  const pauses: string[] = [];
+  const resumedSessions: unknown[] = [];
+  const agentExecutor = new SandcastleAgentExecutor(
+    async (options) => {
+      if (options.prompt === "Reply with exactly: SESSION_READY") {
+        return {
+          iterations: [{ sessionId: "probe-session" }],
+          stdout: "SESSION_READY",
+          commits: [],
+          branch: "sandcastle/probe",
+          output: undefined,
+        };
+      }
+      resumedSessions.push(options.resumeSession);
+      throw new Error("execution failed");
+    },
+    async () => {},
+    async () => {},
+    async () => {},
+  );
+
+  const result = await executeCli(
+    ["run", "--project", "demo", "--parent", "8"],
+    createCliDependencies(root, {
+      tracker,
+      gitWorkspace: {
+        async fetchTargetBranch() {
+          return "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        },
+      },
+      agentExecutor,
+      operator: {
+        async pause(message) {
+          pauses.push(message);
+          return "q";
+        },
+      },
+    }),
+  );
+
+  assert.equal(result.summary.outcome, "cancelled");
+  assert.equal(resumedSessions.length, 5);
+  assert.ok(resumedSessions.every((session) => session === "probe-session"));
+  assert.equal(pauses.length, 1);
+  assert.match(pauses[0]!, /^Reason: execution failed$/mu);
+  assert.match(pauses[0]!, /^Provider session: probe-session$/mu);
   assert.match(
     pauses[0]!,
     /^Actions: Enter to continue, s to skip, q to cancel, or provide recovery instructions\.$/mu,
