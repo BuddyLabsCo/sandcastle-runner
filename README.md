@@ -126,9 +126,11 @@ projects/<project-key>/
   logs/
 ```
 
-Start from `projects/trickplay-cropper/config.yaml` and configure the
+Start from `projects/sandcastle-runner/config.yaml` and configure the
 repository, absolute checkout, target branch, credential variable names,
 timeouts, workflow flags, and agent profiles.
+
+Git tracks only `projects/README.md` and `projects/sandcastle-runner/` in this directory. Other projects remain local and are ignored.
 
 Each `agents.<purpose>` profile requires `agent` and `model`, and accepts an
 optional native `options` object:
