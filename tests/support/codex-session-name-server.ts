@@ -1,8 +1,11 @@
 import { createInterface } from "node:readline";
+import { writeFileSync } from "node:fs";
 
 const lines = createInterface({ input: process.stdin });
 const methods: string[] = [];
 const scenario = process.argv[2];
+if (process.env.SANDBOX_TEST_PID_FILE)
+  writeFileSync(process.env.SANDBOX_TEST_PID_FILE, String(process.pid));
 lines.on("line", (line) => {
   const message = JSON.parse(line) as {
     id?: number;

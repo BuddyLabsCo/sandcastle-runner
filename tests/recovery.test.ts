@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -39,6 +39,30 @@ test("recovery snapshots replace atomically and reject malformed input unchanged
   await writeFile(filename, "{not-json", "utf8");
   await assert.rejects(readRecoverySnapshot(filename), InvalidRecoverySnapshot);
   assert.equal(await readFile(filename, "utf8"), "{not-json");
+});
+
+test("recovery snapshot writes preserve real rename failures", async () => {
+  const root = registerTempRoot(
+    await mkdtemp(path.join(tmpdir(), "sandcastle-recovery-failure-")),
+  );
+  const filename = recoveryPaths(root, 8).snapshot;
+  await mkdir(path.dirname(filename), { recursive: true });
+  await mkdir(filename);
+  await assert.rejects(
+    writeRecoverySnapshot(filename, {
+      schemaVersion: 2,
+      project: "demo",
+      repository: "owner/repo",
+      checkout: "/tmp/repo",
+      parentTicket: 8,
+      runId: "run-1",
+      phase: "running",
+      targetBranch: "main",
+      createdAt: "2026-09-11T00:00:00.000Z",
+      updatedAt: "2026-09-11T00:00:00.000Z",
+    }),
+    /EISDIR|EEXIST|EPERM/u,
+  );
 });
 
 test("recovery snapshots retain independent CI and conflict repair budgets", async () => {

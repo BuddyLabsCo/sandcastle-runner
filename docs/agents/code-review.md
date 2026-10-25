@@ -16,8 +16,9 @@ contract or is identified as unintended scope.
 
 - Verify success, boundary, malformed-input, cancellation, and failure paths
   relevant to the contract.
-- Must not contain any OS-specific coding. This project should be able to run 
-  on any qualified node environment with proper config.
+- Keep workflow and domain code OS-neutral. Native launch or termination
+  handling belongs behind an adapter boundary and must not leak platform
+  branches into workflow decisions.
 - Check compatibility, public behavior, state transitions, resource ownership,
   concurrency, exceptions, and performance where affected.
 - Leave deterministic formatting, lint, and type diagnostics to configured

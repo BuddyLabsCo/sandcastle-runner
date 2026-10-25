@@ -25,6 +25,7 @@
   "dependencies": {
     "@ai-hero/sandcastle": "0.12.0",
     "cac": "7.0.0",
+    "cross-spawn": "7.0.6",
     "yaml": "2.9.1"
   }
 }

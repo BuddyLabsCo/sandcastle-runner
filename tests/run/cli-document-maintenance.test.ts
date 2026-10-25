@@ -9,6 +9,7 @@ import {
   createCliDependencies,
   createCommittedBatch,
   createCommittedDelivery,
+  isMaintenanceWorktree,
 } from "../support/cli-dependencies.ts";
 import {
   createProject,
@@ -222,14 +223,14 @@ test("standalone matching delivery triggers automatic maintenance once", async (
       gitWorkspace: {
         ...delivery.gitWorkspace,
         async createWorktree(input) {
-          if (input.worktree.includes("/maintenance-")) {
+          if (isMaintenanceWorktree(input.worktree)) {
             maintenanceBranch = input.branch;
             return;
           }
           await delivery.gitWorkspace.createWorktree!(input);
         },
         async inspect(input) {
-          if (input.worktree.includes("/maintenance-")) {
+          if (isMaintenanceWorktree(input.worktree)) {
             return {
               worktree: input.worktree,
               branch: maintenanceBranch,
