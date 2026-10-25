@@ -91,15 +91,22 @@ Codex and Pi use `hostSessionsDir`; Claude Code uses `hostProjectsDir`. These
 options select where sessions are looked up and do not relocate agent storage.
 
 Set the credential variables named by `tracker.tokenEnv` and
-`codeHost.tokenEnv` in `config.yaml`; the templates use `GH_TOKEN`:
+`codeHost.tokenEnv` in `config.yaml`; the templates use `GH_TOKEN`. As with
+`HOME`, configure it once at the user level:
 
 ```powershell
-$env:GH_TOKEN = 'your-github-token'
+[Environment]::SetEnvironmentVariable('GH_TOKEN', 'your-github-token', 'User')
+$env:GH_TOKEN = [Environment]::GetEnvironmentVariable('GH_TOKEN', 'User')
+node -p "Boolean(process.env.GH_TOKEN)"
 ```
 
-Use the normal Windows environment-variable controls if the token should
-persist. Runner does not start an interactive `gh auth login` flow and does not
-read a stored `gh` login in place of the configured environment variable.
+The first command persists the token across restarts, and the second applies
+it to the current terminal. Restart existing terminal or IDE processes to
+receive the updated environment. The verification command should print `true`
+without revealing the token. Never commit a token.
+
+Runner does not start an interactive `gh auth login` flow and does not read a
+stored `gh` login in place of the configured environment variable.
 
 ## macOS and Linux Setup
 
