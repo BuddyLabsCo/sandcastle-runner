@@ -9,6 +9,7 @@ import { SandcastleAgentExecutor } from "../../src/adapters/sandcastle.ts";
 import { processExists, stopProcess, waitForPid } from "../support/process.ts";
 import {
   committed,
+  createExecutor,
   input,
   result as makeResult,
 } from "../support/sandcastle.ts";
@@ -310,3 +311,53 @@ test("failed cleanup after structured output failure prevents correction", async
   assert.equal(substantiveCalls, 1);
   assert.deepEqual(waits, []);
 });
+
+for (const preceding of ["missing output", "structured output error"]) {
+  test(`${preceding} waits for successful cleanup before continuing`, async () => {
+    const invocations: RunOptions[] = [];
+    const cleanupStarted = deferred();
+    const cleanupResult = deferred();
+    const executor = createExecutor(async (options) => {
+      invocations.push(options);
+      if (invocations.length === 1) {
+        settleable(options).settle = async () => {
+          cleanupStarted.resolve();
+          await cleanupResult.promise;
+          return { outcome: "settled" };
+        };
+        if (preceding === "structured output error")
+          throw new StructuredOutputError("invalid structured output", {
+            tag: "agent_attempt_result",
+            rawMatched: "{}",
+            cause: [{ message: "outcome is required" }],
+            commits: [],
+            branch: input().branch,
+            sessionId: "session-id",
+          });
+        return makeResult("The agent returned no result tag.", committed);
+      }
+      return makeResult(
+        `<agent_attempt_result>${JSON.stringify(committed)}</agent_attempt_result>`,
+        committed,
+      );
+    });
+
+    const running = executor.execute(input());
+    try {
+      await cleanupStarted.promise;
+      await new Promise(setImmediate);
+      assert.equal(invocations.length, 1);
+    } finally {
+      cleanupResult.resolve();
+      await running;
+    }
+    assert.equal(invocations.length, 2);
+    assert.equal(invocations[1]!.resumeSession, "session-id");
+    assert.match(
+      String(invocations[1]!.prompt),
+      preceding === "structured output error"
+        ? /Re-emit exactly one corrected result/u
+        : /^continue/u,
+    );
+  });
+}
