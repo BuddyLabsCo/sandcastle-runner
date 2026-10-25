@@ -250,12 +250,16 @@ no default agent, model, or options and performs no automatic conversion.
 Existing model strings and option values, including `max`, are preserved
 exactly. For example:
 
+Rejected legacy profile:
+
 ```yaml
-# Rejected legacy profile
 model: gpt-6-sol
 reasoningEffort: max
+```
 
-# Direct migration
+Direct migration:
+
+```yaml
 agent: codex
 model: gpt-6-sol
 options:
