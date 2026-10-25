@@ -57,7 +57,7 @@ test("a failed second Reservation marker keeps the partial write", async () => {
   );
 
   assert.equal(result.summary.outcome, "cancelled");
-  assert.equal(assigneeCalls, 1);
+  assert.equal(assigneeCalls, 5);
   assert.deepEqual(writes, ["add label"]);
 });
 

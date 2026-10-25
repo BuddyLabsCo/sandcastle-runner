@@ -73,6 +73,82 @@ test("workflowWrite retries directly with bounded exponential backoff", async ()
   assert.deepEqual(pauses, []);
 });
 
+test("workflowWrite retries an opted-in action regardless of its error message", async () => {
+  const { audit, clock, operator, pauses, sleeps } = dependencies();
+  let calls = 0;
+
+  await workflowWrite({
+    action: async () => {
+      calls += 1;
+      if (calls === 1)
+        throw new Error(
+          "! [remote rejected] ticket-229 -> ticket-229 (failed)\nerror: failed to push some refs",
+        );
+    },
+    audit,
+    clock,
+    event: (attempt) => ({
+      timestamp: new Date().toISOString(),
+      runId: "run",
+      project: "project",
+      parentTicket: 1,
+      phase: "test",
+      operation: "write",
+      target: "target",
+      attempt,
+    }),
+    operator,
+    automaticRetry: {
+      async reconcile() {
+        return { outcome: "pending" };
+      },
+    },
+    retryPolicy: fourRetryPolicy,
+  });
+
+  assert.equal(calls, 2);
+  assert.deepEqual(sleeps, [10_000]);
+  assert.deepEqual(pauses, []);
+});
+
+test("workflowWrite exhausts the configured retries before Operator Pause", async () => {
+  const { audit, clock, operator, pauses, sleeps } = dependencies();
+  let calls = 0;
+
+  await assert.rejects(
+    workflowWrite({
+      action: async () => {
+        calls += 1;
+        throw new Error("push was rejected");
+      },
+      audit,
+      clock,
+      event: (attempt) => ({
+        timestamp: new Date().toISOString(),
+        runId: "run",
+        project: "project",
+        parentTicket: 1,
+        phase: "test",
+        operation: "write",
+        target: "target",
+        attempt,
+      }),
+      operator,
+      automaticRetry: {
+        async reconcile() {
+          return { outcome: "pending" };
+        },
+      },
+      retryPolicy: fourRetryPolicy,
+    }),
+    /operator cancelled/u,
+  );
+
+  assert.equal(calls, 5);
+  assert.deepEqual(sleeps, [10_000, 20_000, 40_000, 80_000]);
+  assert.equal(pauses.length, 1);
+});
+
 test("workflowWrite confirms state before the first write and after failure", async () => {
   const { audit, clock, operator, pauses, sleeps } = dependencies();
   let calls = 0;

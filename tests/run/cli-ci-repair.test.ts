@@ -106,14 +106,14 @@ test("Parent cancellation during a failed repair push prevents retry", async () 
       operator: {
         async pause() {
           parentCancelled = true;
-          return pushCalls === 2 ? "" : "q";
+          return "";
         },
       },
     }),
   );
 
   assert.equal(result.summary.outcome, "cancelled");
-  assert.equal(pushCalls, 2);
+  assert.equal(pushCalls, 6);
   assert.deepEqual(ticket.labels, ["ready-for-agent", "sandcastle:reserved"]);
   assert.deepEqual(ticket.assignees, ["runner"]);
 });

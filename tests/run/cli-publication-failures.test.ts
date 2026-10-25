@@ -164,12 +164,12 @@ test("a successful publication write is not replayed when its result audit is ca
   assert.equal(pushCalls, 1);
 });
 
-test("uncertain push and Pull Request creation writes are never replayed automatically", async () => {
+test("an uncertain push retries automatically while Pull Request creation pauses", async () => {
   for (const failedWrite of ["push", "create"] as const) {
     const root = await createProject();
-    let branch = "";
-    let pushCalls = 0;
-    let createCalls = 0;
+    let branch = "",
+      pushCalls = 0,
+      createCalls = 0;
     const commit = {
       sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       message: "feat: implementation",
@@ -191,7 +191,8 @@ test("uncertain push and Pull Request creation writes are never replayed automat
           },
           async push() {
             pushCalls += 1;
-            if (failedWrite === "push") throw new Error("uncertain push");
+            if (failedWrite === "push" && pushCalls === 1)
+              throw new Error("[remote rejected] (failed)");
           },
         },
         agentExecutor: {
@@ -210,7 +211,7 @@ test("uncertain push and Pull Request creation writes are never replayed automat
         codeHost: {
           async createPullRequest() {
             createCalls += 1;
-            if (failedWrite === "create") throw new Error("uncertain create");
+            if (failedWrite === "create") throw new Error("502 Bad Gateway");
             return {
               number: 41,
               url: "https://github.com/owner/repo/pull/41",
@@ -222,16 +223,15 @@ test("uncertain push and Pull Request creation writes are never replayed automat
         },
         operator: {
           async pause() {
-            return failedWrite === "push"
-              ? "trusted success"
-              : "https://github.com/owner/repo/pull/41";
+            if (failedWrite === "push") throw new Error("unexpected pause");
+            return "https://github.com/owner/repo/pull/41";
           },
         },
       }),
     );
 
     assert.equal(result.summary.pullRequests?.[0]?.number, 41);
-    assert.equal(pushCalls, 1);
+    assert.equal(pushCalls, failedWrite === "push" ? 2 : 1);
     assert.equal(createCalls, 1);
   }
 });
