@@ -224,3 +224,11 @@ Repository text files are checked out with LF line endings through
 format check.
 
 The test suite uses scripted tracker, code-host, Git, agent, clock, and terminal boundaries. It does not call authenticated Codex/Sandcastle services or mutate a remote GitHub repository.
+
+The generic host executor owns each Agent process it launches and uses
+OS-bound process-tree termination. Runner waits for an explicit settlement
+result after every invocation. Pending settlement blocks the next automatic
+probe, task, or output correction; failed settlement enters the existing manual
+handling path instead of starting another writer in the same Worktree. This
+does not claim termination of arbitrary detached descendants, independently
+managed servers, or remote jobs.

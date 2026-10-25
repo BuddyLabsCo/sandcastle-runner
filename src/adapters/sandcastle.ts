@@ -2,8 +2,6 @@ import {
   Output,
   StructuredOutputError,
   run as runSandcastle,
-  type RunOptions,
-  type RunResult,
 } from "@ai-hero/sandcastle";
 import { appendFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -11,9 +9,11 @@ import { join } from "node:path";
 import {
   formatStructuredCause,
   pullRequestMetadataRule,
+  recoverStructuredOutput,
   replacePromptPlaceholders,
   resultSchema,
   reviewResultSchema,
+  structuredDiagnostics,
   type StandardSchema,
 } from "./sandcastle-output.ts";
 import type {
@@ -27,10 +27,13 @@ import { renameCodexSession } from "./codex-session-name.ts";
 import { AgentOutputError, isAgentProcessFailure } from "./process-errors.ts";
 import { OperatorCancelled } from "../run/operations.ts";
 import { noShellSandbox } from "./no-shell-sandbox.ts";
-
-type SandcastleRun = (
-  options: RunOptions,
-) => Promise<RunResult & { output: unknown }>;
+import {
+  cleanupFailure,
+  invokeSandbox,
+  ProcessCleanupError,
+  sessionFromError,
+  type SandcastleRun,
+} from "./process-settlement.ts";
 
 type Delay = (milliseconds: number, signal: AbortSignal) => Promise<void>;
 type PromptLogger = (logFile: string, prompt: string) => Promise<void>;
@@ -152,11 +155,12 @@ export class SandcastleAgentExecutor implements AgentExecutor {
           input.logFile,
           "Reply with exactly: SESSION_READY",
         );
-        const result = await this.run({
+        const sandbox = noShellSandbox({
+          env: { GIT_CONFIG_GLOBAL: input.gitConfigGlobal },
+        });
+        const invocation = await invokeSandbox(this.run, {
           agent: codexWithRunnerEffort(input.model, input.effort),
-          sandbox: noShellSandbox({
-            env: { GIT_CONFIG_GLOBAL: input.gitConfigGlobal },
-          }),
+          sandbox,
           cwd: input.worktree,
           prompt: "Reply with exactly: SESSION_READY",
           maxIterations: 1,
@@ -166,12 +170,27 @@ export class SandcastleAgentExecutor implements AgentExecutor {
           logging: { type: "file", path: input.logFile },
           signal: input.signal,
         });
+        const resultSessionId = invocation.result?.iterations.at(-1)?.sessionId;
+        if (invocation.settlement.outcome === "failed")
+          throw cleanupFailure(
+            input,
+            resultSessionId ??
+              sessionFromError(invocation.runError) ??
+              this.sessions.get(input.logFile),
+            invocation.runError,
+            invocation.settlement,
+          );
+        if (invocation.runError !== undefined) throw invocation.runError;
+        const result = invocation.result;
+        if (result === undefined)
+          throw new Error("Sandcastle returned no probe result");
         const sessionId = result.iterations.at(-1)?.sessionId;
         if (sessionId === undefined)
           throw new Error("session probe returned no session ID");
         this.sessions.set(input.logFile, sessionId);
         return sessionId;
       } catch (error) {
+        if (error instanceof ProcessCleanupError) throw error;
         lastError = error;
         if (attempt === policy.operationRetry) break;
         const delaySeconds =
@@ -278,11 +297,12 @@ export class SandcastleAgentExecutor implements AgentExecutor {
           : `${normalizedPrompt}\n\n${outputPrompt}`;
         await this.logPrompt(input.logFile, runPrompt);
         try {
-          result = await this.run({
+          const sandbox = noShellSandbox({
+            env: { GIT_CONFIG_GLOBAL: input.gitConfigGlobal },
+          });
+          const invocation = await invokeSandbox(this.run, {
             agent: codexWithRunnerEffort(input.model, input.effort),
-            sandbox: noShellSandbox({
-              env: { GIT_CONFIG_GLOBAL: input.gitConfigGlobal },
-            }),
+            sandbox,
             cwd: input.worktree,
             prompt: runPrompt,
             maxIterations: 1,
@@ -298,7 +318,21 @@ export class SandcastleAgentExecutor implements AgentExecutor {
             ...(resumeSession === undefined ? {} : { resumeSession }),
             signal: controller.signal,
           });
+          if (invocation.settlement.outcome === "failed")
+            throw cleanupFailure(
+              input,
+              invocation.result?.iterations.at(-1)?.sessionId ??
+                sessionFromError(invocation.runError) ??
+                resumeSession,
+              invocation.runError,
+              invocation.settlement,
+            );
+          if (invocation.runError !== undefined) throw invocation.runError;
+          if (invocation.result === undefined)
+            throw new Error("Sandcastle returned no invocation result");
+          result = invocation.result;
         } catch (error) {
+          if (error instanceof ProcessCleanupError) throw error;
           if (error instanceof StructuredOutputError) {
             await this.logStatus(
               input.logFile,
@@ -326,13 +360,13 @@ export class SandcastleAgentExecutor implements AgentExecutor {
               );
               continue;
             }
-            const recovered = this.recoverStructuredOutput(error, schema);
+            const recovered = recoverStructuredOutput(error, schema);
             if (recovered !== undefined) {
               await this.logStatus(
                 input.logFile,
                 "Recovered the final structured output from the retry result.",
               );
-              const diagnostics = this.structuredDiagnostics(input, error);
+              const diagnostics = structuredDiagnostics(input, error);
               Object.defineProperty(recovered, "diagnostics", {
                 value: diagnostics,
                 enumerable: false,
@@ -340,7 +374,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
               });
               return recovered;
             }
-            const diagnostics = this.structuredDiagnostics(input, error);
+            const diagnostics = structuredDiagnostics(input, error);
             diagnostics.error =
               formatStructuredCause(error.cause) || error.message;
             throw new AgentOutputError(error.message, diagnostics);
@@ -449,40 +483,6 @@ export class SandcastleAgentExecutor implements AgentExecutor {
       });
     }
     return result.output as T;
-  }
-
-  private recoverStructuredOutput<T>(
-    error: StructuredOutputError,
-    schema: StandardSchema<T>,
-  ): T | undefined {
-    if (error.rawMatched === undefined) return undefined;
-    try {
-      const parsed = JSON.parse(error.rawMatched.trim()) as unknown;
-      const validation = schema["~standard"].validate(parsed);
-      return "value" in validation ? validation.value : undefined;
-    } catch {
-      return undefined;
-    }
-  }
-
-  private structuredDiagnostics(
-    input: ReviewAttemptInput,
-    error: StructuredOutputError,
-  ): AgentDiagnostics {
-    return {
-      ...(input.promptArgs.OPERATION === undefined
-        ? {}
-        : { operation: input.promptArgs.OPERATION.toString() }),
-      errorCategory: "agent_attempt",
-      attemptOrdinal: 1,
-      retryable: true,
-      provider: "codex",
-      model: input.model,
-      workingDirectory: input.worktree,
-      ...(error.sessionId === undefined ? {} : { sessionId: error.sessionId }),
-      diagnosticLogPath: input.logFile,
-      ...(error.rawMatched === undefined ? {} : { raw: error.rawMatched }),
-    };
   }
 
   execute(input: Parameters<AgentExecutor["execute"]>[0]) {

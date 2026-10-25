@@ -16,16 +16,28 @@ interface TestHandle {
   close(): Promise<void>;
 }
 
+interface TestProvider {
+  create(options: {
+    worktreePath: string;
+    env: Record<string, string>;
+  }): Promise<TestHandle>;
+  settle(): Promise<
+    { outcome: "settled" } | { outcome: "failed"; error: string }
+  >;
+}
+
+function createProvider(env: Record<string, string> = {}): TestProvider {
+  const provider = noShellSandbox({ env }) as unknown as {
+    create: TestProvider["create"];
+    settle: TestProvider["settle"];
+  };
+  return provider;
+}
+
 async function createHandle(
   env: Record<string, string> = {},
 ): Promise<TestHandle> {
-  const provider = noShellSandbox({ env }) as unknown as {
-    create: (options: {
-      worktreePath: string;
-      env: Record<string, string>;
-    }) => Promise<TestHandle>;
-  };
-  return provider.create({ worktreePath: process.cwd(), env });
+  return createProvider(env).create({ worktreePath: process.cwd(), env });
 }
 
 test("noShellSandbox runs quoted arguments without a shell", async () => {
@@ -168,6 +180,104 @@ test("noShellSandbox close stops and awaits its direct child", async () => {
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("noShellSandbox reports explicit settlement after stopping its child", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "sandcastle-process-settle-"));
+  let pid: number | undefined;
+  const provider = createProvider();
+  try {
+    const pidFile = join(directory, "pid");
+    const handle = await provider.create({
+      worktreePath: process.cwd(),
+      env: {},
+    });
+    const running = handle.exec(
+      `"${process.execPath}" -e 'require("node:fs").writeFileSync(process.argv[1], String(process.pid)); setInterval(() => {}, 1000)' "${pidFile}"`,
+    );
+    pid = await waitForPid(pidFile);
+    assert.deepEqual(await provider.settle(), { outcome: "settled" });
+    assert.equal(processExists(pid), false);
+    await running;
+  } finally {
+    if (pid !== undefined) stopProcess(pid);
+    await provider.settle();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("one noShellSandbox invocation settles only its own child", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "sandcastle-process-scope-"));
+  const pids: number[] = [];
+  const first = createProvider();
+  const second = createProvider();
+  try {
+    const running: Promise<unknown>[] = [];
+    for (const [index, provider] of [first, second].entries()) {
+      const pidFile = join(directory, `pid-${index}`);
+      const handle = await provider.create({
+        worktreePath: process.cwd(),
+        env: {},
+      });
+      running.push(
+        handle.exec(
+          `"${process.execPath}" -e 'require("node:fs").writeFileSync(process.argv[1], String(process.pid)); setInterval(() => {}, 1000)' "${pidFile}"`,
+        ),
+      );
+      pids.push(await waitForPid(pidFile));
+    }
+    assert.deepEqual(await first.settle(), { outcome: "settled" });
+    assert.equal(processExists(pids[0]!), false);
+    assert.equal(processExists(pids[1]!), true);
+    await running[0];
+    assert.deepEqual(await second.settle(), { outcome: "settled" });
+    assert.equal(processExists(pids[1]!), false);
+    await running[1];
+  } finally {
+    for (const pid of pids) stopProcess(pid);
+    await first.settle();
+    await second.settle();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test(
+  "noShellSandbox reports an OS process-tree termination failure",
+  {
+    skip: process.platform !== "win32",
+  },
+  async () => {
+    const directory = await mkdtemp(
+      join(tmpdir(), "sandcastle-process-failure-"),
+    );
+    const provider = createProvider();
+    const previousSystemRoot = process.env.SystemRoot;
+    let pid: number | undefined;
+    try {
+      const pidFile = join(directory, "pid");
+      const handle = await provider.create({
+        worktreePath: process.cwd(),
+        env: {},
+      });
+      const running = handle.exec(
+        `"${process.execPath}" -e 'require("node:fs").writeFileSync(process.argv[1], String(process.pid)); setInterval(() => {}, 1000)' "${pidFile}"`,
+      );
+      pid = await waitForPid(pidFile);
+      process.env.SystemRoot = join(directory, "missing windows directory");
+      const settlement = await provider.settle();
+      assert.equal(settlement.outcome, "failed");
+      if (settlement.outcome === "failed")
+        assert.match(settlement.error, /taskkill|ENOENT|not found/iu);
+      await running;
+      assert.equal(processExists(pid), false);
+    } finally {
+      if (previousSystemRoot === undefined) delete process.env.SystemRoot;
+      else process.env.SystemRoot = previousSystemRoot;
+      if (pid !== undefined) stopProcess(pid);
+      await provider.settle();
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+);
 
 test(
   "noShellSandbox close stops Windows command-shim descendants",
