@@ -126,7 +126,7 @@ projects/<project-key>/
   logs/
 ```
 
-Start from `projects/trickplay-cropper/config.yaml` and configure the
+Start from `projects/sandcastle-runner/config.yaml` and configure the
 repository, absolute checkout, target branch, credential variable names,
 timeouts, workflow flags, and agent profiles.
 
