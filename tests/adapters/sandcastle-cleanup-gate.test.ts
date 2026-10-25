@@ -70,7 +70,6 @@ test("a completed probe blocks substantive work until its cleanup settles or fai
     async () => {},
     async () => {},
     async () => {},
-    async () => {},
   );
 
   const running = executor.execute(input());
@@ -134,7 +133,6 @@ test(
       async () => {},
       async () => {},
       async () => {},
-      async () => {},
     );
 
     try {
@@ -175,7 +173,6 @@ test("failed probe cleanup prevents operation retries", async () => {
     },
     async () => {},
     async () => {},
-    async () => {},
   );
 
   await assert.rejects(executor.execute(input()), cleanupFailure);
@@ -209,7 +206,6 @@ test("failed cleanup after a substantive process error prevents agent retry", as
     async (milliseconds) => {
       waits.push(milliseconds);
     },
-    async () => {},
     async () => {},
     async () => {},
   );
@@ -249,7 +245,6 @@ test("failed cleanup after a missing result prevents automatic continuation", as
     async (milliseconds) => {
       waits.push(milliseconds);
     },
-    async () => {},
     async () => {},
     async () => {},
   );
@@ -294,7 +289,6 @@ test("failed cleanup after structured output failure prevents correction", async
     async (milliseconds) => {
       waits.push(milliseconds);
     },
-    async () => {},
     async () => {},
     async () => {},
   );

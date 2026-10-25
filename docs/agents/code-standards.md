@@ -67,9 +67,8 @@ Under `src/adapters/`, implement only operations the current implementation need
 | `github-tracker.ts` / `Tracker` | Issue hierarchy, dependencies, state, assignees, labels, and issue mutations. |
 | `github-code-host.ts` / `CodeHost` | Repository metadata, PRs, required checks, merge requests, and queue observations. |
 | `git-workspace.ts` / `GitWorkspace` | Fetch, Worktree creation/inspection/closure, commits, working-tree evidence, and push. |
-| `sandcastle.ts` / `AgentExecutor` | Sandcastle invocation, streaming, session continuation, timeout/abort, and the automatic-continuation gate on explicit owned-process settlement. Delegate workflow lifecycle to Sandcastle. |
+| `sandcastle.ts` / `AgentExecutor` | Sandcastle invocation with native run names, streaming, session continuation, timeout/abort, and the automatic-continuation gate on explicit owned-process settlement. Run names identify tasks in log output but do not title the provider's native session. Delegate workflow lifecycle to Sandcastle. |
 | `codex-agent.ts` | Codex provider construction. Forwards configured model and effort verbatim and isolates the Sandcastle dependency's provider typing. |
-| `codex-session-name.ts` | Names an already-probed Codex session through the app-server handshake and `thread/name/set`; owns the short-lived protocol process and its timeout/cancellation cleanup. |
 | `no-shell-sandbox.ts` | Host command parsing and launch, plus per-invocation owned-handle settlement of host processes started by the no-sandbox provider. |
 | `process-settlement.ts` | Invocation settlement capture and nonretryable cleanup-failure diagnostics. |
 | `process-errors.ts` | External command startup diagnostics, Agent Attempt output errors, and Codex process-failure classification. |

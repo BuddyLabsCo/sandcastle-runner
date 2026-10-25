@@ -77,7 +77,6 @@ test("structured output retry explains validation and repeats the complete proto
       async () => {},
       undefined,
       async () => {},
-      async () => {},
     );
     const logFile = path.join(directory, "agent.log");
     await executor.execute({ ...input(), logFile });

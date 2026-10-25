@@ -106,7 +106,7 @@ test("a CI-ready no-auto-merge Run removes local artifacts and preserves manual 
         async execute(input) {
           agentCalls += 1;
           logFiles.push(input.logFile);
-          await writeFile(input.logFile, input.sessionName);
+          await writeFile(input.logFile, input.runName);
           if (agentCalls === 1) {
             const orphan = path.join(
               path.dirname(input.logFile),

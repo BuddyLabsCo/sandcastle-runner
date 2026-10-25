@@ -20,7 +20,7 @@ import { readRecoverySnapshot, recoveryPaths } from "../../src/recovery.ts";
 test.afterEach(cleanupTempRoots);
 
 test("empty input starts a fresh Agent Attempt with a new Git configuration", async () => {
-  const sessionNames: string[] = [];
+  const runNames: string[] = [];
   const root = await createProject();
   const gitConfigs: string[] = [];
   let branch = "";
@@ -47,7 +47,7 @@ test("empty input starts a fresh Agent Attempt with a new Git configuration", as
       },
       agentExecutor: {
         async execute(input) {
-          sessionNames.push(input.sessionName);
+          runNames.push(input.runName);
           gitConfigs.push(input.gitConfigGlobal);
           attempt += 1;
           if (attempt === 1) throw new Error("Sandcastle failed");
@@ -76,7 +76,7 @@ test("empty input starts a fresh Agent Attempt with a new Git configuration", as
   await Promise.all(
     gitConfigs.map((filename) => assert.rejects(readFile(filename, "utf8"))),
   );
-  assert.deepEqual(sessionNames, ["implement issue 9", "implement issue 9"]);
+  assert.deepEqual(runNames, ["implement issue 9", "implement issue 9"]);
 });
 
 for (const retryable of [true, false]) {
@@ -306,7 +306,7 @@ test("a Batch publishes every PR before merging by creation order", async () => 
 });
 
 test("multiple matching Delivery Tickets trigger one committed Documentation Maintenance occurrence", async () => {
-  const sessionNames: string[] = [];
+  const runNames: string[] = [];
   const root = await createProject();
   await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
     ...validConfig,
@@ -390,7 +390,7 @@ test("multiple matching Delivery Tickets trigger one committed Documentation Mai
         async execute(input) {
           if (input.ticket !== maintenance.number)
             return delivery.agentExecutor.execute(input);
-          sessionNames.push(input.sessionName);
+          runNames.push(input.runName);
           operations.push("maintenance:agent");
           assert.ok(
             input.promptFile.endsWith(path.join("prompts", "documentation.md")),
@@ -501,5 +501,5 @@ test("multiple matching Delivery Tickets trigger one committed Documentation Mai
       .sort((left, right) => left - right),
     [9, 10, 11],
   );
-  assert.deepEqual(sessionNames, ["document maintain issue 100"]);
+  assert.deepEqual(runNames, ["document maintain issue 100"]);
 });
