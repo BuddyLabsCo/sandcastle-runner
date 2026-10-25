@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 import {
   Output,
   StructuredOutputError,
@@ -58,6 +59,10 @@ const logPrompt: PromptLogger = (logFile, prompt) =>
 const logStatus: StatusLogger = (logFile, message) =>
   appendFile(logFile, `${message}\n`, "utf8");
 
+function abortReason(signal: AbortSignal, fallback: string): Error {
+  return signal.reason instanceof Error ? signal.reason : new Error(fallback);
+}
+
 export class SandcastleAgentExecutor implements AgentExecutor {
   private readonly run: SandcastleRun;
   private readonly wait: Delay;
@@ -83,6 +88,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
     recoveryAttempt: number,
     timeoutSignal: AbortSignal,
   ): Promise<number | undefined> {
+    if (input.signal.aborted || timeoutSignal.aborted) return undefined;
     const policy = input.retryPolicy;
     const backoff =
       policy.agentRetryDelay[
@@ -92,6 +98,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
       input.logFile,
       `Waiting ${backoff / 1000} seconds before automatic prompt continuation (retry ${recoveryAttempt + 1}/${policy.agentRetry}).`,
     );
+    if (input.signal.aborted || timeoutSignal.aborted) return undefined;
     let resolveTimeout!: () => void;
     const timeout = new Promise<void>((resolve) => {
       resolveTimeout = () => resolve();
@@ -102,21 +109,24 @@ export class SandcastleAgentExecutor implements AgentExecutor {
         });
     });
     try {
-      await Promise.race([this.wait(backoff, input.signal), timeout]);
+      await Promise.race([this.wait(backoff, timeoutSignal), timeout]);
     } catch (error) {
       if (error instanceof OperatorCancelled) throw error;
-      if (input.signal.aborted) return undefined;
+      if (input.signal.aborted || timeoutSignal.aborted) return undefined;
       throw error;
     } finally {
       timeoutSignal.removeEventListener("abort", resolveTimeout);
     }
-    return timeoutSignal.aborted ? undefined : recoveryAttempt + 1;
+    return input.signal.aborted || timeoutSignal.aborted
+      ? undefined
+      : recoveryAttempt + 1;
   }
 
   private agentFailure(
     input: ReviewAttemptInput,
     resumeSession: string | undefined,
     error: unknown,
+    preserveMessage = false,
   ): AgentOutputError {
     const diagnostics: AgentDiagnostics = {
       errorCategory: "agent_retry",
@@ -130,13 +140,35 @@ export class SandcastleAgentExecutor implements AgentExecutor {
       raw: error instanceof Error ? error.message : String(error),
     };
     return new AgentOutputError(
-      input.resumePrompt !== undefined
+      input.resumePrompt !== undefined && !preserveMessage
         ? "Provider session unavailable or unrecoverable for continuation"
         : error instanceof Error
           ? error.message
           : String(error),
       diagnostics,
     );
+  }
+
+  private stopFailure(
+    input: ReviewAttemptInput,
+    timeoutSignal: AbortSignal,
+    resumeSession: string | undefined,
+  ): Error | undefined {
+    const signal = input.signal.aborted
+      ? input.signal
+      : timeoutSignal.aborted
+        ? timeoutSignal
+        : undefined;
+    if (signal === undefined) return undefined;
+    const reason = abortReason(
+      signal,
+      signal === input.signal
+        ? "Agent Attempt cancelled"
+        : "Agent Attempt timed out",
+    );
+    return reason instanceof OperatorCancelled
+      ? reason
+      : this.agentFailure(input, resumeSession, reason, true);
   }
 
   private async prepareSession(input: ReviewAttemptInput): Promise<string> {
@@ -146,11 +178,15 @@ export class SandcastleAgentExecutor implements AgentExecutor {
     let lastError: unknown;
     const policy = input.retryPolicy;
     for (let attempt = 0; attempt <= policy.operationRetry; attempt++) {
+      if (input.signal.aborted)
+        throw abortReason(input.signal, "Agent Attempt cancelled");
       try {
         await this.logPrompt(
           input.logFile,
           "Reply with exactly: SESSION_READY",
         );
+        if (input.signal.aborted)
+          throw abortReason(input.signal, "Agent Attempt cancelled");
         const sandbox = noShellSandbox({
           env: { GIT_CONFIG_GLOBAL: input.gitConfigGlobal },
         });
@@ -177,6 +213,8 @@ export class SandcastleAgentExecutor implements AgentExecutor {
             invocation.runError,
             invocation.settlement,
           );
+        if (input.signal.aborted)
+          throw abortReason(input.signal, "Agent Attempt cancelled");
         if (invocation.runError !== undefined) throw invocation.runError;
         const result = invocation.result;
         if (result === undefined)
@@ -184,10 +222,14 @@ export class SandcastleAgentExecutor implements AgentExecutor {
         const sessionId = result.iterations.at(-1)?.sessionId;
         if (sessionId === undefined)
           throw new Error("session probe returned no session ID");
+        if (input.signal.aborted)
+          throw abortReason(input.signal, "Agent Attempt cancelled");
         this.sessions.set(input.logFile, sessionId);
         return sessionId;
       } catch (error) {
         if (error instanceof ProcessCleanupError) throw error;
+        if (input.signal.aborted)
+          throw abortReason(input.signal, "Agent Attempt cancelled");
         lastError = error;
         if (attempt === policy.operationRetry) break;
         const delaySeconds =
@@ -195,6 +237,8 @@ export class SandcastleAgentExecutor implements AgentExecutor {
             Math.min(attempt, policy.operationRetryDelay.length - 1)
           ]!;
         await this.wait(delaySeconds * 1000, input.signal);
+        if (input.signal.aborted)
+          throw abortReason(input.signal, "Agent Attempt cancelled");
       }
     }
     throw new AgentOutputError(
@@ -277,11 +321,23 @@ export class SandcastleAgentExecutor implements AgentExecutor {
     let structuredRetryAttempt = 0;
     try {
       for (;;) {
+        const stopBeforePrompt = this.stopFailure(
+          input,
+          controller.signal,
+          resumeSession,
+        );
+        if (stopBeforePrompt !== undefined) throw stopBeforePrompt;
         const normalizedPrompt = prompt.trimEnd();
         const runPrompt = normalizedPrompt.endsWith(outputPrompt)
           ? prompt
           : `${normalizedPrompt}\n\n${outputPrompt}`;
         await this.logPrompt(input.logFile, runPrompt);
+        const stopBeforeInvocation = this.stopFailure(
+          input,
+          controller.signal,
+          resumeSession,
+        );
+        if (stopBeforeInvocation !== undefined) throw stopBeforeInvocation;
         try {
           const sandbox = noShellSandbox({
             env: { GIT_CONFIG_GLOBAL: input.gitConfigGlobal },
@@ -314,12 +370,24 @@ export class SandcastleAgentExecutor implements AgentExecutor {
               invocation.runError,
               invocation.settlement,
             );
+          const stopped = this.stopFailure(
+            input,
+            controller.signal,
+            resumeSession,
+          );
+          if (stopped !== undefined) throw stopped;
           if (invocation.runError !== undefined) throw invocation.runError;
           if (invocation.result === undefined)
             throw new Error("Sandcastle returned no invocation result");
           result = invocation.result;
         } catch (error) {
           if (error instanceof ProcessCleanupError) throw error;
+          const stopped = this.stopFailure(
+            input,
+            controller.signal,
+            resumeSession,
+          );
+          if (stopped !== undefined) throw stopped;
           if (error instanceof StructuredOutputError) {
             await this.logStatus(
               input.logFile,
@@ -332,8 +400,15 @@ export class SandcastleAgentExecutor implements AgentExecutor {
                 structuredRetryAttempt,
                 controller.signal,
               );
-              if (nextRecoveryAttempt === undefined)
+              if (nextRecoveryAttempt === undefined) {
+                const failed = this.stopFailure(
+                  input,
+                  controller.signal,
+                  error.sessionId,
+                );
+                if (failed !== undefined) throw failed;
                 throw this.agentFailure(input, error.sessionId, error);
+              }
               structuredRetryAttempt = nextRecoveryAttempt;
               prompt = [
                 `The previous structured output failed validation. Specific validation errors: ${formatStructuredCause(error.cause)}`,
@@ -353,6 +428,12 @@ export class SandcastleAgentExecutor implements AgentExecutor {
                 input.logFile,
                 "Recovered the final structured output from the retry result.",
               );
+              const stopped = this.stopFailure(
+                input,
+                controller.signal,
+                error.sessionId ?? resumeSession,
+              );
+              if (stopped !== undefined) throw stopped;
               const diagnostics = structuredDiagnostics(input, error);
               Object.defineProperty(recovered, "diagnostics", {
                 value: diagnostics,
@@ -367,12 +448,6 @@ export class SandcastleAgentExecutor implements AgentExecutor {
             throw new AgentOutputError(error.message, diagnostics);
           }
           if (
-            input.signal.aborted &&
-            error === input.signal.reason &&
-            error instanceof OperatorCancelled
-          )
-            throw error;
-          if (
             !controller.signal.aborted &&
             !input.signal.aborted &&
             isAgentProcessFailure(error) &&
@@ -384,12 +459,19 @@ export class SandcastleAgentExecutor implements AgentExecutor {
               recoveryAttempt,
               controller.signal,
             );
-            if (nextRecoveryAttempt === undefined)
+            if (nextRecoveryAttempt === undefined) {
+              const failed = this.stopFailure(
+                input,
+                controller.signal,
+                resumeSession,
+              );
+              if (failed !== undefined) throw failed;
               throw this.agentFailure(
                 input,
                 resumeSession,
                 controller.signal.reason ?? error,
               );
+            }
             recoveryAttempt = nextRecoveryAttempt;
             prompt = "continue";
             resumeSession = this.sessions.get(input.logFile) ?? resumeSession;
@@ -412,12 +494,19 @@ export class SandcastleAgentExecutor implements AgentExecutor {
           recoveryAttempt,
           controller.signal,
         );
-        if (nextRecoveryAttempt === undefined)
+        if (nextRecoveryAttempt === undefined) {
+          const failed = this.stopFailure(
+            input,
+            controller.signal,
+            resumeSession,
+          );
+          if (failed !== undefined) throw failed;
           throw this.agentFailure(
             input,
             resumeSession,
             controller.signal.reason,
           );
+        }
         recoveryAttempt = nextRecoveryAttempt;
         prompt = "continue";
         resumeSession = this.sessions.get(input.logFile) ?? resumeSession;
