@@ -9,6 +9,10 @@ This keeps AI agents focused on writing, reviewing, and repairing code while
 reducing unnecessary token use for workflow coordination. Runner invokes agents
 through Sandcastle when a task needs code changes or review.
 
+Runner runs on Windows, macOS, and Linux and currently supports only `codex`,
+`claude-code`, and `pi`. It uses Sandcastle's native agent factories but does not
+use its sandbox features; agents run locally on the host.
+
 ## Workflow
 
 ```mermaid
