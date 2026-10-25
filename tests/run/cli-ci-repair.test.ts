@@ -119,7 +119,7 @@ test("Parent cancellation during a failed repair push prevents retry", async () 
 });
 
 test("blocked CI repairs pause without consuming the repair budget", async () => {
-  const sessionNames: string[] = [];
+  const runNames: string[] = [];
   const root = await createProject();
   const { tracker } = createAttemptTracker(9);
   const implementation = {
@@ -168,7 +168,7 @@ test("blocked CI repairs pause without consuming the repair budget", async () =>
       },
       agentExecutor: {
         async execute(input) {
-          sessionNames.push(input.sessionName);
+          runNames.push(input.runName);
           agentCalls += 1;
           if (agentCalls === 2) {
             return {
@@ -257,7 +257,7 @@ test("blocked CI repairs pause without consuming the repair budget", async () =>
     )
     .map((event) => event.attempt);
   assert.deepEqual(repairAttemptNumbers, [1]);
-  assert.equal(sessionNames[1], "fix ci for pr 1");
+  assert.equal(runNames[1], "fix ci for pr 1");
 });
 
 test("repair execution and invalid handoff failures do not consume the budget", async () => {
