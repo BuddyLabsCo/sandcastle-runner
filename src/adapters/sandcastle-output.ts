@@ -1,8 +1,12 @@
+import { StructuredOutputError } from "@ai-hero/sandcastle";
+
 import type {
+  AgentDiagnostics,
   AgentAttemptInput,
   AgentAttemptResult,
   CheckEvidence,
   CommitEvidence,
+  ReviewAttemptInput,
   ReviewAttemptResult,
   ReviewVerdict,
 } from "../run/contracts.ts";
@@ -271,5 +275,39 @@ export function reviewResultSchema(): StandardSchema<ReviewAttemptResult> {
         }
       },
     },
+  };
+}
+
+export function recoverStructuredOutput<T>(
+  error: StructuredOutputError,
+  schema: StandardSchema<T>,
+): T | undefined {
+  if (error.rawMatched === undefined) return undefined;
+  try {
+    const parsed = JSON.parse(error.rawMatched.trim()) as unknown;
+    const validation = schema["~standard"].validate(parsed);
+    return "value" in validation ? validation.value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function structuredDiagnostics(
+  input: ReviewAttemptInput,
+  error: StructuredOutputError,
+): AgentDiagnostics {
+  return {
+    ...(input.promptArgs.OPERATION === undefined
+      ? {}
+      : { operation: input.promptArgs.OPERATION.toString() }),
+    errorCategory: "agent_attempt",
+    attemptOrdinal: 1,
+    retryable: true,
+    provider: "codex",
+    model: input.model,
+    workingDirectory: input.worktree,
+    ...(error.sessionId === undefined ? {} : { sessionId: error.sessionId }),
+    diagnosticLogPath: input.logFile,
+    ...(error.rawMatched === undefined ? {} : { raw: error.rawMatched }),
   };
 }

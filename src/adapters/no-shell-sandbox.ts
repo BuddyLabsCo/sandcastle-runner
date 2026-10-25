@@ -60,16 +60,23 @@ function commandArgs(command: string): [string, ...string[]] {
       windowsPath ||= quote === '"' && /^[A-Za-z]:$/.test(value);
     }
   }
-  if (escaped) throw new Error("invalid Codex command quoting");
-  if (quote !== "") throw new Error("invalid Codex command quoting");
+  if (escaped) throw new Error("invalid host command quoting");
+  if (quote !== "") throw new Error("invalid host command quoting");
   if (value !== "") args.push(value);
-  if (args.length === 0) throw new Error("empty Codex command");
+  if (args.length === 0) throw new Error("empty host command");
   return args as [string, ...string[]];
 }
 
 interface OwnedProcess {
   child: ChildProcess;
   done: Promise<void>;
+}
+
+export type ProcessSettlement =
+  { outcome: "settled" } | { outcome: "failed"; error: string };
+
+export interface NoShellSandboxProvider extends NoSandboxProvider {
+  settle(): Promise<ProcessSettlement>;
 }
 
 function pipedChild(child: ChildProcess): ChildProcessWithoutNullStreams {
@@ -106,11 +113,28 @@ async function stopProcess(ownedProcess: OwnedProcess): Promise<void> {
   await done;
 }
 
+async function stopOwnedProcesses(processes: OwnedProcess[]): Promise<void> {
+  const results = await Promise.allSettled(processes.map(stopProcess));
+  const failures: unknown[] = [];
+  for (const result of results)
+    if (result.status === "rejected") failures.push(result.reason);
+  if (failures.length > 0)
+    throw new AggregateError(
+      failures,
+      `failed to settle ${failures.length} owned process(es): ${failures
+        .map((error) =>
+          error instanceof Error ? error.message : String(error),
+        )
+        .join("; ")}`,
+    );
+}
+
 export function noShellSandbox(
   options: {
     env?: Record<string, string>;
   } = {},
-): NoSandboxProvider {
+): NoShellSandboxProvider {
+  const closeHandles = new Set<() => Promise<void>>();
   return {
     tag: "none",
     name: "no-sandbox",
@@ -125,6 +149,11 @@ export function noShellSandbox(
       const processEnv = { ...process.env, ...env };
       const owned = new Set<OwnedProcess>();
       let closing: Promise<void> | undefined;
+      const close = () => {
+        closing ??= stopOwnedProcesses([...owned]);
+        return closing;
+      };
+      closeHandles.add(close);
       return Promise.resolve({
         worktreePath,
         exec: (command: string, execOptions: SandboxExecOptions = {}) => {
@@ -196,13 +225,26 @@ export function noShellSandbox(
               resolve({ exitCode: exitCode ?? 0 }),
             );
           }),
-        close: () => {
-          closing ??= Promise.all([...owned].map(stopProcess)).then(
-            () => undefined,
-          );
-          return closing;
-        },
+        close,
       });
     },
-  } as NoSandboxProvider;
+    settle: async () => {
+      const results = await Promise.allSettled(
+        [...closeHandles].map((close) => close()),
+      );
+      const failures: unknown[] = [];
+      for (const result of results)
+        if (result.status === "rejected") failures.push(result.reason);
+      return failures.length === 0
+        ? { outcome: "settled" }
+        : {
+            outcome: "failed",
+            error: failures
+              .map((error) =>
+                error instanceof Error ? error.message : String(error),
+              )
+              .join("; "),
+          };
+    },
+  } as NoShellSandboxProvider;
 }
