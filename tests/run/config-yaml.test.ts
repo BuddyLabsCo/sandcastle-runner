@@ -5,7 +5,11 @@ import path from "node:path";
 import test from "node:test";
 
 import { loadProject } from "../../src/config.ts";
-import { validConfig } from "../support/cli-project.ts";
+import {
+  createProject,
+  validConfig,
+  writeProjectConfig,
+} from "../support/cli-project.ts";
 import { cleanupTempRoots, registerTempRoot } from "../support/temp-cleanup.ts";
 
 test.afterEach(cleanupTempRoots);
@@ -44,20 +48,30 @@ workflow:
   docMaintainTriggerLabel: documentation
 agents:
   implement:
+    agent: codex
     model: gpt-5.6-sol
-    reasoningEffort: high
+    options:
+      effort: high
   review:
+    agent: codex
     model: gpt-5.6-sol
-    reasoningEffort: high
+    options:
+      effort: high
   ciRepair:
+    agent: codex
     model: gpt-5.6-sol
-    reasoningEffort: high
+    options:
+      effort: high
   conflictRepair:
+    agent: codex
     model: gpt-5.6-sol
-    reasoningEffort: high
+    options:
+      effort: high
   documentation:
+    agent: codex
     model: gpt-5.6-sol
-    reasoningEffort: high
+    options:
+      effort: high
 timeouts:
   agentMinutes: 120
   requiredChecksMinutes: 60
@@ -127,4 +141,76 @@ test("loadProject reports invalid YAML with its path", async () => {
         `failed to load ${path.join(project, "config.yaml")}:`,
       ),
   );
+});
+
+test("agent profiles require agent and model and preserve native options", async () => {
+  const root = await createProject();
+  const config = structuredClone(validConfig);
+  config.agents.implement = {
+    agent: "claude-code",
+    model: "claude-opus-4-8",
+    options: {
+      effort: "max",
+      sessionStorage: { hostProjectsDir: "/explicit/projects" },
+    },
+  } as (typeof config.agents)["implement"];
+  await writeProjectConfig(
+    path.join(root, "projects/demo/config.yaml"),
+    config,
+  );
+
+  const loaded = await loadProject(root, "demo", { TEST_GH_TOKEN: "token" });
+
+  assert.deepEqual(loaded.config.agents.implement, {
+    agent: "claude-code",
+    model: "claude-opus-4-8",
+    options: {
+      effort: "max",
+      sessionStorage: { hostProjectsDir: "/explicit/projects" },
+    },
+  });
+});
+
+test("agent profiles reject missing selectors and malformed options", async () => {
+  for (const profile of [
+    { model: "gpt-5.6-sol" },
+    { agent: "codex", model: "gpt-5.6-sol", options: "high" },
+    { agent: "codex", options: { effort: "high" } },
+  ]) {
+    const root = await createProject();
+    const config = structuredClone(validConfig);
+    (config.agents as Record<string, unknown>).implement = profile;
+    await writeProjectConfig(
+      path.join(root, "projects/demo/config.yaml"),
+      config,
+    );
+    await assert.rejects(
+      loadProject(root, "demo", { TEST_GH_TOKEN: "token" }),
+      /agents\.implement\.(agent|model|options)/u,
+    );
+  }
+});
+
+test("obsolete reasoningEffort requires migration, even beside new fields", async () => {
+  for (const profile of [
+    { model: "gpt-5.6-sol", reasoningEffort: "max" },
+    {
+      agent: "codex",
+      model: "gpt-5.6-sol",
+      reasoningEffort: "max",
+      options: { effort: "max" },
+    },
+  ]) {
+    const root = await createProject();
+    const config = structuredClone(validConfig);
+    (config.agents as Record<string, unknown>).implement = profile;
+    await writeProjectConfig(
+      path.join(root, "projects/demo/config.yaml"),
+      config,
+    );
+    await assert.rejects(
+      loadProject(root, "demo", { TEST_GH_TOKEN: "token" }),
+      /reasoningEffort is no longer supported.*options\.effort/u,
+    );
+  }
 });

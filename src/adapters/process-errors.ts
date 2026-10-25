@@ -20,10 +20,3 @@ export class AgentOutputError extends Error {
     this.diagnostics = diagnostics;
   }
 }
-
-export function isAgentProcessFailure(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    /^codex exited with code \d+(?::|$)/u.test(error.message)
-  );
-}

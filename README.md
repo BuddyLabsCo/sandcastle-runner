@@ -31,9 +31,9 @@ npm exec -- sandcastle-runner run --project <project-key> (--parent <issue-numbe
 
 The Runner is not published to a package registry, globally installed, invoked
 through a remote `npx`, distributed as a native installer, or bundled with
-Node.js, npm, Git, GitHub CLI, or Codex. Install those external prerequisites
-separately for your operating system. `npm ci` and local `npm exec` are the
-only supported Runner installation and invocation path.
+Node.js, npm, Git, GitHub CLI, or the selected coding-agent CLI. Install those
+external prerequisites separately for your operating system. `npm ci` and local
+`npm exec` are the only supported Runner installation and invocation path.
 
 ## Prerequisites
 
@@ -43,26 +43,28 @@ Every host needs the following in the same terminal that runs the Runner:
   separate global npm to satisfy this requirement.
 - Git, with `git` directly runnable on `PATH` (Git worktrees are required).
 - GitHub CLI (`gh`), with `gh` directly runnable on `PATH`.
-- An installed and authenticated Codex CLI, with `codex` directly runnable on
-  `PATH`. OpenAI does not publish a Runner-specific Codex version floor.
+- An installed and authenticated coding-agent CLI for every configured agent,
+  directly runnable on `PATH`. Runner supports the native Sandcastle
+  `codex`, `claude-code`, and `pi` agents; it does not support OpenCode, Cursor,
+  or Copilot.
 - A GitHub repository checkout at an absolute path.
 
 Paths containing Chinese characters are unsupported for the Runner checkout,
 the selected project's Git checkout, Worktrees, state and log directories,
-temporary files, or Codex state. Keep these paths free of Chinese characters.
+temporary files, or agent session state. Keep these paths free of Chinese
+characters.
 
 Missing executables fail on first use through the existing logical-command error
-path. The Runner does not start an interactive `gh auth` flow.
-Authenticate Codex with the [Codex CLI instructions](https://learn.chatgpt.com/docs/codex/cli)
-and verify `codex login status`. If using API-key authentication, keep
-`OPENAI_API_KEY` in the process environment; ChatGPT authentication uses
-Codex's supported local sign-in. Neither credential belongs in `config.yaml`.
+path. The Runner does not start an interactive `gh auth` flow. Authenticate each
+selected agent with its own CLI instructions and keep any API key or local
+sign-in credential in the process environment, never in `config.yaml`.
 
 ### macOS
 
-Install Node.js 22.18.0 or newer from the [Node.js macOS download](https://nodejs.org/en/download), or use a maintained package manager such as Homebrew. npm is bundled with Node.js. Install Git with [Xcode Command Line Tools](https://developer.apple.com/library/archive/technotes/tn2339/_index.html), the [Git macOS installer](https://git-scm.com/install/mac), or your package manager. Install `gh` using the [GitHub CLI macOS instructions](https://github.com/cli/cli#installation), and install Codex using the [Codex CLI instructions](https://learn.chatgpt.com/docs/codex/cli).
+Install Node.js 22.18.0 or newer from the [Node.js macOS download](https://nodejs.org/en/download), or use a maintained package manager such as Homebrew. npm is bundled with Node.js. Install Git with [Xcode Command Line Tools](https://developer.apple.com/library/archive/technotes/tn2339/_index.html), the [Git macOS installer](https://git-scm.com/install/mac), or your package manager. Install `gh` using the [GitHub CLI macOS instructions](https://github.com/cli/cli#installation), and install each selected coding-agent CLI (for example Codex, Claude Code, or Pi) with its own instructions.
 
-After installation, open the terminal profile used for Runs and verify:
+After installation, open the terminal profile used for Runs and verify (the
+agent checks below use Codex as an example; verify the CLI you configured):
 
 ```sh
 node --version       # must be v22.18.0 or newer
@@ -71,7 +73,7 @@ git --version
 gh --version
 codex --version
 codex login status
-command -v node npm git gh codex
+command -v node npm git gh
 ```
 
 Set the credential variable named by both `tracker.tokenEnv` and
@@ -88,9 +90,10 @@ environment token is passed to the non-interactive GitHub operations.
 
 ### Windows (native PowerShell)
 
-Install Node.js 22.18.0 or newer with the [Node.js Windows installer](https://nodejs.org/en/download) or a maintained Windows package manager. npm is bundled with Node.js. Install [Git for Windows](https://git-scm.com/install/windows), `gh` from the [GitHub CLI Windows instructions](https://github.com/cli/cli#installation), and Codex using the [Codex CLI instructions](https://learn.chatgpt.com/docs/codex/cli). Reopen PowerShell after installation so the installers' `PATH` changes take effect.
+Install Node.js 22.18.0 or newer with the [Node.js Windows installer](https://nodejs.org/en/download) or a maintained Windows package manager. npm is bundled with Node.js. Install [Git for Windows](https://git-scm.com/install/windows), `gh` from the [GitHub CLI Windows instructions](https://github.com/cli/cli#installation), and each selected coding-agent CLI using its own instructions. Reopen PowerShell after installation so the installers' `PATH` changes take effect.
 
-Verify the commands in the PowerShell session used for Runs:
+Verify the commands in the PowerShell session used for Runs (the agent checks
+below use Codex as an example; verify the CLI you configured):
 
 ```powershell
 node --version       # must be v22.18.0 or newer
@@ -99,7 +102,7 @@ git --version
 gh --version
 codex --version
 codex login status
-Get-Command node, npm, git, gh, codex | Select-Object Name, Source
+Get-Command node, npm, git, gh | Select-Object Name, Source
 ```
 
 `Get-Command npm` must resolve to the npm bundled with the selected Node.js
@@ -129,9 +132,19 @@ example:
 checkout: 'C:\work\repos\example'
 ```
 
-Codex state defaults to the current Windows user profile when `HOME` is absent.
-If `CODEX_HOME` is set, its `sessions` directory is used instead. Keep that state
-location on a supported path.
+Runner does not read `CODEX_HOME` or infer any agent session directory from the
+operating-system home directory. If Sandcastle's default lookup does not match
+where the selected agent actually stores sessions, configure an explicit
+native lookup root, for example:
+
+```yaml
+options:
+  sessionStorage:
+    hostSessionsDir: 'C:\work\agent-sessions\sessions'
+```
+
+This option selects where Runner looks up sessions; it does not relocate the
+agent's own storage. Correct default installations may need no override.
 
 Agent Attempt task identities are passed as native Sandcastle run names and
 identify tasks in log output. They do not guarantee Runner-assigned titles in
@@ -147,9 +160,10 @@ git -C 'C:\work\repos\example' config core.longpaths true
 
 ### Linux
 
-Install Node.js 22.18.0 or newer from the [Node.js Linux download](https://nodejs.org/en/download), or from a maintained distribution/package-manager source. npm is bundled with Node.js. Install Git from the distribution or the [Git Linux instructions](https://git-scm.com/install/linux), `gh` from the [GitHub CLI Linux instructions](https://github.com/cli/cli#installation), and Codex using the [Codex CLI instructions](https://learn.chatgpt.com/docs/codex/cli). Keep each executable on the `PATH` of the shell that starts the Runner.
+Install Node.js 22.18.0 or newer from the [Node.js Linux download](https://nodejs.org/en/download), or from a maintained distribution/package-manager source. npm is bundled with Node.js. Install Git from the distribution or the [Git Linux instructions](https://git-scm.com/install/linux), `gh` from the [GitHub CLI Linux instructions](https://github.com/cli/cli#installation), and each selected coding-agent CLI using its own instructions. Keep each executable on the `PATH` of the shell that starts the Runner.
 
-Verify the commands:
+Verify the commands (the agent checks below use Codex as an example; verify the
+CLI you configured):
 
 ```sh
 node --version       # must be v22.18.0 or newer
@@ -158,7 +172,7 @@ git --version
 gh --version
 codex --version
 codex login status
-command -v node npm git gh codex
+command -v node npm git gh
 ```
 
 Set the credential variable named in `config.yaml` before invoking the Runner:
@@ -172,10 +186,10 @@ never commit the token. Interactive `gh auth` is not used.
 
 These instructions describe the checkout contract on the three native OS
 families. They do not promise a broader OS or tool-version matrix,
-WSL-specific behavior, or a real Codex/Sandcastle
-integration guarantee. The configured repository and tracker must use GitHub;
-the Runner mutates issues, branches, worktrees, pull requests, and merges, so
-use a test repository when experimenting.
+WSL-specific behavior, or a live authenticated agent compatibility guarantee.
+The configured repository and tracker must use GitHub; the Runner mutates
+issues, branches, worktrees, pull requests, and merges, so use a test repository
+when experimenting.
 
 ## Configuration and usage
 
@@ -194,6 +208,44 @@ projects/<project-key>/
 ```
 
 Start from [`projects/trickplay-cropper`](projects/trickplay-cropper) and set the repository, absolute checkout, target branch, credential variable, agent profiles, timeouts, and workflow flags in `config.yaml`. Enabled workflow nodes require their prompt file; implementation and repair prompts must be non-empty. Configuration files use YAML and support `#` comments.
+
+Each `agents.<purpose>` profile requires a nonempty `agent` and `model` string
+and accepts an optional native `options` object. Native options are forwarded
+to the selected Sandcastle factory without renaming, flattening, or
+translation:
+
+```yaml
+agents:
+  implement:
+    agent: codex
+    model: gpt-6-sol
+    options:
+      effort: max
+  review:
+    agent: claude-code
+    model: claude-opus-4-8
+    options:
+      effort: high
+  ciRepair:
+    agent: pi
+    model: claude-sonnet-4-6
+    options:
+      thinking: high
+```
+
+Agent, model, and workflow purpose are distinct: a model prefix never selects
+the agent, and changing agents does not promise the previous native options
+remain valid. Profiles migrated from older configuration must add `agent` and
+move the former `reasoningEffort` value into `options.effort`; Runner rejects
+the obsolete field instead of converting it.
+
+Every Agent Attempt starts with a `SESSION_READY` probe using the selected
+profile, then resumes that same session for the substantive work. Sandcastle
+owns invocation and session resumption; Runner owns bounded retry and Operator
+Pause policy. When automatic recovery cannot continue, Operator Pause shows the
+selected agent, session ID when available, working directory, diagnostic log,
+and the Runner actions currently permitted. Runner does not print a
+copyable agent-specific resume command.
 
 Install dependencies and run a parent issue:
 
@@ -227,7 +279,7 @@ Repository text files are checked out with LF line endings through
 `core.autocrlf=true`. This keeps the documented checkout compatible with the
 format check.
 
-The test suite uses scripted tracker, code-host, Git, agent, clock, and terminal boundaries. It does not call authenticated Codex/Sandcastle services or mutate a remote GitHub repository.
+The test suite uses scripted tracker, code-host, Git, agent, clock, and terminal boundaries. It does not call authenticated agent/Sandcastle services or mutate a remote GitHub repository.
 
 The generic host executor owns each Agent process it launches and uses
 OS-bound process-tree termination. Runner waits for an explicit settlement

@@ -228,6 +228,9 @@ export function createFiveTicketScenario(
         const attempt = call(`${purpose}:${input.ticket}`);
         const inFirstBatch = input.ticket <= maxBatchSize;
         operations.push(`agent:${purpose}:${input.ticket}:${attempt}`);
+        operations.push(
+          `agent-profile:${purpose}:${input.agent}:${input.model}:${JSON.stringify(input.options ?? null)}`,
+        );
         activeAgents += 1;
         maxActiveAgents = Math.max(maxActiveAgents, activeAgents);
         try {

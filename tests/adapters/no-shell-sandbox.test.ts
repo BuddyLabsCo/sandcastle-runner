@@ -4,12 +4,15 @@ import test from "node:test";
 import { delimiter, join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { codexWithRunnerEffort } from "../../src/adapters/codex-agent.ts";
+import { nativeAgent } from "../../src/adapters/agent-provider.ts";
 import { noShellSandbox } from "../../src/adapters/no-shell-sandbox.ts";
 import { processExists, stopProcess, waitForPid } from "../support/process.ts";
 
 interface TestHandle {
-  exec(command: string): Promise<{
+  exec(
+    command: string,
+    options?: { stdin?: string },
+  ): Promise<{
     stdout: string;
     exitCode: number;
   }>;
@@ -50,6 +53,28 @@ test("noShellSandbox runs quoted arguments without a shell", async () => {
   await handle.close();
 });
 
+test("noShellSandbox transports a long stdin prompt", async () => {
+  const handle = await createHandle();
+  const prompt = "x".repeat(200_000);
+  const result = await handle.exec(
+    `"${process.execPath}" -e 'process.stdin.pipe(process.stdout)'`,
+    { stdin: prompt },
+  );
+  assert.equal(result.stdout, prompt);
+  assert.equal(result.exitCode, 0);
+  await handle.close();
+});
+
+test("noShellSandbox passes its invocation environment to the child", async () => {
+  const handle = await createHandle({ RUNNER_TEST_VALUE: "isolated" });
+  const result = await handle.exec(
+    `"${process.execPath}" -e 'process.stdout.write(process.env.RUNNER_TEST_VALUE ?? "missing")'`,
+  );
+  assert.equal(result.stdout, "isolated");
+  assert.equal(result.exitCode, 0);
+  await handle.close();
+});
+
 test("noShellSandbox preserves Windows path separators and spaces", async () => {
   const handle = await createHandle();
   const path = String.raw`C:\work repo\src`;
@@ -64,6 +89,17 @@ test("noShellSandbox preserves Windows path separators and spaces", async () => 
   );
   assert.equal(trailingResult.stdout, trailingSeparator);
   assert.equal(trailingResult.exitCode, 0);
+  await handle.close();
+});
+
+test("noShellSandbox preserves apostrophes inside quoted arguments", async () => {
+  const handle = await createHandle();
+  const path = String.raw`C:\Users\O'Brien\work tree`;
+  const result = await handle.exec(
+    `"${process.execPath}" -e 'process.stdout.write(process.argv[1])' "${path}"`,
+  );
+  assert.equal(result.stdout, path);
+  assert.equal(result.exitCode, 0);
   await handle.close();
 });
 
@@ -113,53 +149,61 @@ test(
   },
 );
 
-test("noShellSandbox preserves the Codex provider command through a command shim", async () => {
-  const directory = await mkdtemp(
-    join(tmpdir(), "sandcastle-provider-command-"),
-  );
-  try {
-    const argsFile = join(directory, "args.json");
-    const recorder = join(directory, "record.mjs");
-    await writeFile(
-      recorder,
-      'import { writeFile } from "node:fs/promises";\nawait writeFile(process.env.ARGS_FILE, JSON.stringify(process.argv.slice(2)));\n',
+for (const [agent, executable, model, expected] of [
+  ["codex", "codex", "gpt-5", ['model_reasoning_effort="high"']],
+  ["claude-code", "claude", "claude-sonnet", ["--effort", "high"]],
+  ["pi", "pi", "pi-model", ["--thinking", "high"]],
+] as const) {
+  test(`noShellSandbox preserves the ${agent} provider command through a command shim`, async () => {
+    const directory = await mkdtemp(
+      join(tmpdir(), "sandcastle-provider-command-"),
     );
-    if (process.platform === "win32") {
+    try {
+      const argsFile = join(directory, "args.json");
+      const recorder = join(directory, "record.mjs");
       await writeFile(
-        join(directory, "codex.cmd"),
-        '@echo off\r\nnode "%~dp0record.mjs" %*\r\n',
+        recorder,
+        'import { writeFile } from "node:fs/promises";\nawait writeFile(process.env.ARGS_FILE, JSON.stringify(process.argv.slice(2)));\n',
       );
-    } else {
-      const codex = join(directory, "codex");
-      await writeFile(
-        codex,
-        '#!/usr/bin/env node\nimport { writeFile } from "node:fs/promises";\nawait writeFile(process.env.ARGS_FILE, JSON.stringify(process.argv.slice(2)));\n',
+      if (process.platform === "win32") {
+        await writeFile(
+          join(directory, `${executable}.cmd`),
+          '@echo off\r\nnode "%~dp0record.mjs" %*\r\n',
+        );
+      } else {
+        const shim = join(directory, executable);
+        await writeFile(
+          shim,
+          '#!/usr/bin/env node\nimport { writeFile } from "node:fs/promises";\nawait writeFile(process.env.ARGS_FILE, JSON.stringify(process.argv.slice(2)));\n',
+        );
+        await chmod(shim, 0o755);
+      }
+      const handle = await createHandle({
+        ARGS_FILE: argsFile,
+        PATH: `${directory}${delimiter}${process.env.PATH ?? ""}`,
+      });
+      const command = nativeAgent(agent, model, {
+        ...(agent === "pi" ? { thinking: "high" } : { effort: "high" }),
+      }).buildPrintCommand({
+        prompt: "controlled prompt",
+        dangerouslySkipPermissions: true,
+      }).command;
+      const result = await handle.exec(command);
+      assert.equal(result.exitCode, 0);
+      const parsed = JSON.parse(await readFile(argsFile, "utf8")) as unknown;
+      assert.ok(Array.isArray(parsed));
+      const args = (parsed as unknown[]).filter(
+        (value): value is string => typeof value === "string",
       );
-      await chmod(codex, 0o755);
+      assert.equal(args.length, parsed.length);
+      assert.ok(args.includes(model));
+      for (const value of expected) assert.ok(args.includes(value), value);
+      await handle.close();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
     }
-    const handle = await createHandle({
-      ARGS_FILE: argsFile,
-      PATH: `${directory}${delimiter}${process.env.PATH ?? ""}`,
-    });
-    const command = codexWithRunnerEffort("gpt-5", "high").buildPrintCommand({
-      prompt: "controlled prompt",
-      dangerouslySkipPermissions: true,
-    }).command;
-    const result = await handle.exec(command);
-    assert.equal(result.exitCode, 0);
-    const parsed = JSON.parse(await readFile(argsFile, "utf8")) as unknown;
-    assert.ok(Array.isArray(parsed));
-    const args = (parsed as unknown[]).filter(
-      (value): value is string => typeof value === "string",
-    );
-    assert.equal(args.length, parsed.length);
-    assert.ok(args.includes("gpt-5"));
-    assert.ok(args.includes('model_reasoning_effort="high"'));
-    await handle.close();
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-});
+  });
+}
 
 test("noShellSandbox close stops and awaits its direct child", async () => {
   const directory = await mkdtemp(join(tmpdir(), "sandcastle-process-close-"));

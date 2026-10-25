@@ -202,7 +202,11 @@ test("failed required checks are repaired on the existing branch and Pull Reques
     ...validConfig,
     agents: {
       ...validConfig.agents,
-      ciRepair: { model: "gpt-5.5", reasoningEffort: "medium" },
+      ciRepair: {
+        agent: "codex",
+        model: "gpt-5.5",
+        options: { effort: "medium" },
+      },
     },
     timeouts: { ...validConfig.timeouts, requiredChecksMinutes: 1 / 60_000 },
   });
@@ -332,7 +336,8 @@ test("failed required checks are repaired on the existing branch and Pull Reques
     path.join(root, "projects/demo/prompts/ci-repair.md"),
   );
   assert.equal(agentInputs[1]?.model, "gpt-5.5");
-  assert.equal(agentInputs[1]?.effort, "medium");
+  assert.equal(agentInputs[1]?.agent, "codex");
+  assert.deepEqual(agentInputs[1]?.options, { effort: "medium" });
   assert.equal(agentInputs[1]?.pullRequestMetadata, "ignored");
   assert.equal(agentInputs[1]?.branch, branch);
   assert.equal(agentInputs[1]?.base, implementation.sha);

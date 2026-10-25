@@ -231,8 +231,11 @@ export async function runAgentOperation(
           promptFile: operation.promptFile,
           promptArgs: operation.promptArgs,
           pullRequestMetadata: operation.pullRequestMetadata,
+          agent: operation.agent.agent,
           model: operation.agent.model,
-          effort: operation.agent.reasoningEffort,
+          ...(operation.agent.options === undefined
+            ? {}
+            : { options: operation.agent.options }),
           gitConfigGlobal,
           logFile,
           timeoutMs: input.timeoutMs,
