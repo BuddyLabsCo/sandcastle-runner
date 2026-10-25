@@ -393,6 +393,12 @@ export class SandcastleAgentExecutor implements AgentExecutor {
               input.logFile,
               `Structured output validation failed; retryRemaining=${structuredRetryRemaining}; raw=${error.rawMatched ?? "<none>"}; issues=${formatStructuredCause(error.cause)}`,
             );
+            const stopAfterValidation = this.stopFailure(
+              input,
+              controller.signal,
+              error.sessionId ?? resumeSession,
+            );
+            if (stopAfterValidation !== undefined) throw stopAfterValidation;
             if (structuredRetryRemaining > 0 && error.sessionId !== undefined) {
               structuredRetryRemaining -= 1;
               const nextRecoveryAttempt = await this.waitForContinuation(
