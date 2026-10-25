@@ -71,14 +71,7 @@ $env:HOME = [Environment]::GetEnvironmentVariable('HOME', 'User')
 node -p "process.env.HOME"
 ```
 
-The first command persists the setting across restarts, and it also affects
-other tools that read `HOME`. The second command applies it to the current
-terminal. Restart any existing terminal or IDE processes before running Runner
-from them so they receive the updated environment.
-
-Setting `HOME` before Runner starts affects Sandcastle's default session
-lookup. `options.env.HOME` only configures the agent child process. For a
-nonstandard storage location, set the explicit native `options.sessionStorage`
+For a nonstandard storage location, set the explicit native `options.sessionStorage`
 lookup root instead:
 
 ```yaml
@@ -99,14 +92,6 @@ Set the credential variables named by `tracker.tokenEnv` and
 $env:GH_TOKEN = [Environment]::GetEnvironmentVariable('GH_TOKEN', 'User')
 node -p "Boolean(process.env.GH_TOKEN)"
 ```
-
-The first command persists the token across restarts, and the second applies
-it to the current terminal. Restart existing terminal or IDE processes to
-receive the updated environment. The verification command should print `true`
-without revealing the token. Never commit a token.
-
-Runner does not start an interactive `gh auth login` flow and does not read a
-stored `gh` login in place of the configured environment variable.
 
 ## macOS and Linux Setup
 
