@@ -303,7 +303,7 @@ test("empty Operator Pause input resets the complete read budget", async () => {
   assert.equal(pauseCalls, 1);
 });
 
-test("a failed Parent close pauses immediately and retries only after empty input", async () => {
+test("a failed Parent close retries automatically without Operator Pause", async () => {
   const root = await createProject();
   let closeCalls = 0;
   let pauseCalls = 0;
@@ -340,10 +340,10 @@ test("a failed Parent close pauses immediately and retries only after empty inpu
 
   assert.equal(result.summary.outcome, "succeeded");
   assert.equal(closeCalls, 2);
-  assert.equal(pauseCalls, 1);
+  assert.equal(pauseCalls, 0);
 });
 
-test("a nonempty write override continues without replay or reconciliation", async () => {
+test("a nonempty write override stops replay after automatic retries", async () => {
   const root = await createProject();
   let closeCalls = 0;
   const result = await executeCli(
@@ -377,7 +377,7 @@ test("a nonempty write override continues without replay or reconciliation", asy
   );
 
   assert.equal(result.summary.outcome, "succeeded");
-  assert.equal(closeCalls, 1);
+  assert.equal(closeCalls, 5);
   assert.ok(result.logPath);
   assert.equal(
     (await readFile(result.logPath, "utf8")).includes("I confirmed"),

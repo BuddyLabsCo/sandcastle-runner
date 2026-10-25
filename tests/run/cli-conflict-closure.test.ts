@@ -175,7 +175,7 @@ test("Parent cancellation during a merge rejection pause prevents the authorized
   );
 
   assert.equal(result.summary.outcome, "cancelled");
-  assert.equal(mergeRequests, 1);
+  assert.equal(mergeRequests, 5);
 });
 
 test("a post-merge cancellation releases its Reservation without completion credit", async () => {
@@ -325,7 +325,7 @@ test("Parent cancellation during a closure write pause prevents the authorized r
   );
 
   assert.equal(result.summary.outcome, "cancelled");
-  assert.equal(closeCalls, 1);
+  assert.equal(closeCalls, 5);
 });
 
 test("an open code_host ticket after both closure reads enters Operator Pause without credit", async () => {

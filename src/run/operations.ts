@@ -86,13 +86,6 @@ interface ResultWriteOperation<T> extends WriteOperation<T> {
   parseOverride: (value: string) => T;
 }
 
-function transientWriteFailure(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return /(?:\b5\d{2}\b|bad gateway|gateway timeout|timed? out|econn(?:reset|refused)|socket hang up|network)/iu.test(
-    message,
-  );
-}
-
 async function appendPauseEvent(
   audit: AuditLog,
   event: Omit<AuditEvent, "result" | "error">,
@@ -356,9 +349,7 @@ export async function workflowWrite<T>(
         }
       }
       const delay =
-        operation.automaticRetry &&
-        transientWriteFailure(error) &&
-        attempt <= maxAutomaticRetries
+        operation.automaticRetry && attempt <= maxAutomaticRetries
           ? policy.operationRetryDelay[
               Math.min(attempt - 1, policy.operationRetryDelay.length - 1)
             ]! * 1000
