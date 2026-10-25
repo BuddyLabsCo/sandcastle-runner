@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /* eslint-disable max-lines -- CLI startup and recovery sequencing stay together. */
 import { randomUUID } from "node:crypto";
+import { rmdir } from "node:fs/promises";
 import path from "node:path";
 
 import { SystemClock } from "./adapters/clock.ts";
@@ -54,6 +55,27 @@ export interface CliResult {
 
 const usageMessage =
   "usage: sandcastle-runner run --project <project-key> (--parent <issue-number> | --issue [<issue-number>] | --document)";
+
+async function removeEmptyRunWorktreeParent(
+  directory: string,
+  operator: OperatorIO,
+): Promise<void> {
+  try {
+    await rmdir(directory);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTEMPTY" || code === "EEXIST") return;
+    try {
+      operator.write(
+        `Warning: could not remove empty Run Worktree directory ${directory}: ${
+          error instanceof Error ? error.message : "unknown error"
+        }`,
+      );
+    } catch {
+      // Cleanup diagnostics must not replace the Run result.
+    }
+  }
+}
 
 function parseRunOptions(argv: string[]) {
   const cli = cac("sandcastle-runner");
@@ -598,16 +620,23 @@ export async function executeCli(
       ],
     };
   }
-  await writeSnapshot({
-    ...currentSnapshot,
-    phase:
-      summary.outcome === "succeeded" && !autoMerge
-        ? currentSnapshot.phase
-        : summary.outcome,
-    targetBranch: summary.targetBranch,
-    updatedAt: dependencies.clock.now().toISOString(),
-  });
-  dependencies.operator.write(renderRunReport(summary, audit.path));
+  try {
+    await writeSnapshot({
+      ...currentSnapshot,
+      phase:
+        summary.outcome === "succeeded" && !autoMerge
+          ? currentSnapshot.phase
+          : summary.outcome,
+      targetBranch: summary.targetBranch,
+      updatedAt: dependencies.clock.now().toISOString(),
+    });
+    dependencies.operator.write(renderRunReport(summary, audit.path));
+  } finally {
+    await removeEmptyRunWorktreeParent(
+      path.join(loaded.directory, "worktrees", runId),
+      dependencies.operator,
+    );
+  }
   return {
     exitCode:
       summary.outcome === "succeeded" || summary.outcome === "no_work" ? 0 : 1,
