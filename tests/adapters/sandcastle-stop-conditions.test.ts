@@ -232,7 +232,7 @@ test("cancellation during process-failure backoff prevents continuation", async 
           output: undefined,
         };
       substantiveCalls += 1;
-      throw new Error("codex exited with code 1");
+      throw new Error("execution failed");
     },
     async () => {
       waits += 1;

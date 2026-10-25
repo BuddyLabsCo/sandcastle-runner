@@ -247,6 +247,17 @@ selected agent, session ID when available, working directory, diagnostic log,
 and the Runner actions currently permitted. Runner does not print a
 copyable agent-specific resume command.
 
+Runner treats an ordinary substantive Sandcastle invocation failure as generic;
+it does not classify failures by agent name, provider error text, `429`/network
+wording, or raw provider events. After successful process settlement, Runner
+resumes the same probed session when the session ID is usable, cancellation or
+timeout has not stopped the attempt, and the Agent Retry budget remains.
+Exhaustion or a missing session enters manual handling without a
+fresh-conversation fallback. Some authentication or configuration failures may
+therefore consume this bounded budget before pausing. A schema-valid successful
+result still proceeds through normal outcome and Git verification even if its
+output text contains an internal provider error.
+
 Install dependencies and run a parent issue:
 
 ```sh
