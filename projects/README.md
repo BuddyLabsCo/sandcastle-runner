@@ -2,48 +2,6 @@
 
 This directory is a project template for Sandcastle Runner. Copy it to `projects/<project-key>` and adapt `config.yaml` and the prompts.
 
-## Checkout installation contract
-
-The Runner is used from a checkout only. Follow the root [installation
-contract](../README.md#installation-contract), including the native
-[macOS](../README.md#macos), [Windows](../README.md#windows-native-powershell),
-and [Linux](../README.md#linux) prerequisite, `PATH`, and credential
-guidance. From the repository root, run:
-
-```sh
-npm ci
-npm exec -- sandcastle-runner run --project <project-key> (--parent <issue-number> | --issue [<issue-number>] | --document) [--auto-merge | --no-auto-merge]
-```
-
-The root contract requires Node.js **>=22.18.0** with its bundled npm, Git,
-GitHub CLI (`gh`), an installed and authenticated CLI for each configured
-agent, and an absolute checkout path. Keep all executables on `PATH` in the
-terminal that invokes the Runner. Runner supports the native Sandcastle
-`codex`, `claude-code`, and `pi` agents; it does not support OpenCode, Cursor,
-or Copilot. Prepare each selected agent's own skills, MCP servers, and native
-configuration; Runner does not install or normalize those environments, and it
-defines no universal agent CLI version floor or broader OS support guarantee.
-An unknown agent name still fails through ordinary configuration or execution
-error handling.
-
-Set the environment variable named by both `tracker.tokenEnv` and
-`codeHost.tokenEnv` in this template's `config.yaml` before invoking the Runner:
-
-```sh
-export GH_TOKEN='your-github-token'       # macOS/Linux
-```
-
-```powershell
-$env:GH_TOKEN = 'your-github-token'       # Windows PowerShell
-```
-
-The token must be present in the process environment; never commit it. The
-Runner uses non-interactive GitHub operations, so interactive `gh auth login` is
-not used. Missing tools fail on first use through the existing logical-command
-error path. Registry/global/remote-`npx` installation, a native Runner
-installer, bundled prerequisites, broader OS/tool-version guarantees, and
-WSL-specific behavior are unsupported; see the root contract for details.
-
 ## `config.yaml`
 
 - `repository`: GitHub repository in `owner/name` form.
@@ -152,12 +110,3 @@ flowchart TD
 - `conflict-repair.md`: the same ticket, worktree, branch, and base fields, plus `PULL_REQUEST_NUMBER`, `PULL_REQUEST_URL`, `TARGET_BRANCH_SHA` (fresh target branch commit), and `MERGE_CONFLICT` (reported conflict details).
 - `documentation.md`: `TICKET_NUMBER`, `TICKET_REFERENCE`, `WORKTREE_PATH`, `SOURCE_BRANCH`, and `PROJECT_TARGET_BRANCH`.
 - `review.md`: `REVIEW_HANDOFF`, a JSON review context containing repository, branches, worktree, fixed point, ticket/spec snapshots, instructions, and reported checks.
-
-## Run
-
-From the Sandcastle Runner repository:
-
-```sh
-npm ci
-npm exec -- sandcastle-runner run --project <project-key> (--parent <issue-number> | --issue <issue-number> | --document)
-```
