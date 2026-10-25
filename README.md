@@ -288,3 +288,9 @@ probe, task, or output correction; failed settlement enters the existing manual
 handling path instead of starting another writer in the same Worktree. This
 does not claim termination of arbitrary detached descendants, independently
 managed servers, or remote jobs.
+
+Cancellation stops probe retries, execution retries, retry backoff,
+missing-output recovery, and structured-output correction after owned-process
+settlement. A substantive timeout uses one total deadline across those
+automatic steps, then waits for settlement and enters Operator Pause without
+automatically restarting the timed-out invocation.

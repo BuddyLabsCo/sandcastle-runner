@@ -9,6 +9,7 @@ import {
 } from "../support/cli-dependencies.ts";
 import { createProject } from "../support/cli-project.ts";
 import { executeCli } from "../../src/cli.ts";
+import { AgentOutputError } from "../../src/adapters/process-errors.ts";
 import { agentPauseMessage } from "../../src/run/agent-pause.ts";
 
 test.afterEach(cleanupTempRoots);
@@ -238,5 +239,49 @@ test("non-retryable Agent Pause keeps the full decision summary and its accepted
   assert.match(
     message,
     /^Actions: Enter to retry, s to skip, q to cancel, or supply a trusted result\.$/mu,
+  );
+});
+
+test("a timed-out Agent Attempt enters one Operator Pause", async () => {
+  const root = await createProject();
+  const { tracker } = createAttemptTracker(9);
+  const pauses: string[] = [];
+  let agentCalls = 0;
+
+  const result = await executeCli(
+    ["run", "--project", "demo", "--parent", "8"],
+    createCliDependencies(root, {
+      tracker,
+      gitWorkspace: {
+        async fetchTargetBranch() {
+          return "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        },
+      },
+      agentExecutor: {
+        async execute() {
+          agentCalls += 1;
+          throw new AgentOutputError("Agent Attempt timed out", {
+            errorCategory: "agent_attempt",
+            retryable: true,
+            sessionId: "session-789",
+          });
+        },
+      },
+      operator: {
+        async pause(message) {
+          pauses.push(message);
+          return "q";
+        },
+      },
+    }),
+  );
+
+  assert.equal(result.summary.outcome, "cancelled");
+  assert.equal(agentCalls, 1);
+  assert.equal(pauses.length, 1);
+  assert.match(pauses[0]!, /^Reason: Agent Attempt timed out$/mu);
+  assert.match(
+    pauses[0]!,
+    /^Actions: Enter to continue, s to skip, q to cancel, or provide recovery instructions\.$/mu,
   );
 });

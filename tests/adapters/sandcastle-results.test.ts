@@ -352,11 +352,16 @@ test("SandcastleAgentExecutor aborts a continuously active run at the configured
 test("SandcastleAgentExecutor forwards caller cancellation", async () => {
   const controller = new AbortController();
   let receivedSignal: AbortSignal | undefined;
+  let substantiveStarted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    substantiveStarted = resolve;
+  });
   const executor = createExecutor(
     (options) =>
       new Promise((_resolve, reject) => {
         const keepAlive = setTimeout(() => {}, 1_000);
         receivedSignal = options.signal;
+        substantiveStarted();
         if (options.signal?.aborted) {
           clearTimeout(keepAlive);
           reject(new Error("caller aborted"));
@@ -379,6 +384,7 @@ test("SandcastleAgentExecutor forwards caller cancellation", async () => {
     ...input(),
     signal: controller.signal,
   });
+  await started;
   controller.abort();
 
   await assert.rejects(execution, (error) => {
