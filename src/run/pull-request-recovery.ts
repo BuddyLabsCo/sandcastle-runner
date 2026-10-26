@@ -111,8 +111,10 @@ export async function recoverPublishedHandoffs(
             return {
               outcome: "succeeded",
               reasons: [
+                ...skipped.map(({ reason }) => reason),
                 `Maintenance Ticket ${intent.ticket} is already completed`,
               ],
+              skipped,
               pullRequests: [],
               published: [],
               restarted,
@@ -120,14 +122,22 @@ export async function recoverPublishedHandoffs(
           }
           return {
             outcome: "incomplete",
-            reasons: [`Maintenance Ticket ${intent.ticket} is terminal`],
+            reasons: [
+              ...skipped.map(({ reason }) => reason),
+              `Maintenance Ticket ${intent.ticket} is terminal`,
+            ],
+            skipped,
             pullRequests: [],
             published: [],
             restarted,
           };
         }
         if (boundary.outcome !== "ready")
-          return { ...stopped(boundary, [], published), restarted };
+          return {
+            ...stopped(boundary, [], published, skipped),
+            reasons: [...skipped.map(({ reason }) => reason), boundary.reason],
+            restarted,
+          };
         const readRemoteHead = () =>
           externalRead({
             action: () =>
@@ -315,7 +325,11 @@ export async function recoverPublishedHandoffs(
           ? { readiness: "ready" as const, failedChecks: [] }
           : await observeRequiredChecks(input, handoff, pullRequest);
         if ("outcome" in readiness)
-          return { ...stopped(readiness, [], published), restarted };
+          return {
+            ...stopped(readiness, [], published, skipped),
+            reasons: [...skipped.map(({ reason }) => reason), readiness.reason],
+            restarted,
+          };
         published.push({
           handoff,
           pullRequest,

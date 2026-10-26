@@ -26,7 +26,11 @@ import {
   type DiscoveryInput,
   revalidateActiveTicket,
 } from "./discovery.ts";
-import { OperatorCancelled, workflowWrite } from "./operations.ts";
+import {
+  externalRead,
+  OperatorCancelled,
+  workflowWrite,
+} from "./operations.ts";
 import { appendOperation, discardAgentLogs } from "./operation-audit.ts";
 
 export { agentPauseMessage } from "./agent-pause.ts";
@@ -254,12 +258,24 @@ export async function runAgentOperation(
             decision.decision === "retry" ? "continue" : decision.response;
         continue;
       }
-      const observed = await input.gitWorkspace.inspect({
-        worktree: operation.worktree,
-        base: operation.base,
-        ...(operation.requiredAncestor === undefined
-          ? {}
-          : { requiredAncestor: operation.requiredAncestor }),
+      const observed = await externalRead({
+        action: () =>
+          input.gitWorkspace.inspect({
+            worktree: operation.worktree,
+            base: operation.base,
+            ...(operation.requiredAncestor === undefined
+              ? {}
+              : { requiredAncestor: operation.requiredAncestor }),
+          }),
+        audit: input.audit,
+        event: input.event(
+          operation.phase,
+          "inspect_worktree",
+          `ticket:${operation.ticket}`,
+        ),
+        clock: input.clock,
+        operator: input.operator,
+        retryPolicy: input.retryPolicy,
       });
       if (
         observed.worktree !== path.resolve(operation.worktree) ||

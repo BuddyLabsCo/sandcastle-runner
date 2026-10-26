@@ -71,10 +71,18 @@ async function acceptReview(
   implementationHead: string,
   checks: AgentAttemptResult["checks"],
 ): Promise<VerifiedHandoff> {
-  const evidence = await input.gitWorkspace.inspectReview({
-    worktree: handoff.worktree,
-    base: handoff.base,
-    implementationHead,
+  const evidence = await externalRead({
+    action: () =>
+      input.gitWorkspace.inspectReview({
+        worktree: handoff.worktree,
+        base: handoff.base,
+        implementationHead,
+      }),
+    audit: input.audit,
+    event: input.event("review", "inspect_review", `ticket:${handoff.ticket}`),
+    clock: input.clock,
+    operator: input.operator,
+    retryPolicy: input.retryPolicy,
   });
   if (!evidence.clean) throw new Error("Review left a dirty Worktree");
   return {
@@ -141,10 +149,22 @@ export async function reviewHandoff(
             input.standaloneIssue ?? input.parentTicket,
             input.standaloneIssue === undefined,
           ),
-          input.gitWorkspace.readReviewStandards(
-            handoff.worktree,
-            handoff.base,
-          ),
+          externalRead({
+            action: () =>
+              input.gitWorkspace.readReviewStandards(
+                handoff.worktree,
+                handoff.base,
+              ),
+            audit: input.audit,
+            event: input.event(
+              "review",
+              "read_standards",
+              `ticket:${handoff.ticket}`,
+            ),
+            clock: input.clock,
+            operator: input.operator,
+            retryPolicy: input.retryPolicy,
+          }),
         ]);
       const gitDirectory = await mkdtemp(
         path.join(tmpdir(), "sandcastle-runner-git-"),

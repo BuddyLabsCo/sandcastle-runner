@@ -327,6 +327,8 @@ async function runMaintenanceOccurrence(
       input.recoveryPublication,
     ]);
     const published = recovered.published[0];
+    const skipped = recovered.skipped?.[0];
+    if (skipped) return skipMaintenance(input, ticket.number, skipped.reason);
     if (recovered.outcome === "succeeded" && published === undefined) {
       await input.persistPublication?.(ticket.number, null);
       await persist({

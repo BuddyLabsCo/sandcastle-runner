@@ -12,6 +12,8 @@ import {
   createProject,
   validConfig,
   writeProjectConfig,
+  publicationIntent,
+  writePublicationState,
 } from "../support/cli-project.ts";
 import { cleanupTempRoots } from "../support/temp-cleanup.ts";
 test.afterEach(cleanupTempRoots);
@@ -193,6 +195,53 @@ test("a second skip can abandon failed pre-publication Reservation release", asy
     result.summary.reasons.join("\n"),
     /possible Reservation residue/u,
   );
+});
+
+test("recovery retains skipped issue residue when a later issue stops at its boundary", async () => {
+  const root = await createProject();
+  await writePublicationState(root, [
+    publicationIntent("pending_pr", 9),
+    publicationIntent("pending_pr", 10),
+  ]);
+  const delivery = createCommittedBatch(9, 10);
+  delivery.tickets[0]!.assignees = ["runner"];
+  delivery.tickets[0]!.labels.push("sandcastle:reserved");
+  delivery.tickets[1]!.assignees = ["other"];
+  let pauses = 0;
+  const result = await executeCli(
+    ["run", "--project", "demo", "--parent", "8"],
+    createCliDependencies(root, {
+      tracker: {
+        ...delivery.tracker,
+        async removeAssignee() {
+          throw new Error("release unavailable");
+        },
+      },
+      codeHost: {
+        async getRemoteBranchHead() {
+          return "f".repeat(40);
+        },
+      },
+      operator: {
+        async pause(message) {
+          assert.match(message, /s to skip/u);
+          pauses += 1;
+          return "s";
+        },
+      },
+    }),
+  );
+  assert.equal(result.summary.outcome, "incomplete");
+  assert.equal(pauses, 2);
+  assert.equal(
+    result.summary.tickets?.find((row) => row.ticket === 9)?.status,
+    "failed",
+  );
+  assert.match(
+    result.summary.reasons.join("\n"),
+    /possible Reservation residue/u,
+  );
+  assert.match(result.summary.reasons.join("\n"), /became externally owned/u);
 });
 
 test("Worktree creation retries its original command after operator repair", async () => {
