@@ -2,7 +2,6 @@ import type { Ticket } from "./contracts.ts";
 import { externalRead, workflowWrite } from "./operations.ts";
 import {
   inspect,
-  parseTicket,
   readBlockers,
   readChildren,
   readParent,
@@ -227,8 +226,6 @@ export async function revalidateStandaloneMaintenanceTicket(
   }
   const ticket = await externalRead({
     action: () => input.tracker.getTicket(input.repository, ticketNumber),
-    parseOverride: (value) =>
-      parseTicket(JSON.parse(value) as unknown, ticketNumber),
     audit: input.audit,
     event: input.event(
       "maintenance",

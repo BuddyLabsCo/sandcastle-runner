@@ -31,12 +31,6 @@ export type {
   VerifiedHandoff,
 } from "./agent-operation.ts";
 
-function fullSha(value: unknown): string {
-  if (typeof value !== "string" || !/^[0-9a-f]{40,64}$/u.test(value))
-    throw new Error("override has no full base SHA");
-  return value;
-}
-
 async function implementTicket(
   input: AttemptInput,
   ticket: number,
@@ -278,10 +272,6 @@ export async function runMaintenanceAttempt(
           input.checkout,
           input.targetBranch,
         ),
-      parseOverride: (value) => {
-        const parsed = JSON.parse(value) as { base?: unknown };
-        return fullSha(parsed.base);
-      },
       audit: input.audit,
       event: input.event(
         "maintenance",
@@ -398,10 +388,6 @@ export async function implementReservedBatch(
           input.checkout,
           input.targetBranch,
         ),
-      parseOverride: (value) => {
-        const parsed = JSON.parse(value) as { base?: unknown };
-        return fullSha(parsed.base);
-      },
       audit: input.audit,
       event: input.event(
         "prepare_worktrees",

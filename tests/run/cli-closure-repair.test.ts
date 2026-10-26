@@ -359,7 +359,7 @@ test("failed required checks are repaired on the existing branch and Pull Reques
   });
   assert.deepEqual(sleeps.slice(0, 2), [30_000, 30_000]);
   assert.deepEqual(pauses, [
-    "Required checks timed out. Enter to retry, q to cancel, or acknowledge trusted readiness.",
+    "Required checks timed out. Enter to retry, q to cancel.",
   ]);
   assert.equal(agentInputs.length, 2);
   assert.equal(result.summary.pullRequests?.[0]?.readiness, "ready");

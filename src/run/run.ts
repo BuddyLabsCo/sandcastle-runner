@@ -5,6 +5,7 @@ import { discoverAndReserve, releaseTerminalReservation } from "./discovery.ts";
 import {
   externalRead,
   OperatorCancelled,
+  retryOrCancel,
   workflowWrite,
 } from "./operations.ts";
 import { runDocumentationMaintenance } from "./maintenance.ts";
@@ -99,16 +100,6 @@ async function runProjectInternal(
     input.configuredTargetBranch ??
     (await externalRead({
       action: () => input.codeHost.resolveTargetBranch(input.repository),
-      parseOverride: (value) => {
-        const parsed = JSON.parse(value) as { targetBranch?: unknown };
-        if (
-          typeof parsed.targetBranch !== "string" ||
-          parsed.targetBranch.length === 0
-        ) {
-          throw new Error("override has no Target Branch");
-        }
-        return parsed.targetBranch;
-      },
       audit: input.audit,
       event: event("startup", "resolve_target_branch", input.repository),
       clock: input.clock,
@@ -423,8 +414,7 @@ async function runProjectInternal(
   ): Promise<void> => {
     for (;;) {
       const previous = cleanupRecords.get(ticket);
-      if (previous?.status === "cleaned" || previous?.status === "accepted")
-        return;
+      if (previous?.status === "cleaned") return;
       const pending: CleanupRecord = {
         status: "pending",
         candidates: [
@@ -485,26 +475,10 @@ async function runProjectInternal(
         };
         await input.persistCleanup?.(ticket, failed);
         cleanupRecords.set(ticket, failed);
-        const response = await input.operator.pause(
-          `Terminal cleanup for Ticket ${ticket} failed. Enter to retry, q to cancel, or supply accepted residual artifacts.`,
+        await retryOrCancel(
+          input.operator,
+          `Terminal cleanup for Ticket ${ticket} failed. Enter to retry, q to cancel.`,
         );
-        if (response === null || response === "q")
-          throw new OperatorCancelled(
-            `terminal cleanup pending for Ticket ${ticket}`,
-            {
-              cause: error,
-            },
-          );
-        if (response !== "") {
-          const accepted = {
-            status: "accepted" as const,
-            candidates: failed.candidates,
-            residual: response.split("\n").filter(Boolean),
-          };
-          await input.persistCleanup?.(ticket, accepted);
-          cleanupRecords.set(ticket, accepted);
-          return;
-        }
       }
     }
   };

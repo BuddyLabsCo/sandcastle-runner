@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- retry policy stays explicit at each operation seam. */
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { AgentConfig } from "../config.ts";
@@ -21,16 +20,8 @@ import {
   revalidateActiveTicket,
   revalidateMergedTicket,
 } from "./discovery.ts";
-import {
-  externalRead,
-  pauseForOperator,
-  recordOperatorOverride,
-  workflowWrite,
-} from "./operations.ts";
-import {
-  remoteBranchReconciliation,
-  remoteHeadOverride,
-} from "./write-reconciliation.ts";
+import { externalRead, pauseForOperator, workflowWrite } from "./operations.ts";
+import { remoteBranchReconciliation } from "./write-reconciliation.ts";
 import { type RepairState, type PublicationIntent } from "../recovery.ts";
 import type { ReplacedWorkspaceCleanup } from "./cleanup.ts";
 
@@ -179,25 +170,6 @@ export function stopped(
     ...(skipped === undefined ? {} : { skipped }),
   };
 }
-function pullRequestStateOverride(value: string): PullRequestState {
-  const parsed = JSON.parse(value) as Partial<PullRequestState>;
-  if (
-    typeof parsed.headSha !== "string" ||
-    parsed.headSha.length === 0 ||
-    typeof parsed.createdAt !== "string" ||
-    parsed.createdAt.length === 0 ||
-    typeof parsed.merged !== "boolean" ||
-    (parsed.mergeFailure !== null && typeof parsed.mergeFailure !== "string")
-  ) {
-    throw new Error("override has invalid Pull Request state");
-  }
-  return {
-    headSha: parsed.headSha,
-    createdAt: parsed.createdAt,
-    merged: parsed.merged,
-    mergeFailure: parsed.mergeFailure ?? null,
-  };
-}
 export async function freshRepairHandoff(
   input: PublicationInput,
   handoff: VerifiedHandoff,
@@ -210,7 +182,6 @@ export async function freshRepairHandoff(
         input.repository,
         handoff.remoteBranch ?? handoff.branch,
       ),
-    parseOverride: remoteHeadOverride,
     audit: input.audit,
     event: input.event(
       `${purpose}_repair`,
@@ -265,7 +236,6 @@ export async function observePullRequestForIntegration(
 ): Promise<PullRequestState> {
   return externalRead({
     action: () => input.codeHost.getPullRequest(input.repository, pullRequest),
-    parseOverride: pullRequestStateOverride,
     audit: input.audit,
     event: input.event(
       phase,
@@ -303,21 +273,13 @@ export async function waitForMerge(
         state.mergeFailure === null ? "merge_timeout" : "merge_failure",
         `pull_request:${pullRequest.number}`,
       )(1);
-      const response = await pauseForOperator(
+      await pauseForOperator(
         input.audit,
         event,
         input.operator,
-        state.mergeFailure ??
-          "Merge confirmation timed out. Enter to retry, q to cancel, or acknowledge a trusted merge.",
+        `${state.mergeFailure ?? "Merge confirmation timed out."} Enter to retry, q to cancel.`,
       );
-      if (response === "") break;
-      const afterOverride = await revalidateMergedTicket(input, handoff.ticket);
-      if (afterOverride.outcome !== "ready") {
-        const changed = await completedOrStopped(input, handoff, afterOverride);
-        if (changed.outcome !== "completed") return changed;
-      }
-      await recordOperatorOverride(input.audit, event, input.operator);
-      return "merged";
+      break;
     }
   }
 }
@@ -370,75 +332,83 @@ export async function pushRepair(
   phase: "ci_repair" | "conflict_repair",
   attempt: number,
 ): Promise<Exclude<DeliveryBoundaryResult, { outcome: "ready" }> | null> {
-  const boundary = await revalidateActiveTicket(input, handoff.ticket);
-  if (boundary.outcome !== "ready") return boundary;
-  const remoteBranch = handoff.remoteBranch ?? handoff.branch;
-  const remoteHead =
-    typeof input.codeHost.getRemoteBranchHead !== "function"
-      ? handoff.base
-      : await externalRead({
-          action: () =>
-            input.codeHost.getRemoteBranchHead(input.repository, remoteBranch),
-          parseOverride: remoteHeadOverride,
-          audit: input.audit,
-          event: input.event(
+  for (;;) {
+    const boundary = await revalidateActiveTicket(input, handoff.ticket);
+    if (boundary.outcome !== "ready") return boundary;
+    const remoteBranch = handoff.remoteBranch ?? handoff.branch;
+    const remoteHead =
+      typeof input.codeHost.getRemoteBranchHead !== "function"
+        ? handoff.base
+        : await externalRead({
+            action: () =>
+              input.codeHost.getRemoteBranchHead(
+                input.repository,
+                remoteBranch,
+              ),
+            audit: input.audit,
+            event: input.event(
+              phase,
+              "remote_base_head",
+              `branch:${remoteBranch}`,
+            ),
+            clock: input.clock,
+            operator: input.operator,
+            retryPolicy: input.retryPolicy,
+          });
+    if (typeof input.codeHost.getRemoteBranchHead !== "function") return null;
+    const expectedHead = handoff.commits.at(-1)?.sha ?? handoff.base;
+    if (remoteHead === expectedHead) return null;
+    if (
+      handoff.remoteBranch !== undefined &&
+      (remoteHead === null || remoteHead !== handoff.base)
+    ) {
+      await pauseForOperator(
+        input.audit,
+        input.event(phase, "remote_advance", `branch:${remoteBranch}`)(attempt),
+        input.operator,
+        `Stable repair branch advanced from ${handoff.base} to ${remoteHead ?? "absent"}. Resolve the remote state. Enter to retry, q to cancel.`,
+      );
+      continue;
+    }
+    try {
+      await workflowWrite({
+        action: () =>
+          input.gitWorkspace.push(
+            handoff.worktree,
+            handoff.branch,
+            remoteBranch,
+          ),
+        beforeRetry: async () => {
+          const changed = await revalidateActiveTicket(input, handoff.ticket);
+          if (changed.outcome !== "ready") {
+            throw new ReservedBoundaryChanged(changed);
+          }
+        },
+        audit: input.audit,
+        clock: input.clock,
+        automaticRetry: {
+          reconcile: remoteBranchReconciliation(
+            input,
             phase,
-            "remote_base_head",
+            remoteBranch,
+            expectedHead,
             `branch:${remoteBranch}`,
           ),
-          clock: input.clock,
-          operator: input.operator,
-          retryPolicy: input.retryPolicy,
-        });
-  if (typeof input.codeHost.getRemoteBranchHead !== "function") return null;
-  const expectedHead = handoff.commits.at(-1)?.sha ?? handoff.base;
-  if (remoteHead === expectedHead) return null;
-  if (
-    handoff.remoteBranch !== undefined &&
-    (remoteHead === null || remoteHead !== handoff.base)
-  ) {
-    await pauseForOperator(
-      input.audit,
-      input.event(phase, "remote_advance", `branch:${remoteBranch}`)(attempt),
-      input.operator,
-      `Stable repair branch advanced from ${handoff.base} to ${remoteHead ?? "absent"}. Resolve the remote state, then restart the Run, or q to cancel.`,
-    );
-    return { outcome: "stopped", reason: "stable repair branch advanced" };
-  }
-  try {
-    await workflowWrite({
-      action: () =>
-        input.gitWorkspace.push(handoff.worktree, handoff.branch, remoteBranch),
-      beforeRetry: async () => {
-        const changed = await revalidateActiveTicket(input, handoff.ticket);
-        if (changed.outcome !== "ready") {
-          throw new ReservedBoundaryChanged(changed);
-        }
-      },
-      audit: input.audit,
-      clock: input.clock,
-      automaticRetry: {
-        reconcile: remoteBranchReconciliation(
-          input,
-          phase,
-          remoteBranch,
-          expectedHead,
-          `branch:${remoteBranch}`,
-        ),
-      },
-      event: (attemptNumber) =>
-        input.event(
-          phase,
-          "push_repair",
-          `pull_request:${pullRequest.number}`,
-        )(attemptNumber),
-      operator: input.operator,
-      retryPolicy: input.retryPolicy,
-    });
-    return null;
-  } catch (error) {
-    if (!(error instanceof ReservedBoundaryChanged)) throw error;
-    return error.boundary;
+        },
+        event: (attemptNumber) =>
+          input.event(
+            phase,
+            "push_repair",
+            `pull_request:${pullRequest.number}`,
+          )(attemptNumber),
+        operator: input.operator,
+        retryPolicy: input.retryPolicy,
+      });
+      return null;
+    } catch (error) {
+      if (!(error instanceof ReservedBoundaryChanged)) throw error;
+      return error.boundary;
+    }
   }
 }
 
@@ -504,42 +474,11 @@ export async function confirmCompletion(
       "confirm_completed_ticket",
       `ticket:${handoff.ticket}`,
     )(1);
-    const response = await pauseForOperator(
+    await pauseForOperator(
       input.audit,
       event,
       input.operator,
-      `Merged ${input.ticketKind ?? "Delivery Ticket"} ${handoff.ticket} is not closed as completed. Enter to retry, q to cancel, or acknowledge trusted completion.`,
+      `Merged ${input.ticketKind ?? "Delivery Ticket"} ${handoff.ticket} is not closed as completed. Enter to retry, q to cancel.`,
     );
-    if (response === "") continue;
-    boundary = await revalidateMergedTicket(input, handoff.ticket);
-    if (boundary.outcome !== "ready") {
-      return completedOrStopped(input, handoff, boundary);
-    }
-    await recordOperatorOverride(input.audit, event, input.operator);
-    return {
-      outcome: "completed",
-      ticket: boundary.ticket,
-    };
   }
-}
-
-export function pullRequestOverride(value: string): PullRequestIdentity {
-  const trimmed = value.trim();
-  let number: number;
-  let url: string;
-  try {
-    const parsed = JSON.parse(trimmed) as {
-      number?: unknown;
-      url?: unknown;
-    };
-    number = Number(parsed.number);
-    url = typeof parsed.url === "string" ? parsed.url : "";
-  } catch {
-    const match = /\/pull\/(\d+)\/?$/u.exec(trimmed);
-    number = Number(match?.[1]);
-    url = trimmed;
-  }
-  if (!Number.isSafeInteger(number) || number <= 0 || url.length === 0)
-    throw new Error("override has no Pull Request identity");
-  return { number, url };
 }

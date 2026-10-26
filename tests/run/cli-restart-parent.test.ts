@@ -140,7 +140,7 @@ test("restart abandons an absent pending push and creates fresh work", async () 
   assert.notEqual(pushed[0], intent.stableBranch);
 });
 
-test("restart pauses on an unexpected remote branch head", async () => {
+test("publication recovery rejects overrides and retries observation only on Enter", async () => {
   const root = await createProject();
   const intent = publicationIntent("pending_push");
   await writePublicationState(root, [intent]);
@@ -149,12 +149,15 @@ test("restart pauses on an unexpected remote branch head", async () => {
   tickets[0]!.assignees = ["runner"];
   let agentCalls = 0;
   let pauses = 0;
+  let remoteReads = 0;
+  const responses = ["trusted remote state", "", "q"];
   const result = await executeCli(
     ["run", "--project", "demo", "--parent", "8"],
     createCliDependencies(root, {
       tracker,
       codeHost: {
         async getRemoteBranchHead() {
+          remoteReads += 1;
           return "ffffffffffffffffffffffffffffffffffffffff";
         },
       },
@@ -167,7 +170,7 @@ test("restart pauses on an unexpected remote branch head", async () => {
       operator: {
         async pause() {
           pauses += 1;
-          return "q";
+          return responses.shift() ?? "q";
         },
       },
     }),
@@ -175,7 +178,8 @@ test("restart pauses on an unexpected remote branch head", async () => {
 
   assert.equal(result.summary.outcome, "cancelled");
   assert.equal(agentCalls, 0);
-  assert.equal(pauses, 1);
+  assert.equal(pauses, 3);
+  assert.equal(remoteReads, 2);
 });
 
 test("restart creates one absent Pull Request after rechecking the remote head", async () => {

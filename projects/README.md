@@ -1,112 +1,133 @@
-# Project Template
+# Project setup
 
-This directory is a project template for Sandcastle Runner. Copy it to `projects/<project-key>` and adapt `config.yaml` and the prompts.
+Copy `projects/sandcastle-runner/` to `projects/<project-key>/`, then edit
+`config.yaml` and `prompts/*.md`. Install and authenticate Git, GitHub CLI, and
+each selected agent CLI on the host; see [host setup](../README.md#prerequisites).
+Export the credential variables named in your config, for example `GH_TOKEN`.
+Keep tokens out of committed files.
 
-## `config.yaml`
+## Configuration
 
-- `repository`: GitHub repository in `owner/name` form.
-- `checkout`: absolute path to that repository.
-- `issueList`: unique positive issue numbers used to limit Parent Runs or drive value-less Standalone Runs.
-- `maxBatchSize`: required positive safe integer limiting newly discovered Parent and Standalone Batches.
-- `targetBranch`: branch to update.
-- `tracker`: GitHub settings: `tokenEnv` names the credential variable; `runnerAccount` is the bot/user; `reservationLabel` marks reserved tickets.
-- `codeHost`: GitHub settings; `tokenEnv` names the credential variable and `adminMerge` controls administrative merge requests.
-- `workflow.review`: enable or disable the review attempt.
-- `workflow.docMaintainTriggerLabel`: exact, case-sensitive label that triggers automatic Documentation Maintenance after a successful Batch. Omitted, empty, or whitespace-only values disable automatic maintenance.
-- `agents`: an `agent`, `model`, and optional native `options` for `implement`, `review`, `ciRepair`, `conflictRepair`, and `documentation` purposes. Each purpose is independent, and the same agent may be reused. `review` is needed when enabled; `documentation` is needed for a nonempty trigger label or `--document`, and both automatic and standalone Documentation Maintenance use it.
-- `timeouts`: required positive minute limits for agent attempts, required checks, and merge queue confirmation.
-- `operationRetry` and `agentRetry`: non-negative automatic retry counts; the corresponding `*Delay` arrays are positive delays in seconds. Follow [ADR-0001](../docs/adr/0001-configurable-retry-policy.md): counts are additional attempts after the initial one, and the final delay is reused.
-- `ticketClosure`: `runner` or `code_host`.
-- `maintenanceTicket`: title, body, and `doc-maintain` label for maintenance tickets.
+- `repository`: GitHub `owner/name`; `checkout`: absolute repository path.
+- `targetBranch`: branch to integrate into; omitted means resolve it from GitHub.
+- `issueList`: unique positive issue numbers; `[]` leaves Parent Runs unrestricted.
+  Value-less `--issue` processes this list as Standalone Issues.
+- `maxBatchSize`: required positive integer limiting concurrent tickets.
+- `tracker`: `type: github`, credential `tokenEnv`, `runnerAccount`, and
+  `reservationLabel`. `codeHost`: `type: github`, credential `tokenEnv`, and
+  required `adminMerge` boolean.
+- `agents`: profiles for `implement`, `review`, `ciRepair`, `conflictRepair`,
+  and `documentation`. Each needs an explicit `agent` and `model`; optional
+  native `options` pass through unchanged. Supported agents are `codex`,
+  `claude-code`, and `pi`. Codex/Claude Code use `options.effort`; Pi uses
+  `options.thinking`. Switching agents may require different options.
+- `workflow.review`: defaults to `true`; enabled review needs its profile and
+  prompt. `workflow.docMaintainTriggerLabel`: exact, case-sensitive label for
+  automatic maintenance; omitted or blank disables it. Maintenance needs its
+  profile, prompt, and `maintenanceTicket` title, body, and label, including
+  when invoked with `--document`.
+- `operationRetry` and `agentRetry`: required non-negative counts of additional
+  automatic attempts. Required `operationRetryDelay` and `agentRetryDelay` arrays
+  contain positive seconds; the final delay repeats. See [retry policy](../docs/adr/0001-configurable-retry-policy.md).
+- `timeouts`: required positive minutes for `agentMinutes`,
+  `requiredChecksMinutes`, and `mergeQueueMinutes`.
+- `ticketClosure`: `runner` closes tickets after merge; `code_host` waits for
+  GitHub to confirm closure from the agent-authored PR body.
 
-Keep credentials in the environment, for example `export GH_TOKEN=...`. `workflow.review` defaults to `true`; `workflow.docMaintainTriggerLabel` defaults to an empty string. Use YAML `#` comments for explanations; the loader ignores them.
+If native session lookup misses the agent's actual storage, set
+`agents.<purpose>.options.sessionStorage.hostSessionsDir` for Codex/Pi or
+`hostProjectsDir` for Claude Code. These paths select existing session storage.
 
-Each configured agent profile selects one supported native Sandcastle factory
-and forwards `options` to it unchanged. `agent`, `model`, and the profile key
-are distinct: the model string never selects the agent, and the profile key
-selects the workflow purpose. Codex and Claude Code accept native `effort`; Pi
-accepts native `thinking`. Native options are agent-specific, so switching
-agents does not translate them or promise that the previous options remain
-valid.
+## Running a project
 
-There is no default agent or model. A profile must name both explicitly. Migrate
-an older profile by adding `agent: codex`, preserving its `model` verbatim, and
-moving `reasoningEffort` verbatim to `options.effort`, including a value such as
-`max`. The obsolete field is rejected even when the new fields are present;
-Runner does not backfill or convert it.
+From the Runner checkout:
 
-Each Agent Attempt probes a `SESSION_READY` session with the purpose's profile,
-then resumes that same session through Sandcastle for the substantive work.
-Runner does not read `CODEX_HOME` or infer a lookup root for the selected agent
-from the OS home directory. If Sandcastle's default session lookup does not
-match the agent's actual storage, set the native lookup root:
-`sessionStorage.hostSessionsDir` for Codex or Pi, or
-`sessionStorage.hostProjectsDir` for Claude Code. This selects where sessions
-are looked up and does not relocate the agent's storage. Whether an override is
-needed depends on whether the default matches actual storage, not solely on the
-operating system. The former automatic Codex directory discovery is removed.
-
-Native run names identify Agent Attempt tasks in log output, but do not title
-the agent application's session list. Runner intentionally does not guarantee
-application-session titles. When automatic recovery stops, Operator Pause shows
-the selected agent, the session ID when available, the working directory, the
-diagnostic log, and the permitted Runner actions. The log path is shown even
-when a session ID is available. It does not print a copyable manual resume
-command; take over with the selected agent's own recovery interface using that
-evidence.
-
-Ordinary Sandcastle invocation failures are handled generically, without
-agent-name or provider-error-text classification. Successful process settlement
-precedes every automatic probe retry, same-session continuation, missing-output
-recovery, or structured-output correction. A missing or unusable session enters
-manual handling rather than a fresh conversation. Authentication and
-configuration errors can consume the bounded Agent Retry budget before pausing,
-and native structured-output retries do not cover every invocation failure.
-Cancellation stops automatic work after settlement, while a substantive
-timeout pauses without restarting the invocation or resetting its total
-deadline. A schema-valid success still proceeds through normal outcomes and
-independent Git verification even if its output mentions an internal provider
-error; Runner does not inspect provider-specific raw events to replace that
-decision.
-
-## Documentation Maintenance workflow
-
-At the normal post-Batch scheduling point, one automatic occurrence is required when at least one successfully delivered issue had the configured `workflow.docMaintainTriggerLabel` when its merged, completed closure was confirmed. Multiple matches in the same Batch still schedule one occurrence. Parent labels, delivery counts, Parent closeout, failed Batches, cancellation, and CI-ready unmerged Pull Requests do not trigger maintenance.
-
-```mermaid
-flowchart TD
-    A[Batch integrations complete] --> B{Any completed issue has exact trigger label?}
-    B -- No --> C[Continue delivery or Parent closeout]
-    B -- Yes --> D[Create or resume Maintenance Ticket]
-    D --> E[Run documentation prompt]
-    E --> F{Result}
-    F -- no_change --> G[Close Maintenance Ticket]
-    F -- committed --> H[Publish, checks, repair, merge, and confirm closure]
-    F -- blocked or failed --> I[Retain barrier for automatic recovery]
+```sh
+npm exec -- sandcastle-runner run --project <project-key> --parent <issue-number>
+npm exec -- sandcastle-runner run --project <project-key> --issue <issue-number>
+npm exec -- sandcastle-runner run --project <project-key> --issue
+npm exec -- sandcastle-runner run --project <project-key> --document
 ```
 
-Delivery-time labels are stored in the Recovery Snapshot. On restart, the current `config.yaml` trigger is evaluated against that stored evidence. An empty or newly nonmatching trigger stops continuation without closing or deleting the existing Maintenance Ticket, Pull Request, branch, or Worktree; their recorded locations are reported for manual handling.
+Runner reserves eligible tickets, prepares worktrees, implements, optionally
+reviews, publishes, checks CI, repairs, merges, and confirms ticket closure.
+Use `--no-auto-merge` with a numbered `--issue` to leave its validated PR open.
 
-`--document` runs one fresh, complete occurrence without a Parent or issue scope. It ignores `issueList`, does not require a trigger label, never resumes prior maintenance, and preserves the ordinary no-change behavior without creating an empty Pull Request.
+Automatic Documentation Maintenance runs once after a Batch if a successfully
+delivered issue had the trigger label at completion. `--document` starts a fresh
+standalone occurrence regardless of that label or `issueList`. No-change
+maintenance closes its ticket without an empty PR. Delivery Runs resume from
+Recovery Snapshots; disabling or changing the trigger can leave recorded
+maintenance artifacts for manual handling. Check the final report for retained
+worktrees, PRs, and logs.
 
-## Review enabled versus disabled
+## Operator Pause
 
-```mermaid
-flowchart TD
-    A[Implementation attempt] --> B{workflow.review}
-    B -- true --> C[Fresh-context review]
-    C --> D{Review passes?}
-    D -- No --> E[Fix, commit, and review again]
-    E --> C
-    D -- Yes --> F[Publish pull request]
-    B -- false --> F
-    F --> G[Checks, repair if needed, merge, and close ticket]
+Non-agent operations, including audit writes and completion checks, offer:
+
+```text
+Operation failed. Enter to retry, q to cancel.
+>
 ```
+
+Fix the external problem, then press Enter to retry with a fresh automatic
+budget where applicable. Enter `q`, or send EOF, to cancel. Other input stays
+paused and prints `Unsupported input. Enter to retry, q to cancel.` It cannot
+mark an operation successful, confirm a merge/closure, or accept an audit gap.
+
+An agent blocked in an existing session offers recovery instructions:
+
+```text
+Outcome: blocked
+Reason: Repository access is unavailable
+Agent: codex
+Provider session: session-123
+Working directory: /workspace/project/worktree
+Diagnostic log: /workspace/project/logs/agent.log
+Actions: Enter to continue, s to skip, q to cancel, or provide recovery instructions.
+> Repository access is restored. Continue the task.
+```
+
+Use the session ID with the selected agent's recovery interface, inspect the
+working directory and diagnostic log, then enter instructions to continue that
+session. Enter sends a continuation; `s` skips this ticket's attempt; `q` or EOF
+cancels. Follow the displayed actions; there is no universal resume command.
+
+A failed implementation attempt can instead accept a trusted result:
+
+```text
+Outcome: failed
+Reason: Provider session unavailable or unrecoverable for continuation
+Agent: codex
+Provider session: session-123
+Working directory: /workspace/project/worktree
+Diagnostic log: /workspace/project/logs/agent.log
+Actions: Enter to retry, s to skip, q to cancel, or supply a trusted result.
+> {"outcome":"committed","pr_title":"fix: [issue-42] restore repository access","pr_body":"Restore repository access.\n\nCloses #42"}
+```
+
+This trusted input requires `outcome: "committed"` and nonempty `pr_title` and
+`pr_body` for initial implementation or maintenance. It bypasses normal agent
+result and Git handoff verification, so use it only after independently
+confirming the work. It is distinct from instructions sent to the agent.
+Failed repair attempts can reuse existing PR metadata. A failed session probe
+without a usable session offers only Enter to retry, `s` to skip, or `q`/EOF to
+cancel; it accepts neither instructions nor trusted success.
 
 ## Prompt placeholders
 
-- `implement.md`: `TICKET_NUMBER` (issue number), `TICKET_REFERENCE` (authoritative issue reference), `WORKTREE_PATH` (isolated worktree), `SOURCE_BRANCH` (delivery branch), `BASE_SHA` (worktree base commit), `PROJECT_TARGET_BRANCH` (configured target branch).
-- `ci-repair.md`: the implementation fields above, plus `PULL_REQUEST_NUMBER` and `PULL_REQUEST_URL` (existing pull request), and `FAILED_CHECKS` (failed required checks and links).
-- `conflict-repair.md`: the same ticket, worktree, branch, and base fields, plus `PULL_REQUEST_NUMBER`, `PULL_REQUEST_URL`, `TARGET_BRANCH_SHA` (fresh target branch commit), and `MERGE_CONFLICT` (reported conflict details).
-- `documentation.md`: `TICKET_NUMBER`, `TICKET_REFERENCE`, `WORKTREE_PATH`, `SOURCE_BRANCH`, and `PROJECT_TARGET_BRANCH`.
-- `review.md`: `REVIEW_HANDOFF`, a JSON review context containing repository, branches, worktree, fixed point, ticket/spec snapshots, instructions, and reported checks.
+Use `{{NAME}}` in prompt files. Common fields are `TICKET_NUMBER`,
+`TICKET_REFERENCE` (authoritative issue), `WORKTREE_PATH`, `SOURCE_BRANCH`,
+`BASE_SHA`, and `PROJECT_TARGET_BRANCH`.
+
+- `implement.md`: all common fields.
+- `ci-repair.md`: common fields plus `PULL_REQUEST_NUMBER`,
+  `PULL_REQUEST_URL`, and `FAILED_CHECKS`.
+- `conflict-repair.md`: common fields plus `PULL_REQUEST_NUMBER`,
+  `PULL_REQUEST_URL`, `TARGET_BRANCH_SHA`, and `MERGE_CONFLICT`.
+- `documentation.md`: common fields except `BASE_SHA`.
+- `review.md`: `REVIEW_HANDOFF` (JSON with ticket/spec snapshots, standards,
+  branch/worktree context, fixed point, and reported checks), plus
+  `PROJECT_TARGET_BRANCH`.
+
+Runner appends its output protocol; project prompts describe the task.

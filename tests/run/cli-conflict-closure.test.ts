@@ -355,7 +355,7 @@ test("an open code_host ticket after both closure reads enters Operator Pause wi
   assert.match(pauseMessage, /not closed as completed/u);
 });
 
-test("trusted completion releases the observed Reservation unless the Parent was cancelled", async () => {
+test("completion acknowledgements never release a Reservation or credit an open ticket", async () => {
   for (const cancelParent of [false, true]) {
     const root = await createProject();
     await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
@@ -365,6 +365,7 @@ test("trusted completion releases the observed Reservation unless the Parent was
     const delivery = createCommittedDelivery();
     let parentCancelled = false;
     let releases = 0;
+    const responses = ["trusted completion", "q"];
 
     const result = await executeCli(
       ["run", "--project", "demo", "--parent", "8"],
@@ -391,15 +392,14 @@ test("trusted completion releases the observed Reservation unless the Parent was
         operator: {
           async pause() {
             parentCancelled = cancelParent;
-            return cancelParent ? "q" : "trusted completion";
+            return cancelParent ? "q" : (responses.shift() ?? "q");
           },
         },
       }),
     );
-    assert.deepEqual(
-      result.summary.completedTickets ?? [],
-      cancelParent ? [] : [9],
-    );
-    assert.equal(releases, cancelParent ? 0 : 2);
+    assert.equal(result.summary.outcome, "cancelled");
+    assert.deepEqual(result.summary.completedTickets ?? [], []);
+    assert.equal(releases, 0);
+    if (!cancelParent) assert.equal(responses.length, 0);
   }
 });

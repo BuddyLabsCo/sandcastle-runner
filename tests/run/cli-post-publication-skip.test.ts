@@ -191,8 +191,9 @@ for (const repair of ["ci", "conflict"] as const) {
         },
       },
       codeHost: {
-        async getRemoteBranchHead() {
-          return "b".repeat(40);
+        async getRemoteBranchHead(_repository, branch) {
+          const ticket = /ticket-(\d+)(?:-|$)/u.exec(branch)![1]!;
+          return ticket.at(-1)!.repeat(40);
         },
         async createPullRequest({ branch }) {
           const ticket = Number(branch.split("-").at(-1));

@@ -13,13 +13,14 @@ import { executeCli } from "../../src/cli.ts";
 
 test.afterEach(cleanupTempRoots);
 
-test("cancelling an exhausted conflict budget stops before republishing or remerge", async () => {
+test("an exhausted conflict budget rejects trusted repair input before cancellation", async () => {
   const runNames: string[] = [];
   const root = await createProject();
   const delivery = createCommittedDelivery();
   let agentCalls = 0;
   let pushes = 0;
   let mergeRequests = 0;
+  const responses = ["trusted repair", "q"];
 
   const result = await executeCli(
     ["run", "--project", "demo", "--parent", "8"],
@@ -31,7 +32,7 @@ test("cancelling an exhausted conflict budget stops before republishing or remer
           const evidence = await delivery.gitWorkspace.inspect!(input);
           return {
             ...evidence,
-            commits: agentCalls === 3 ? [] : evidence.commits,
+            commits: agentCalls >= 2 ? [] : evidence.commits,
           };
         },
         async push() {
@@ -42,18 +43,7 @@ test("cancelling an exhausted conflict budget stops before republishing or remer
         async execute(input) {
           runNames.push(input.runName);
           agentCalls += 1;
-          if (agentCalls === 2) {
-            return {
-              outcome: "blocked",
-              summary: "conflict remains",
-              commits: [],
-              checks: [],
-              blocker: "conflict remains",
-              pr_title: "unused",
-              pr_body: "unused",
-            };
-          }
-          if (agentCalls === 3) {
+          if (agentCalls >= 2) {
             return {
               outcome: "no_change",
               summary: "no safe resolution",
@@ -84,17 +74,18 @@ test("cancelling an exhausted conflict budget stops before republishing or remer
       operator: {
         async pause(message) {
           assert.match(message, /Conflict repair failed after two attempts/u);
-          return "q";
+          return responses.shift() ?? "q";
         },
       },
     }),
   );
 
   assert.equal(result.summary.outcome, "cancelled");
-  assert.equal(agentCalls, 2);
+  assert.equal(agentCalls, 3);
   assert.equal(pushes, 1);
   assert.equal(mergeRequests, 1);
   assert.equal(runNames[1], "resolve conflict for pr 1");
+  assert.equal(responses.length, 0);
 });
 
 test("Parent cancellation after conflict repair verification prevents its first push", async () => {

@@ -201,10 +201,11 @@ test("q and EOF at an exhausted external read cancel the Run", async () => {
   }
 });
 
-test("an unusable read override pauses again and never enters the audit log", async () => {
+test("read pauses reject malformed and formerly valid overrides without retrying", async () => {
   const root = await createProject();
   let parentCalls = 0;
-  const responses = ["{}", '{"state":"open"}'];
+  const responses = ["{}", '{"state":"open"}', "s"];
+  const messages: string[] = [];
   const result = await executeCli(
     ["run", "--project", "demo", "--parent", "8"],
     createCliDependencies(root, {
@@ -215,7 +216,8 @@ test("an unusable read override pauses again and never enters the audit log", as
         },
       },
       operator: {
-        async pause() {
+        async pause(message) {
+          messages.push(message);
           return responses.shift() ?? "q";
         },
       },
@@ -224,19 +226,22 @@ test("an unusable read override pauses again and never enters the audit log", as
 
   assert.ok(result.logPath);
   const log = await readFile(result.logPath, "utf8");
-  assert.equal(result.summary.outcome, "no_work");
+  assert.equal(result.summary.outcome, "cancelled");
   assert.equal(parentCalls, 5);
   assert.equal(responses.length, 0);
   assert.equal(log.includes('"operator_override":"{}"'), false);
-  assert.equal(log.includes("operator_override"), true);
+  assert.equal(log.includes("operator_override"), false);
+  assert.equal(messages.length, 4);
+  assert.match(messages[1]!, /Enter to retry, q to cancel/u);
 });
 
-test("a child read override without repository pauses again", async () => {
+test("child read overrides cannot substitute for a successful retry", async () => {
   const root = await createProject();
   let childCalls = 0;
   const responses = [
     '{"children":[{"number":9,"state":"closed","stateReason":"completed"}],"nextPage":null}',
     '{"children":[{"number":9,"state":"closed","stateReason":"completed","repository":"owner/repo"}],"nextPage":null}',
+    "",
   ];
   const result = await executeCli(
     ["run", "--project", "demo", "--parent", "8"],
@@ -269,10 +274,13 @@ test("a child read override without repository pauses again", async () => {
   );
 
   assert.equal(result.summary.outcome, "succeeded");
-  assert.equal(childCalls, 6);
+  assert.equal(childCalls, 7);
   assert.equal(responses.length, 0);
   assert.ok(result.logPath);
-  assert.match(await readFile(result.logPath, "utf8"), /invalid_override/u);
+  assert.doesNotMatch(
+    await readFile(result.logPath, "utf8"),
+    /operator_override/u,
+  );
 });
 
 test("empty Operator Pause input resets the complete read budget", async () => {
@@ -343,9 +351,10 @@ test("a failed Parent close retries automatically without Operator Pause", async
   assert.equal(pauseCalls, 0);
 });
 
-test("a nonempty write override stops replay after automatic retries", async () => {
+test("write pauses reject success acknowledgements without replaying the write", async () => {
   const root = await createProject();
   let closeCalls = 0;
+  const responses = ["I confirmed the write", "q"];
   const result = await executeCli(
     ["run", "--project", "demo", "--parent", "8"],
     createCliDependencies(root, {
@@ -370,13 +379,13 @@ test("a nonempty write override stops replay after automatic retries", async () 
       },
       operator: {
         async pause() {
-          return "I confirmed the write";
+          return responses.shift() ?? "q";
         },
       },
     }),
   );
 
-  assert.equal(result.summary.outcome, "succeeded");
+  assert.equal(result.summary.outcome, "cancelled");
   assert.equal(closeCalls, 5);
   assert.ok(result.logPath);
   assert.equal(

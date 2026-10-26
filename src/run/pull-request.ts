@@ -24,7 +24,6 @@ import {
   waitForMerge,
   confirmCompletion,
   persistedBudget,
-  pullRequestOverride,
   stopped,
   DeliveryBoundaryChanged,
   type PublicationInput,
@@ -83,7 +82,6 @@ export async function integratePullRequest(
           if (result.outcome === "rejected") throw new Error(result.error);
           return result;
         },
-        parseOverride: () => ({ outcome: "accepted" }),
         beforeRetry: async () => {
           const changed = await revalidateActiveTicket(input, handoff.ticket);
           if (changed.outcome !== "ready") {
@@ -242,7 +240,6 @@ export async function publishVerifiedHandoffs(
             title: handoff.prTitle,
             body: handoff.prBody,
           }),
-        parseOverride: pullRequestOverride,
         audit: input.audit,
         clock: input.clock,
         event: () =>

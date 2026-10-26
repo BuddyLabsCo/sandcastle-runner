@@ -44,6 +44,61 @@ const noChangeResult = {
   blocker: null,
 };
 
+test("no-change maintenance rejects completion acknowledgements and verifies a retried closure", async () => {
+  const root = await createProject();
+  const ticket: Ticket = {
+    number: 100,
+    state: "open",
+    stateReason: null,
+    labels: ["doc-maintain"],
+    assignees: [],
+  };
+  let closures = 0;
+  let branch = "";
+  const responses = ["trusted completion", ""];
+  const result = await executeCli(
+    ["run", "--project", "demo", "--document"],
+    createCliDependencies(root, {
+      tracker: {
+        async createMaintenanceTicket() {
+          return ticket;
+        },
+        async closeTicket() {
+          closures += 1;
+          if (closures === 2) {
+            ticket.state = "closed";
+            ticket.stateReason = "completed";
+          }
+        },
+      },
+      gitWorkspace: {
+        async createWorktree(input) {
+          branch = input.branch;
+        },
+        async inspect({ worktree, base }) {
+          return { worktree, base, branch, commits: [], clean: true };
+        },
+      },
+      agentExecutor: {
+        async execute() {
+          return { ...noChangeResult, commits: [], checks: [] };
+        },
+      },
+      operator: {
+        async pause(message) {
+          assert.match(message, /not closed as completed/u);
+          return responses.shift() ?? "q";
+        },
+      },
+    }),
+  );
+
+  assert.equal(result.summary.outcome, "succeeded");
+  assert.equal(closures, 2);
+  assert.equal(responses.length, 0);
+  assert.equal(ticket.stateReason, "completed");
+});
+
 test("nonmatching deliveries and Parent closeout do not trigger maintenance", async () => {
   const root = await createMaintenanceProject();
   const delivery = createCommittedBatch(9, 10, 11);

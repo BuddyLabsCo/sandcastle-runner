@@ -8,10 +8,12 @@ import type { AgentConfig } from "../config.ts";
 import { agentLogFile, agentLogStage } from "./agent-logs.ts";
 import {
   agentPauseMessage,
+  failedSessionProbe,
   pauseAgentAttempt,
   skipTicketAgentAttempt,
   TicketSkipped,
   ticketAgentContinueActions,
+  ticketAgentProbeActions,
   ticketAgentRetryActions,
 } from "./agent-pause.ts";
 import type {
@@ -183,7 +185,8 @@ export async function runAgentOperation(
   let attemptId = "";
   let logFile = "";
   let event!: Omit<AuditEvent, "result" | "error">;
-  const pause = (message: string) => pauseAgentAttempt(input, event, message);
+  const pause = (message: string, allowsContinuation = true) =>
+    pauseAgentAttempt(input, event, message, allowsContinuation);
   for (;;) {
     await boundary(input, operation.ticket);
     const resumePrompt = continuationPrompt;
@@ -401,6 +404,7 @@ export async function runAgentOperation(
         diagnostics,
       );
       if (diagnostics.retryable === false) {
+        const probeFailed = failedSessionProbe(diagnostics);
         for (;;) {
           const decision = await pause(
             agentPauseMessage(
@@ -408,8 +412,9 @@ export async function runAgentOperation(
               diagnostics,
               operation.worktree,
               undefined,
-              ticketAgentRetryActions,
+              probeFailed ? ticketAgentProbeActions : ticketAgentRetryActions,
             ),
+            !probeFailed,
           );
           if (decision.decision === "skip")
             return await skipTicketAgentAttempt(

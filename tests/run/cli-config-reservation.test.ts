@@ -309,7 +309,7 @@ test("enabled Documentation Maintenance rejects an empty prompt", async () => {
   assert.equal(result.logPath, null);
 });
 
-test("an accepted audit creation gap does not suppress later appends", async () => {
+test("audit creation rejects a gap acknowledgement until Enter retries the write", async () => {
   const root = await createProject();
   const logs = path.join(root, "projects", "demo", "logs");
   await writeFile(logs, "blocks directory creation");
@@ -320,16 +320,17 @@ test("an accepted audit creation gap does not suppress later appends", async () 
       operator: {
         async pause() {
           pauseCalls += 1;
+          if (pauseCalls === 1) return "accept this audit gap";
           await rm(logs);
           await mkdir(logs);
-          return "accept this audit gap";
+          return "";
         },
       },
     }),
   );
 
   assert.equal(result.summary.outcome, "no_work");
-  assert.equal(pauseCalls, 1);
+  assert.equal(pauseCalls, 2);
   assert.ok(result.logPath);
   assert.match(await readFile(result.logPath, "utf8"), /read_parent/u);
 });
@@ -405,7 +406,7 @@ test("an omitted Target Branch is resolved once through CodeHost and fixed for t
   assert.equal(branchCalls, 1);
 });
 
-test("a trusted Target Branch override uses the project term", async () => {
+test("Target Branch discovery rejects a trusted result and stays paused", async () => {
   const root = await createProject();
   const configPath = path.join(root, "projects", "demo", "config.yaml");
   const configWithoutBranch = { ...validConfig };
@@ -431,10 +432,10 @@ test("a trusted Target Branch override uses the project term", async () => {
     }),
   );
 
-  assert.equal(result.summary.outcome, "no_work");
-  assert.equal(result.summary.targetBranch, "trunk");
+  assert.equal(result.summary.outcome, "cancelled");
+  assert.equal(result.summary.targetBranch, "unresolved");
   assert.equal(branchCalls, 5);
-  assert.equal(pauseCalls, 1);
+  assert.equal(pauseCalls, 2);
 });
 
 test("open children return an actionable incomplete summary", async () => {

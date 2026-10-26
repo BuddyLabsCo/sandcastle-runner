@@ -6,6 +6,7 @@ import test from "node:test";
 import { cleanupTempRoots } from "../support/temp-cleanup.ts";
 import {
   createCliDependencies,
+  createCommittedDelivery,
   createAttemptTracker,
 } from "../support/cli-dependencies.ts";
 import {
@@ -25,42 +26,13 @@ test("required-check timeout enters Operator Pause", async () => {
   });
   let elapsed = 0;
   let discoveryDelays = 0;
-  let branch = "";
   let pauseMessage = "";
-  const responses = ["", "q"];
-  const commit = {
-    sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-    message: "feat: implementation",
-  };
-  const { tracker } = createAttemptTracker(9);
+  const responses = ["trusted readiness", "", "q"];
+  const delivery = createCommittedDelivery();
   const result = await executeCli(
     ["run", "--project", "demo", "--parent", "8"],
     createCliDependencies(root, {
-      tracker,
-      gitWorkspace: {
-        async fetchTargetBranch() {
-          return "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        },
-        async createWorktree(input) {
-          branch = input.branch;
-        },
-        async inspect({ worktree, base }) {
-          return { worktree, branch, base, commits: [commit], clean: true };
-        },
-      },
-      agentExecutor: {
-        async execute() {
-          return {
-            outcome: "committed",
-            summary: "implemented",
-            commits: [commit],
-            checks: [],
-            blocker: null,
-            pr_title: "feat: implementation",
-            pr_body: "Implementation body.",
-          };
-        },
-      },
+      ...delivery,
       codeHost: {
         async createPullRequest() {
           return { number: 41, url: "https://github.com/owner/repo/pull/41" };
@@ -95,6 +67,7 @@ test("required-check timeout enters Operator Pause", async () => {
   assert.equal(result.summary.outcome, "cancelled");
   assert.match(pauseMessage, /Required checks timed out/u);
   assert.equal(discoveryDelays, 1);
+  assert.equal(responses.length, 0);
 });
 
 test("a successful publication write is not replayed when its result audit is cancelled", async () => {
@@ -103,6 +76,7 @@ test("a successful publication write is not replayed when its result audit is ca
   let branch = "";
   let pushCalls = 0;
   let damagedLog = "";
+  let auditPauses = 0;
   const commit = {
     sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     message: "feat: implementation",
@@ -149,6 +123,8 @@ test("a successful publication write is not replayed when its result audit is ca
       operator: {
         async pause() {
           if (damagedLog) {
+            auditPauses += 1;
+            if (auditPauses === 1) return "accept this audit gap";
             await rm(damagedLog, { recursive: true });
             await writeFile(damagedLog, "");
             damagedLog = "";
@@ -162,14 +138,16 @@ test("a successful publication write is not replayed when its result audit is ca
 
   assert.equal(result.summary.outcome, "cancelled");
   assert.equal(pushCalls, 1);
+  assert.equal(auditPauses, 2);
 });
 
-test("an uncertain push retries automatically while Pull Request creation pauses", async () => {
+test("an uncertain push retries automatically while Pull Request creation rejects overrides", async () => {
   for (const failedWrite of ["push", "create"] as const) {
     const root = await createProject();
     let branch = "",
       pushCalls = 0,
       createCalls = 0;
+    const responses = ["https://github.com/owner/repo/pull/41", "q"];
     const commit = {
       sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       message: "feat: implementation",
@@ -224,13 +202,19 @@ test("an uncertain push retries automatically while Pull Request creation pauses
         operator: {
           async pause() {
             if (failedWrite === "push") throw new Error("unexpected pause");
-            return "https://github.com/owner/repo/pull/41";
+            return responses.shift() ?? "q";
           },
         },
       }),
     );
 
-    assert.equal(result.summary.pullRequests?.[0]?.number, 41);
+    if (failedWrite === "push")
+      assert.equal(result.summary.pullRequests?.[0]?.number, 41);
+    else {
+      assert.equal(result.summary.outcome, "cancelled");
+      assert.deepEqual(result.summary.pullRequests ?? [], []);
+      assert.equal(responses.length, 0);
+    }
     assert.equal(pushCalls, failedWrite === "push" ? 2 : 1);
     assert.equal(createCalls, 1);
   }

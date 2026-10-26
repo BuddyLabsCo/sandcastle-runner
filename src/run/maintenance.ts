@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- recovery and publication transitions remain explicit. */
 import type { AgentConfig } from "../config.ts";
 import { runMaintenanceAttempt, type VerifiedHandoff } from "./attempt.ts";
 import type { LabelPage, Ticket } from "./contracts.ts";
@@ -7,12 +6,7 @@ import {
   revalidateStandaloneMaintenanceTicket,
   type TicketBoundary,
 } from "./discovery.ts";
-import {
-  externalRead,
-  pauseForOperator,
-  recordOperatorOverride,
-  workflowWrite,
-} from "./operations.ts";
+import { externalRead, pauseForOperator, workflowWrite } from "./operations.ts";
 import {
   integratePullRequest,
   observePullRequestForIntegration,
@@ -41,32 +35,6 @@ export interface MaintenanceResult {
   ticket?: number;
   handoff?: VerifiedHandoff;
   pullRequest?: PullRequestObservation;
-}
-
-function labelPage(value: string): LabelPage {
-  const parsed = JSON.parse(value) as Partial<LabelPage>;
-  if (
-    !Array.isArray(parsed.labels) ||
-    parsed.labels.some((label) => typeof label !== "string") ||
-    (parsed.nextPage !== null && !Number.isSafeInteger(parsed.nextPage))
-  ) {
-    throw new Error("override has no usable label page");
-  }
-  return { labels: parsed.labels, nextPage: parsed.nextPage ?? null };
-}
-
-function createdTicket(value: string, label: string): Ticket {
-  const parsed = JSON.parse(value) as { number?: unknown };
-  if (!Number.isSafeInteger(parsed.number) || Number(parsed.number) <= 0) {
-    throw new Error("override has no Maintenance Ticket number");
-  }
-  return {
-    number: parsed.number as number,
-    state: "open",
-    stateReason: null,
-    assignees: [],
-    labels: [label, "ready-for-agent"],
-  };
 }
 
 function stopped(
@@ -113,7 +81,6 @@ async function maintenanceLabelExists(
     const current: number = page;
     const labels = await externalRead<LabelPage>({
       action: () => input.tracker.listLabelsPage(input.repository, current),
-      parseOverride: labelPage,
       audit: input.audit,
       event: input.event("maintenance", "read_labels", `page:${current}`),
       clock: input.clock,
@@ -225,25 +192,12 @@ async function closeNoChange(
       "confirm_no_change_closure",
       `ticket:${ticket}`,
     )(1);
-    const response = await pauseForOperator(
+    await pauseForOperator(
       input.audit,
       event,
       input.operator,
-      `Maintenance Ticket ${ticket} is not closed as completed. Enter to retry, q to cancel, or acknowledge trusted completion.`,
+      `Maintenance Ticket ${ticket} is not closed as completed. Enter to retry, q to cancel.`,
     );
-    if (response === "") continue;
-    await recordOperatorOverride(input.audit, event, input.operator);
-    await input.persistMaintenance?.({
-      phase: "completed",
-      ticket,
-      deliveryTickets: input.recovery?.deliveryTickets ?? [],
-      barrier: false,
-    });
-    return {
-      outcome: "succeeded",
-      reasons: [`Completed Maintenance Ticket ${ticket} with no changes`],
-      ticket,
-    };
   }
 }
 
@@ -285,8 +239,6 @@ export async function runDocumentationMaintenance(
           input.maintenanceTicket.body,
           input.maintenanceTicket.label,
         ),
-      parseOverride: (value) =>
-        createdTicket(value, input.maintenanceTicket.label),
       audit: input.audit,
       clock: input.clock,
       event: () =>

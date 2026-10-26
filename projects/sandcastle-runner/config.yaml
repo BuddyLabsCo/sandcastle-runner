@@ -1,5 +1,3 @@
-# Replace repository, checkout, runnerAccount, and targetBranch for your Project. checkout must be absolute. ticketClosure is runner or code_host.
-
 repository: BuddyLabsCo/sandcastle-runner
 checkout: /home/xiakeng/Desktop/workspace/sandcastle-runner-checkout/
 issueList: []
@@ -21,54 +19,43 @@ maintenanceTicket:
   body: n/a
   label: doc-maintain
 workflow:
-  # Review defaults to true; an empty documentation trigger label disables automatic maintenance.
   review: true
-  docMaintainTriggerLabel: ""
 tracker:
-  # GitHub tracker settings. tokenEnv names an environment variable; reservationLabel marks Runner-owned Delivery Tickets.
   type: github
   tokenEnv: GH_TOKEN
   runnerAccount: xiakeng
   reservationLabel: sandcastle:reserved
 codeHost:
-  # GitHub Pull Request settings. adminMerge allows or forbids administrative squash merge requests.
   type: github
   tokenEnv: GH_TOKEN
   adminMerge: true
 agents:
-  # Each Agent Attempt selects a supported native agent, model, and optional native options. Review and documentation profiles are required only while their workflow nodes are enabled.
   implement:
-    # Initial Delivery Ticket implementation.
     agent: codex
     model: group/deepseek-v4.1-flash
     options:
       effort: max
   review:
-    # Fresh-context Standards and Spec review.
     agent: codex
     model: codex/gpt-6.1-sol
     options:
       effort: high
   ciRepair:
-    # Repair of failed required CI checks.
     agent: codex
     model: group/deepseek-v4.1-flash
     options:
       effort: max
   conflictRepair:
-    # Repair of an explicit merge conflict.
     agent: codex
     model: group/deepseek-v4.1-flash
     options:
       effort: max
   documentation:
-    # Documentation Maintenance.
     agent: codex
     model: group/deepseek-v4.1-flash
     options:
       effort: max
 timeouts:
-  # Positive minute limits for Agent Attempts, required-check readiness, and merge-queue confirmation.
   agentMinutes: 120
   requiredChecksMinutes: 60
   mergeQueueMinutes: 60

@@ -391,12 +391,13 @@ test("repair execution and invalid handoff failures do not consume the budget", 
   );
 });
 
-test("a trusted repair-budget override continues the existing Pull Request", async () => {
+test("agent repair results remain trusted but cannot override the exhausted CI repair budget", async () => {
   const root = await createProject();
   const delivery = createCommittedDelivery();
   let agentCalls = 0;
   let pushes = 0;
   let merged = false;
+  let budgetPauses = 0;
 
   const result = await executeCli(
     ["run", "--project", "demo", "--parent", "8"],
@@ -455,7 +456,11 @@ test("a trusted repair-budget override continues the existing Pull Request", asy
         },
       },
       operator: {
-        async pause() {
+        async pause(message) {
+          if (message.startsWith("CI repair failed after two attempts")) {
+            budgetPauses += 1;
+            return budgetPauses === 1 ? "trusted CI readiness" : "q";
+          }
           return JSON.stringify({
             outcome: "committed",
             pr_title: "feat: trusted readiness",
@@ -466,9 +471,11 @@ test("a trusted repair-budget override continues the existing Pull Request", asy
     }),
   );
 
-  assert.equal(result.summary.outcome, "succeeded");
+  assert.equal(result.summary.outcome, "cancelled");
   assert.equal(agentCalls, 3);
   assert.equal(pushes, 3);
+  assert.equal(budgetPauses, 2);
+  assert.equal(merged, false);
   assert.ok(result.logPath);
   const audit = await readFile(result.logPath, "utf8");
   assert.match(audit, /operator_override/u);

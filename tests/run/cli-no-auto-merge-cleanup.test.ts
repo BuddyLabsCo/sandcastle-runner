@@ -4,7 +4,11 @@ import path from "node:path";
 import test from "node:test";
 
 import { executeCli } from "../../src/cli.ts";
-import { readRecoverySnapshot, recoveryPaths } from "../../src/recovery.ts";
+import {
+  readRecoverySnapshot,
+  recoveryPaths,
+  writeRecoverySnapshot,
+} from "../../src/recovery.ts";
 import {
   createCliDependencies,
   createAttemptTracker,
@@ -204,8 +208,8 @@ test("a CI-ready no-auto-merge Run removes local artifacts and preserves manual 
   assert.equal(snapshot?.terminalCleanup?.[9]?.status, "cleaned");
 });
 
-for (const accepted of [false, true]) {
-  test(`no-auto-merge cleanup ${accepted ? "accepts residual artifacts" : "retries through Operator Pause"}`, async () => {
+for (const rejectsOverride of [false, true]) {
+  test(`no-auto-merge cleanup ${rejectsOverride ? "rejects residual artifact acceptance before retrying" : "retries through Operator Pause"}`, async () => {
     const root = await createProject();
     const { tracker } = createAttemptTracker(9);
     const commit = {
@@ -277,7 +281,9 @@ for (const accepted of [false, true]) {
         operator: {
           async pause(message) {
             pauses.push(message);
-            return accepted ? "manual cleanup required" : "";
+            return rejectsOverride && pauses.length === 1
+              ? "manual cleanup required"
+              : "";
           },
         },
       }),
@@ -286,14 +292,12 @@ for (const accepted of [false, true]) {
     assert.equal(result.exitCode, 0);
     assert.equal(result.summary.outcome, "succeeded");
     assert.equal(mergeRequests, 0);
-    assert.equal(pauses.length, 1);
+    assert.equal(pauses.length, rejectsOverride ? 2 : 1);
     assert.match(pauses[0]!, /cleanup for Ticket 9 failed/u);
     assert.equal(result.summary.tickets?.[0]?.status, "PR ready");
-    assert.deepEqual(result.summary.tickets?.[0]?.retainedWorktrees, [
-      ...(accepted ? [workspace!.worktree] : []),
-    ]);
-    assert.equal(removalAttempts, accepted ? 1 : 2);
-    assert.equal(branchDeletes, accepted ? 0 : 1);
+    assert.deepEqual(result.summary.tickets?.[0]?.retainedWorktrees, []);
+    assert.equal(removalAttempts, 2);
+    assert.equal(branchDeletes, 1);
   });
 }
 
@@ -439,6 +443,18 @@ for (const decision of ["q", null]) {
     ];
     const cancelled = await executeCli(args, dependencies);
     const original = { ...workspace! };
+    if (decision === null) {
+      const filename = recoveryPaths(
+        path.join(root, "projects/demo"),
+        9,
+        "issue",
+      ).snapshot;
+      const snapshot = await readRecoverySnapshot(filename);
+      assert.ok(snapshot?.terminalCleanup?.[9]);
+      snapshot.terminalCleanup[9].status = "accepted";
+      snapshot.terminalCleanup[9].residual = ["manual cleanup required"];
+      await writeRecoverySnapshot(filename, snapshot);
+    }
     const resumed = await executeCli(args, dependencies);
 
     assert.equal(cancelled.summary.outcome, "cancelled");

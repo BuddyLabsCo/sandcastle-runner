@@ -45,17 +45,29 @@ export const ticketAgentContinueActions =
   "Enter to continue, s to skip, q to cancel, or provide recovery instructions.";
 export const ticketAgentRetryActions =
   "Enter to retry, s to skip, q to cancel, or supply a trusted result.";
+export const ticketAgentProbeActions =
+  "Enter to retry, s to skip, q to cancel.";
+
+export function failedSessionProbe(diagnostics: AgentDiagnostics): boolean {
+  return (
+    (diagnostics.operation === "session_probe" ||
+      diagnostics.errorCategory === "operation_retry") &&
+    !diagnostics.sessionId?.trim()
+  );
+}
 
 export async function pauseAgentAttempt(
   input: AgentOperationInput,
   event: Omit<AuditEvent, "result" | "error">,
   message: string,
+  allowsContinuation = true,
 ): Promise<TicketAgentPauseDecision> {
   return pauseTicketAgentForOperator(
     input.audit,
     event,
     input.operator,
     message,
+    allowsContinuation,
   );
 }
 

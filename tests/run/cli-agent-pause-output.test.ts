@@ -11,6 +11,7 @@ import { createProject } from "../support/cli-project.ts";
 import { executeCli } from "../../src/cli.ts";
 import { AgentOutputError } from "../../src/adapters/process-errors.ts";
 import { SandcastleAgentExecutor } from "../../src/adapters/sandcastle.ts";
+import type { NoShellSandboxProvider } from "../../src/adapters/no-shell-sandbox.ts";
 import {
   agentPauseMessage,
   ticketAgentContinueActions,
@@ -439,3 +440,55 @@ test("exhausted generic session recovery enters one Operator Pause", async () =>
     /^Actions: Enter to continue, s to skip, q to cancel, or provide recovery instructions\.$/mu,
   );
 });
+
+for (const cleanupFails of [false, true]) {
+  test(`a failed session probe rejects trusted results, allows a fresh retry budget and skip (cleanupFails=${cleanupFails})`, async () => {
+    const root = await createProject();
+    const { tracker } = createAttemptTracker(9);
+    let probes = 0;
+    const pauses: string[] = [];
+    const responses = [
+      '{"outcome":"committed","pr_title":"feat: manual","pr_body":"Manual success"}',
+      "",
+      "Repository access restored. Continue.",
+      "s",
+    ];
+    const agentExecutor = new SandcastleAgentExecutor(
+      async (options) => {
+        probes += 1;
+        if (cleanupFails)
+          (options.sandbox as NoShellSandboxProvider).settle = async () => ({
+            outcome: "failed",
+            error: "host process remains alive",
+          });
+        throw new Error("repository access unavailable");
+      },
+      async () => {},
+      async () => {},
+      async () => {},
+    );
+    const result = await executeCli(
+      ["run", "--project", "demo", "--parent", "8"],
+      createCliDependencies(root, {
+        tracker,
+        agentExecutor,
+        operator: {
+          async pause(message) {
+            pauses.push(message);
+            return responses.shift() ?? "q";
+          },
+        },
+      }),
+    );
+
+    assert.equal(result.summary.outcome, "incomplete");
+    assert.equal(result.summary.handoffs?.length ?? 0, 0);
+    assert.equal(probes, cleanupFails ? 2 : 10);
+    assert.equal(pauses.length, 4);
+    for (const message of pauses)
+      assert.match(
+        message,
+        /^Actions: Enter to retry, s to skip, q to cancel\.$/mu,
+      );
+  });
+}

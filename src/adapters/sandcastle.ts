@@ -244,7 +244,10 @@ export class SandcastleAgentExecutor implements AgentExecutor {
         this.sessions.set(input.logFile, sessionId);
         return sessionId;
       } catch (error) {
-        if (error instanceof ProcessCleanupError) throw error;
+        if (error instanceof ProcessCleanupError) {
+          error.diagnostics.operation = "session_probe";
+          throw error;
+        }
         if (input.signal.aborted)
           throw abortReason(input.signal, "Agent Attempt cancelled");
         if (error instanceof OperatorCancelled) throw error;
@@ -262,6 +265,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
     throw new AgentOutputError(
       `Agent session probe failed after ${policy.operationRetry} retries`,
       {
+        operation: "session_probe",
         errorCategory: "operation_retry",
         retryable: false,
         provider: provider.name,

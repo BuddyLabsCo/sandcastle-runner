@@ -20,7 +20,7 @@ const fourRetryPolicy: RetryPolicy = {
   agentRetryDelay: [10, 20, 40, 80],
 };
 
-function dependencies() {
+function dependencies(responses: (string | null)[] = ["q"]) {
   const sleeps: number[] = [];
   let now = 0;
   const clock: Clock = {
@@ -36,7 +36,7 @@ function dependencies() {
     write() {},
     async pause(message) {
       pauses.push(message);
-      return "q";
+      return responses.shift() ?? null;
     },
   };
   return { audit, clock, operator, pauses, sleeps };
@@ -111,8 +111,12 @@ test("workflowWrite retries an opted-in action regardless of its error message",
   assert.deepEqual(pauses, []);
 });
 
-test("workflowWrite exhausts the configured retries before Operator Pause", async () => {
-  const { audit, clock, operator, pauses, sleeps } = dependencies();
+test("workflowWrite rejects acknowledgements and resets its full retry budget on Enter", async () => {
+  const { audit, clock, operator, pauses, sleeps } = dependencies([
+    "trusted successful write",
+    "",
+    null,
+  ]);
   let calls = 0;
 
   await assert.rejects(
@@ -144,9 +148,12 @@ test("workflowWrite exhausts the configured retries before Operator Pause", asyn
     /operator cancelled/u,
   );
 
-  assert.equal(calls, 5);
-  assert.deepEqual(sleeps, [10_000, 20_000, 40_000, 80_000]);
-  assert.equal(pauses.length, 1);
+  assert.equal(calls, 10);
+  assert.deepEqual(
+    sleeps,
+    [10_000, 20_000, 40_000, 80_000, 10_000, 20_000, 40_000, 80_000],
+  );
+  assert.equal(pauses.length, 3);
 });
 
 test("workflowWrite confirms state before the first write and after failure", async () => {
@@ -271,7 +278,6 @@ test("externalRead uses configured retry count and delay clamping", async () => 
       if (calls < 3) throw new Error("network unavailable");
       return "ok";
     },
-    parseOverride: (value) => value,
     audit,
     clock,
     event: (attempt) => ({

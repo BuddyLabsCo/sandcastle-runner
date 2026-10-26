@@ -68,7 +68,8 @@ test("a queued merge receives no completion credit until timeout recovery confir
   let elapsed = 0;
   let mergeRequests = 0;
   let closeCalls = 0;
-  const responses = ["", "trusted merge"];
+  let merged = false;
+  const responses = ["trusted merge", ""];
 
   const result = await executeCli(
     ["run", "--project", "demo", "--parent", "8"],
@@ -78,11 +79,7 @@ test("a queued merge receives no completion credit until timeout recovery confir
         ...delivery.tracker,
         async closeTicket(_repository, ticket) {
           closeCalls += 1;
-          const found = delivery.tickets.find(
-            ({ number }) => number === ticket,
-          )!;
-          found.state = "closed";
-          found.stateReason = "completed";
+          await delivery.tracker.closeTicket!(_repository, ticket);
         },
       },
       codeHost: {
@@ -90,7 +87,7 @@ test("a queued merge receives no completion credit until timeout recovery confir
           return {
             headSha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             createdAt: "2026-09-09T00:00:00Z",
-            merged: false,
+            merged,
             mergeFailure: null,
           };
         },
@@ -108,7 +105,9 @@ test("a queued merge receives no completion credit until timeout recovery confir
       operator: {
         async pause(message) {
           assert.match(message, /Merge confirmation timed out/u);
-          return responses.shift() ?? "q";
+          const response = responses.shift() ?? "q";
+          if (response === "") merged = true;
+          return response;
         },
       },
     }),
@@ -117,6 +116,7 @@ test("a queued merge receives no completion credit until timeout recovery confir
   assert.deepEqual(result.summary.completedTickets, [9]);
   assert.equal(mergeRequests, 1);
   assert.equal(closeCalls, 1);
+  assert.equal(responses.length, 0);
 });
 
 test("a non-conflict merge rejection enters Operator Pause without conflict repair", async () => {

@@ -367,7 +367,7 @@ test("a fresh Run ignores existing audit logs", async () => {
   );
 });
 
-test("a contradictory Parent read override fails without a second pause", async () => {
+test("a contradictory Parent read override stays paused until cancellation", async () => {
   const root = await createProject();
   let parentCalls = 0;
   let pauseCalls = 0;
@@ -391,8 +391,7 @@ test("a contradictory Parent read override fails without a second pause", async 
     }),
   );
 
-  assert.equal(result.summary.outcome, "failed");
-  assert.match(result.summary.reasons[0] ?? "", /closed Parent Ticket/u);
+  assert.equal(result.summary.outcome, "cancelled");
   assert.equal(parentCalls, 5);
-  assert.equal(pauseCalls, 1);
+  assert.equal(pauseCalls, 2);
 });

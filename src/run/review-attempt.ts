@@ -13,9 +13,11 @@ import type {
 import { agentLogFile } from "./agent-logs.ts";
 import {
   agentPauseMessage,
+  failedSessionProbe,
   skipTicketAgentAttempt,
   TicketSkipped,
   ticketAgentContinueActions,
+  ticketAgentProbeActions,
 } from "./agent-pause.ts";
 import {
   externalRead,
@@ -39,25 +41,6 @@ function snapshot(
   return { source: ticket.source, title: ticket.title, body: ticket.body };
 }
 
-function parseReviewSnapshot(value: string, number: number): Ticket {
-  const input = JSON.parse(value) as Record<string, unknown>;
-  if (
-    typeof input.title !== "string" ||
-    typeof input.body !== "string" ||
-    typeof input.source !== "string"
-  ) {
-    throw new Error("override has no complete ticket snapshot");
-  }
-  return {
-    number,
-    state: "open",
-    stateReason: null,
-    title: input.title,
-    body: input.body,
-    source: input.source,
-  };
-}
-
 async function readReviewSnapshot(
   input: AttemptInput,
   ticket: number,
@@ -69,7 +52,6 @@ async function readReviewSnapshot(
         parent
           ? input.tracker.getParent(input.repository, ticket)
           : input.tracker.getTicket(input.repository, ticket),
-      parseOverride: (value) => parseReviewSnapshot(value, ticket),
       audit: input.audit,
       event: input.event(
         "review",
@@ -309,6 +291,7 @@ export async function reviewHandoff(
         diagnostics.error!,
         diagnostics,
       );
+      const probeFailed = failedSessionProbe(diagnostics);
       for (;;) {
         const decision = await pauseTicketAgentForOperator(
           input.audit,
@@ -319,8 +302,9 @@ export async function reviewHandoff(
             diagnostics,
             handoff.worktree,
             undefined,
-            ticketAgentContinueActions,
+            probeFailed ? ticketAgentProbeActions : ticketAgentContinueActions,
           ),
+          !probeFailed,
         );
         if (decision.decision === "skip")
           return await skipTicketAgentAttempt(
@@ -331,8 +315,11 @@ export async function reviewHandoff(
             attemptNumber,
             diagnostics.error ?? "Review Agent Attempt failed",
           );
-        continuationPrompt =
-          decision.decision === "retry" ? "continue" : decision.response;
+        continuationPrompt = probeFailed
+          ? undefined
+          : decision.decision === "retry"
+            ? "continue"
+            : decision.response;
         break;
       }
     }

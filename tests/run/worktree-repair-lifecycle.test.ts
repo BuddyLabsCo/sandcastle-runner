@@ -18,6 +18,7 @@ const repairScenarios: {
   interruptCleanup?: boolean;
   cancelRepair?: boolean;
   interruptPush?: boolean;
+  advanceBeforePush?: boolean;
 }[] = [
   { stages: ["ci"] },
   { stages: ["conflict"] },
@@ -29,6 +30,7 @@ const repairScenarios: {
   { stages: ["ci", "conflict"], cancelRepair: true },
   { stages: ["conflict", "conflict"], cancelRepair: true },
   { stages: ["ci", "conflict"], interruptPush: true },
+  { stages: ["ci"], advanceBeforePush: true },
 ];
 
 for (const {
@@ -36,8 +38,9 @@ for (const {
   interruptCleanup = false,
   cancelRepair = false,
   interruptPush = false,
+  advanceBeforePush = false,
 } of repairScenarios) {
-  test(`successful fresh ${stages.join(" then ")} repairs replace their predecessors before completed cleanup${interruptCleanup ? " across interrupted branch deletion" : ""}${cancelRepair ? " across a cancelled repair" : ""}${interruptPush ? " across uncertain push confirmation" : ""}`, async () => {
+  test(`successful fresh ${stages.join(" then ")} repairs replace their predecessors before completed cleanup${interruptCleanup ? " across interrupted branch deletion" : ""}${cancelRepair ? " across a cancelled repair" : ""}${interruptPush ? " across uncertain push confirmation" : ""}${advanceBeforePush ? " after rejecting a remote-state override and retrying" : ""}`, async () => {
     const root = await createProject();
     const { tracker } = createAttemptTracker(9);
     const implementation = {
@@ -64,6 +67,7 @@ for (const {
     let interrupt = interruptCleanup;
     const pauses: string[] = [];
     let remoteHead: string | null = null;
+    let repairBase = "";
     let merged = false;
 
     const dependencies = createCliDependencies(root, {
@@ -146,6 +150,10 @@ for (const {
             }
             repairs += 1;
             acceptedWorkspaces.push(repairedWorkspaces.at(-1)!);
+            if (advanceBeforePush) {
+              repairBase = input.base;
+              remoteHead = "f".repeat(40);
+            }
           }
           const commit = worktrees.get(input.worktree)!.commits[0]!;
           return {
@@ -225,6 +233,12 @@ for (const {
         async pause(message) {
           uncertainPush = false;
           pauses.push(message);
+          if (advanceBeforePush) {
+            assert.match(message, /Stable repair branch advanced/u);
+            if (pauses.length === 1) return "trusted repair branch";
+            remoteHead = repairBase;
+            return "";
+          }
           return "q";
         },
       },
@@ -292,5 +306,6 @@ for (const {
     );
     assert.equal(worktrees.size, 0);
     assert.equal(branches.size, 0);
+    if (advanceBeforePush) assert.equal(pauses.length, 2);
   });
 }
