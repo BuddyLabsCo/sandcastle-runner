@@ -21,7 +21,7 @@ The canonical persisted record a Run uses to resume its delivery scope, includin
 _Avoid_: Checkpoint, state file
 
 **Operator Pause**:
-A point at which a Run waits for a trusted operator to retry, abort, or supply a successful result for a failed operation.
+A point at which a Run waits for an operator to retry, cancel, skip the current issue or maintenance occurrence, or instruct a continuable Agent session. Operator input never substitutes for a successful result. Audit failures permit only retry or cancellation.
 _Avoid_: Terminal pause, human intervention
 
 **Parent Ticket**:

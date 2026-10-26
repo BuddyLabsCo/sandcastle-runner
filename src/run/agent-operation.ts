@@ -26,7 +26,11 @@ import {
   type DiscoveryInput,
   revalidateActiveTicket,
 } from "./discovery.ts";
-import { OperatorCancelled, workflowWrite } from "./operations.ts";
+import {
+  externalRead,
+  OperatorCancelled,
+  workflowWrite,
+} from "./operations.ts";
 import { appendOperation, discardAgentLogs } from "./operation-audit.ts";
 
 export { agentPauseMessage } from "./agent-pause.ts";
@@ -126,39 +130,6 @@ function sameCommits(
   );
 }
 
-function trustedHandoff(
-  value: string,
-  ticket: number,
-  worktree: string,
-  branch: string,
-  base: string,
-  existingPrMetadata?: Pick<VerifiedHandoff, "prTitle" | "prBody">,
-): VerifiedHandoff {
-  const parsed = existingPrMetadata
-    ? null
-    : (JSON.parse(value) as Record<string, unknown>);
-  if (
-    parsed &&
-    (parsed.outcome !== "committed" ||
-      typeof parsed.pr_title !== "string" ||
-      !parsed.pr_title.trim() ||
-      typeof parsed.pr_body !== "string" ||
-      !parsed.pr_body.trim())
-  )
-    throw new Error("override has no downstream PR metadata");
-  return {
-    ticket,
-    worktree,
-    branch,
-    base,
-    commits: [],
-    checks: [],
-    prTitle: existingPrMetadata?.prTitle ?? (parsed?.pr_title as string),
-    prBody: existingPrMetadata?.prBody ?? (parsed?.pr_body as string),
-    verification: "operator_override",
-  };
-}
-
 export async function runAgentOperation(
   input: AgentOperationInput,
   operation: {
@@ -183,7 +154,8 @@ export async function runAgentOperation(
   let attemptId = "";
   let logFile = "";
   let event!: Omit<AuditEvent, "result" | "error">;
-  const pause = (message: string) => pauseAgentAttempt(input, event, message);
+  const pause = (message: string, continuable = true) =>
+    pauseAgentAttempt(input, event, message, continuable);
   for (;;) {
     await boundary(input, operation.ticket);
     const resumePrompt = continuationPrompt;
@@ -261,14 +233,16 @@ export async function runAgentOperation(
           null,
           result.diagnostics,
         );
+        const continuable = result.diagnostics?.retryable !== false;
         const decision = await pause(
           agentPauseMessage(
             "blocked",
             result.diagnostics,
             operation.worktree,
             result,
-            ticketAgentContinueActions,
+            continuable ? ticketAgentContinueActions : ticketAgentRetryActions,
           ),
+          continuable,
         );
         if (decision.decision === "skip")
           return await skipTicketAgentAttempt(
@@ -279,16 +253,29 @@ export async function runAgentOperation(
             attemptNumber,
             result.blocker ?? result.summary,
           );
-        continuationPrompt =
-          decision.decision === "retry" ? "continue" : decision.response;
+        if (continuable)
+          continuationPrompt =
+            decision.decision === "retry" ? "continue" : decision.response;
         continue;
       }
-      const observed = await input.gitWorkspace.inspect({
-        worktree: operation.worktree,
-        base: operation.base,
-        ...(operation.requiredAncestor === undefined
-          ? {}
-          : { requiredAncestor: operation.requiredAncestor }),
+      const observed = await externalRead({
+        action: () =>
+          input.gitWorkspace.inspect({
+            worktree: operation.worktree,
+            base: operation.base,
+            ...(operation.requiredAncestor === undefined
+              ? {}
+              : { requiredAncestor: operation.requiredAncestor }),
+          }),
+        audit: input.audit,
+        event: input.event(
+          operation.phase,
+          "inspect_worktree",
+          `ticket:${operation.ticket}`,
+        ),
+        clock: input.clock,
+        operator: input.operator,
+        retryPolicy: input.retryPolicy,
       });
       if (
         observed.worktree !== path.resolve(operation.worktree) ||
@@ -400,102 +387,31 @@ export async function runAgentOperation(
         diagnostics.error!,
         diagnostics,
       );
-      if (diagnostics.retryable === false) {
-        for (;;) {
-          const decision = await pause(
-            agentPauseMessage(
-              "failed",
-              diagnostics,
-              operation.worktree,
-              undefined,
-              ticketAgentRetryActions,
-            ),
-          );
-          if (decision.decision === "skip")
-            return await skipTicketAgentAttempt(
-              input,
-              operation.phase,
-              event,
-              operation.ticket,
-              attemptNumber,
-              diagnostics.error ?? "Agent Attempt failed",
-            );
-          if (decision.decision === "retry") break;
-          const response = decision.response;
-          try {
-            await boundary(input, operation.ticket);
-            const handoff = trustedHandoff(
-              response,
-              operation.ticket,
-              operation.worktree,
-              operation.branch,
-              operation.base,
-              operation.existingPrMetadata,
-            );
-            await appendOperation(input, event, "operator_override", null);
-            await discardAgentLogs(
-              input,
-              operation.phase,
-              operation.ticket,
-              agentLogStage(operation.phase),
-              attemptNumber,
-            );
-            return handoff;
-          } catch {
-            // Invalid trusted results remain in the same Operator Pause.
-          }
-        }
-        continue;
-      }
-      for (;;) {
-        const decision = await pause(
-          agentPauseMessage(
-            "failed",
-            diagnostics,
-            operation.worktree,
-            undefined,
-            ticketAgentContinueActions,
-          ),
+      const continuable = diagnostics.retryable !== false;
+      const decision = await pauseAgentAttempt(
+        input,
+        event,
+        agentPauseMessage(
+          "failed",
+          diagnostics,
+          operation.worktree,
+          undefined,
+          continuable ? ticketAgentContinueActions : ticketAgentRetryActions,
+        ),
+        continuable,
+      );
+      if (decision.decision === "skip")
+        return await skipTicketAgentAttempt(
+          input,
+          operation.phase,
+          event,
+          operation.ticket,
+          attemptNumber,
+          diagnostics.error ?? "Agent Attempt failed",
         );
-        if (decision.decision === "skip")
-          return await skipTicketAgentAttempt(
-            input,
-            operation.phase,
-            event,
-            operation.ticket,
-            attemptNumber,
-            diagnostics.error ?? "Agent Attempt failed",
-          );
-        if (decision.decision === "retry") {
-          continuationPrompt = "continue";
-          break;
-        }
-        const response = decision.response;
-        try {
-          await boundary(input, operation.ticket);
-          const handoff = trustedHandoff(
-            response,
-            operation.ticket,
-            operation.worktree,
-            operation.branch,
-            operation.base,
-            operation.existingPrMetadata,
-          );
-          await appendOperation(input, event, "operator_override", null);
-          await discardAgentLogs(
-            input,
-            operation.phase,
-            operation.ticket,
-            agentLogStage(operation.phase),
-            attemptNumber,
-          );
-          return handoff;
-        } catch {
-          // Free-form input continues the same provider session.
-        }
-        continuationPrompt = response;
-        break;
-      }
+      if (continuable)
+        continuationPrompt =
+          decision.decision === "retry" ? "continue" : decision.response;
     }
   }
 }

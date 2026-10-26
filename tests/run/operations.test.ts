@@ -4,6 +4,7 @@ import test from "node:test";
 import type { AuditLog } from "../../src/audit.ts";
 import {
   externalRead,
+  supervisedAuditWrite,
   workflowWrite,
   type WriteReconciliation,
 } from "../../src/run/operations.ts";
@@ -271,7 +272,6 @@ test("externalRead uses configured retry count and delay clamping", async () => 
       if (calls < 3) throw new Error("network unavailable");
       return "ok";
     },
-    parseOverride: (value) => value,
     audit,
     clock,
     event: (attempt) => ({
@@ -296,4 +296,147 @@ test("externalRead uses configured retry count and delay clamping", async () => 
   assert.equal(calls, 3);
   assert.deepEqual(sleeps, [3_000, 3_000]);
   assert.deepEqual(pauses, []);
+});
+
+for (const kind of ["read", "write"] as const) {
+  test(`${kind} rejects successful-result text without retrying until Enter`, async () => {
+    const deps = dependencies();
+    const responses = ['{"result":"trusted"}', "accepted", ""];
+    let calls = 0;
+    const operation = {
+      ...deps,
+      action: async () => {
+        calls += 1;
+        if (calls === 1) throw new Error("unobserved result");
+        return "observed";
+      },
+      event: (attempt: number) => ({
+        timestamp: new Date().toISOString(),
+        runId: "run",
+        project: "project",
+        parentTicket: 1,
+        phase: "test",
+        operation: kind,
+        target: "target",
+        attempt,
+      }),
+      operator: {
+        write() {},
+        async pause() {
+          assert.equal(calls, 1);
+          return responses.shift() ?? "q";
+        },
+      },
+      retryPolicy: { ...fourRetryPolicy, operationRetry: 0 },
+    };
+    const result = await (kind === "read"
+      ? externalRead(operation)
+      : workflowWrite(operation));
+    assert.equal(result, "observed");
+    assert.equal(calls, 2);
+    assert.deepEqual(responses, []);
+  });
+}
+
+test("audit rejects gap acceptance and skip, retrying only on Enter", async () => {
+  const responses = ["accept gap", "s", ""];
+  let calls = 0;
+  await supervisedAuditWrite(
+    async () => {
+      calls += 1;
+      if (calls === 1) throw new Error("append failed");
+    },
+    {
+      write() {},
+      async pause() {
+        assert.equal(calls, 1);
+        return responses.shift() ?? "q";
+      },
+    },
+  );
+  assert.equal(calls, 2);
+  assert.deepEqual(responses, []);
+});
+
+for (const end of ["q", null]) {
+  test(`unsupported operation input followed by ${end ?? "EOF"} cancels without replay`, async () => {
+    const deps = dependencies();
+    let calls = 0;
+    const responses = ["s", '{"outcome":"succeeded"}', end];
+    await assert.rejects(
+      externalRead({
+        ...deps,
+        action: async () => {
+          calls += 1;
+          throw new Error("read failed");
+        },
+        event: (attempt) => ({
+          timestamp: new Date().toISOString(),
+          runId: "run",
+          project: "project",
+          parentTicket: 1,
+          phase: "discover",
+          operation: "read",
+          target: "ticket:9",
+          attempt,
+        }),
+        operator: {
+          write() {},
+          async pause(message) {
+            assert.doesNotMatch(message, /s to skip/u);
+            return responses.shift() ?? null;
+          },
+        },
+        retryPolicy: { ...fourRetryPolicy, operationRetry: 0 },
+      }),
+      /operator cancelled/u,
+    );
+    assert.equal(calls, 1);
+    assert.deepEqual(responses, []);
+  });
+}
+
+test("an audit result failure after a successful write retries only that append", async () => {
+  const deps = dependencies();
+  const responses = ["s", "accept gap", ""];
+  let writes = 0;
+  let appends = 0;
+  const audit = {
+    async append(event: { result: string }) {
+      if (event.result === "succeeded") {
+        appends += 1;
+        if (appends === 1) throw new Error("uncertain append");
+      }
+    },
+  } as unknown as AuditLog;
+  await workflowWrite({
+    ...deps,
+    audit,
+    action: async () => {
+      writes += 1;
+    },
+    event: (attempt) => ({
+      timestamp: new Date().toISOString(),
+      runId: "run",
+      project: "project",
+      parentTicket: 1,
+      phase: "publish",
+      operation: "create",
+      target: "ticket:9",
+      attempt,
+    }),
+    operator: {
+      skipScope: "Delivery Ticket 9",
+      write() {},
+      async pause(message) {
+        assert.doesNotMatch(message, /s to skip/u);
+        assert.equal(writes, 1);
+        return responses.shift() ?? "q";
+      },
+    },
+    retryPolicy: fourRetryPolicy,
+  });
+  assert.equal(writes, 1);
+  assert.equal(appends, 2);
+  assert.deepEqual(responses, []);
 });

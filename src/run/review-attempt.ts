@@ -16,6 +16,7 @@ import {
   skipTicketAgentAttempt,
   TicketSkipped,
   ticketAgentContinueActions,
+  ticketAgentRetryActions,
 } from "./agent-pause.ts";
 import {
   externalRead,
@@ -39,25 +40,6 @@ function snapshot(
   return { source: ticket.source, title: ticket.title, body: ticket.body };
 }
 
-function parseReviewSnapshot(value: string, number: number): Ticket {
-  const input = JSON.parse(value) as Record<string, unknown>;
-  if (
-    typeof input.title !== "string" ||
-    typeof input.body !== "string" ||
-    typeof input.source !== "string"
-  ) {
-    throw new Error("override has no complete ticket snapshot");
-  }
-  return {
-    number,
-    state: "open",
-    stateReason: null,
-    title: input.title,
-    body: input.body,
-    source: input.source,
-  };
-}
-
 async function readReviewSnapshot(
   input: AttemptInput,
   ticket: number,
@@ -69,7 +51,6 @@ async function readReviewSnapshot(
         parent
           ? input.tracker.getParent(input.repository, ticket)
           : input.tracker.getTicket(input.repository, ticket),
-      parseOverride: (value) => parseReviewSnapshot(value, ticket),
       audit: input.audit,
       event: input.event(
         "review",
@@ -89,12 +70,19 @@ async function acceptReview(
   handoff: VerifiedHandoff,
   implementationHead: string,
   checks: AgentAttemptResult["checks"],
-  verification: "verified" | "operator_override",
 ): Promise<VerifiedHandoff> {
-  const evidence = await input.gitWorkspace.inspectReview({
-    worktree: handoff.worktree,
-    base: handoff.base,
-    implementationHead,
+  const evidence = await externalRead({
+    action: () =>
+      input.gitWorkspace.inspectReview({
+        worktree: handoff.worktree,
+        base: handoff.base,
+        implementationHead,
+      }),
+    audit: input.audit,
+    event: input.event("review", "inspect_review", `ticket:${handoff.ticket}`),
+    clock: input.clock,
+    operator: input.operator,
+    retryPolicy: input.retryPolicy,
   });
   if (!evidence.clean) throw new Error("Review left a dirty Worktree");
   return {
@@ -103,7 +91,7 @@ async function acceptReview(
     implementationCommits: handoff.commits,
     reviewCommits: evidence.reviewCommits,
     reviewChecks: checks,
-    reviewVerification: verification,
+    reviewVerification: "verified",
   };
 }
 
@@ -126,7 +114,7 @@ export async function reviewHandoff(
   for (;;) {
     await boundary(input, handoff.ticket);
     const resumePrompt = continuationPrompt;
-    // eslint-disable-next-line no-useless-assignment -- consume the one-shot continuation
+
     continuationPrompt = undefined;
     if (resumePrompt === undefined) {
       attemptNumber = (attemptNumber || 0) + 1;
@@ -161,10 +149,22 @@ export async function reviewHandoff(
             input.standaloneIssue ?? input.parentTicket,
             input.standaloneIssue === undefined,
           ),
-          input.gitWorkspace.readReviewStandards(
-            handoff.worktree,
-            handoff.base,
-          ),
+          externalRead({
+            action: () =>
+              input.gitWorkspace.readReviewStandards(
+                handoff.worktree,
+                handoff.base,
+              ),
+            audit: input.audit,
+            event: input.event(
+              "review",
+              "read_standards",
+              `ticket:${handoff.ticket}`,
+            ),
+            clock: input.clock,
+            operator: input.operator,
+            retryPolicy: input.retryPolicy,
+          }),
         ]);
       const gitDirectory = await mkdtemp(
         path.join(tmpdir(), "sandcastle-runner-git-"),
@@ -227,6 +227,7 @@ export async function reviewHandoff(
           null,
           result.diagnostics,
         );
+        const continuable = result.diagnostics?.retryable !== false;
         const decision = await pauseTicketAgentForOperator(
           input.audit,
           event,
@@ -239,8 +240,9 @@ export async function reviewHandoff(
               summary: result.summary,
               blocker: result.blocker,
             },
-            ticketAgentContinueActions,
+            continuable ? ticketAgentContinueActions : ticketAgentRetryActions,
           ),
+          continuable,
         );
         if (decision.decision === "skip")
           return await skipTicketAgentAttempt(
@@ -251,8 +253,9 @@ export async function reviewHandoff(
             attemptNumber,
             result.blocker ?? result.summary,
           );
-        continuationPrompt =
-          decision.decision === "retry" ? "continue" : decision.response;
+        if (continuable)
+          continuationPrompt =
+            decision.decision === "retry" ? "continue" : decision.response;
         continue;
       }
       const reviewed = await acceptReview(
@@ -260,7 +263,6 @@ export async function reviewHandoff(
         handoff,
         implementationHead,
         result.checks,
-        "verified",
       );
       await appendOperation(
         input,
@@ -309,32 +311,32 @@ export async function reviewHandoff(
         diagnostics.error!,
         diagnostics,
       );
-      for (;;) {
-        const decision = await pauseTicketAgentForOperator(
-          input.audit,
+      const continuable = diagnostics.retryable !== false;
+      const decision = await pauseTicketAgentForOperator(
+        input.audit,
+        event,
+        input.operator,
+        agentPauseMessage(
+          "failed",
+          diagnostics,
+          handoff.worktree,
+          undefined,
+          continuable ? ticketAgentContinueActions : ticketAgentRetryActions,
+        ),
+        continuable,
+      );
+      if (decision.decision === "skip")
+        return await skipTicketAgentAttempt(
+          input,
+          "review",
           event,
-          input.operator,
-          agentPauseMessage(
-            "failed",
-            diagnostics,
-            handoff.worktree,
-            undefined,
-            ticketAgentContinueActions,
-          ),
+          handoff.ticket,
+          attemptNumber,
+          diagnostics.error ?? "Review Agent Attempt failed",
         );
-        if (decision.decision === "skip")
-          return await skipTicketAgentAttempt(
-            input,
-            "review",
-            event,
-            handoff.ticket,
-            attemptNumber,
-            diagnostics.error ?? "Review Agent Attempt failed",
-          );
+      if (continuable)
         continuationPrompt =
           decision.decision === "retry" ? "continue" : decision.response;
-        break;
-      }
     }
   }
 }

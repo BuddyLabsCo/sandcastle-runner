@@ -145,7 +145,7 @@ test("Agent Pause identifies the selected native agent with session and log avai
     assert.match(failed, /^Diagnostic log: unavailable$/mu);
     assert.match(
       failed,
-      /^Actions: Enter to retry, s to skip, q to cancel, or supply a trusted result\.$/mu,
+      /^Actions: Enter to retry, s to skip, q to cancel\. Other input is unsupported\.$/mu,
     );
   }
 });
@@ -337,7 +337,7 @@ test("non-retryable Agent Pause keeps the full decision summary and its accepted
   assert.match(message, /^Diagnostic log: .+implement-9-.+\.log$/mu);
   assert.match(
     message,
-    /^Actions: Enter to retry, s to skip, q to cancel, or supply a trusted result\.$/mu,
+    /^Actions: Enter to retry, s to skip, q to cancel\. Other input is unsupported\.$/mu,
   );
 });
 

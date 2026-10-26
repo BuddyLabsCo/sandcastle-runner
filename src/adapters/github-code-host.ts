@@ -150,18 +150,33 @@ export class GitHubCodeHost implements CodeHost {
     repository: string,
     pullRequestNumber: number,
   ): Promise<PullRequestState> {
-    const value = JSON.parse(
+    const [owner, name] = repository.split("/");
+    const response = JSON.parse(
       await this.client.request([
-        "pr",
-        "view",
-        String(pullRequestNumber),
-        "--repo",
-        repository,
-        "--json",
-        "headRefOid,createdAt,state,mergedAt",
+        "api",
+        "graphql",
+        "-f",
+        "query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid createdAt state mergedAt mergeable autoMergeRequest{enabledAt} mergeQueueEntry{id}}}}",
+        "-f",
+        `owner=${owner}`,
+        "-f",
+        `name=${name}`,
+        "-F",
+        `number=${pullRequestNumber}`,
       ]),
-    ) as Record<string, unknown>;
+    ) as { data?: { repository?: { pullRequest?: Record<string, unknown> } } };
+    const value = response.data?.repository?.pullRequest;
     if (
+      !value ||
+      !["MERGEABLE", "CONFLICTING", "UNKNOWN"].includes(
+        String(value.mergeable),
+      ) ||
+      (value.autoMergeRequest !== null &&
+        (typeof value.autoMergeRequest !== "object" ||
+          Array.isArray(value.autoMergeRequest))) ||
+      (value.mergeQueueEntry !== null &&
+        (typeof value.mergeQueueEntry !== "object" ||
+          Array.isArray(value.mergeQueueEntry))) ||
       typeof value.headRefOid !== "string" ||
       value.headRefOid.length === 0 ||
       typeof value.createdAt !== "string" ||
@@ -178,6 +193,14 @@ export class GitHubCodeHost implements CodeHost {
       headSha: value.headRefOid,
       createdAt: value.createdAt,
       merged,
+      mergeRequested:
+        value.autoMergeRequest !== null || value.mergeQueueEntry !== null,
+      mergeable:
+        value.mergeable === "MERGEABLE"
+          ? "mergeable"
+          : value.mergeable === "CONFLICTING"
+            ? "conflicting"
+            : "unknown",
       mergeFailure:
         value.state === "CLOSED" && !merged
           ? `Pull Request ${pullRequestNumber} closed without merging`

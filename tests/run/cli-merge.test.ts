@@ -58,67 +58,6 @@ test("code_host closure waits 10 seconds and then another 30 seconds while leavi
   assert.deepEqual(sleeps, [30_000, 10_000, 30_000]);
 });
 
-test("a queued merge receives no completion credit until timeout recovery confirms success", async () => {
-  const root = await createProject();
-  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
-    ...validConfig,
-    timeouts: { ...validConfig.timeouts, mergeQueueMinutes: 1 / 60_000 },
-  });
-  const delivery = createCommittedDelivery();
-  let elapsed = 0;
-  let mergeRequests = 0;
-  let closeCalls = 0;
-  const responses = ["", "trusted merge"];
-
-  const result = await executeCli(
-    ["run", "--project", "demo", "--parent", "8"],
-    createCliDependencies(root, {
-      ...delivery,
-      tracker: {
-        ...delivery.tracker,
-        async closeTicket(_repository, ticket) {
-          closeCalls += 1;
-          const found = delivery.tickets.find(
-            ({ number }) => number === ticket,
-          )!;
-          found.state = "closed";
-          found.stateReason = "completed";
-        },
-      },
-      codeHost: {
-        async getPullRequest() {
-          return {
-            headSha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            createdAt: "2026-09-09T00:00:00Z",
-            merged: false,
-            mergeFailure: null,
-          };
-        },
-        async requestSquashMerge() {
-          mergeRequests += 1;
-          return { outcome: "accepted" };
-        },
-      },
-      clock: {
-        now: () => new Date(elapsed),
-        async sleep(milliseconds) {
-          elapsed += milliseconds;
-        },
-      },
-      operator: {
-        async pause(message) {
-          assert.match(message, /Merge confirmation timed out/u);
-          return responses.shift() ?? "q";
-        },
-      },
-    }),
-  );
-
-  assert.deepEqual(result.summary.completedTickets, [9]);
-  assert.equal(mergeRequests, 1);
-  assert.equal(closeCalls, 1);
-});
-
 test("a non-conflict merge rejection enters Operator Pause without conflict repair", async () => {
   const root = await createProject();
   const delivery = createCommittedDelivery();
@@ -514,3 +453,49 @@ test("CI repairs before and after conflict repair share one ticket budget", asyn
   assert.equal(pushes, 3);
   assert.equal(mergeRequests, 1);
 });
+
+for (const recovery of ["merged", "queued", "retry"] as const) {
+  test(`an unobserved merge request refreshes ${recovery} status and HEAD`, async () => {
+    const root = await createProject();
+    const delivery = createCommittedDelivery();
+    let requests = 0;
+    let observations = 0;
+    const heads: string[] = [];
+    const result = await executeCli(
+      ["run", "--project", "demo", "--parent", "8"],
+      createCliDependencies(root, {
+        ...delivery,
+        codeHost: {
+          async getPullRequest() {
+            if (requests > 0) observations += 1;
+            return {
+              headSha: (requests > 0 ? "c" : "b").repeat(40),
+              createdAt: "2026-09-09T00:00:00Z",
+              merged:
+                requests > 0 &&
+                (recovery === "merged" ||
+                  (recovery === "queued" && observations >= 2) ||
+                  requests > 1),
+              mergeRequested: requests > 0 && recovery === "queued",
+              mergeFailure: null,
+            };
+          },
+          async requestSquashMerge(input) {
+            requests += 1;
+            heads.push(input.headSha);
+            if (requests === 1) throw new Error("merge response lost");
+            return { outcome: "accepted" };
+          },
+        },
+      }),
+    );
+    assert.deepEqual(result.summary.completedTickets, [9]);
+    assert.equal(requests, recovery === "retry" ? 2 : 1);
+    assert.deepEqual(
+      heads,
+      recovery === "retry"
+        ? ["b".repeat(40), "c".repeat(40)]
+        : ["b".repeat(40)],
+    );
+  });
+}

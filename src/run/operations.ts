@@ -3,12 +3,32 @@ import type { Clock, OperatorIO, RetryPolicy } from "./contracts.ts";
 
 export class OperatorCancelled extends Error {}
 
+export class TicketSkipped extends Error {
+  readonly reason: string;
+
+  constructor(reason: string) {
+    super(reason);
+    this.reason = reason;
+  }
+}
+
+export function scopeOperator(operator: OperatorIO, scope: string): OperatorIO {
+  return {
+    skipScope: scope,
+    write: (message) => operator.write(message),
+    pause: (message) => operator.pause(message),
+  };
+}
+
 export function serializeOperator(
   operator: OperatorIO,
   controller: AbortController,
 ): OperatorIO {
   let tail = Promise.resolve();
   return {
+    ...(operator.skipScope === undefined
+      ? {}
+      : { skipScope: operator.skipScope }),
     write(message) {
       operator.write(message);
     },
@@ -41,19 +61,20 @@ export async function supervisedAuditWrite(
       await action();
       return;
     } catch {
-      const response = await operator.pause(
-        "Audit write failed. Enter to retry, q to cancel, or acknowledge an audit gap.",
-      );
-      if (response === null || response === "q")
-        throw new OperatorCancelled("operator cancelled");
-      if (response !== "") return;
+      for (;;) {
+        const response = await operator.pause(
+          "Audit write failed. Enter to retry the same log action, q/EOF to cancel. Other input is unsupported.",
+        );
+        if (response === null || response === "q")
+          throw new OperatorCancelled("operator cancelled");
+        if (response === "") break;
+      }
     }
   }
 }
 
 interface ReadOperation<T> {
   action: () => Promise<T>;
-  parseOverride: (value: string) => T;
   audit: AuditLog;
   event: (attempt: number) => Omit<AuditEvent, "result" | "error">;
   clock: Clock;
@@ -78,42 +99,10 @@ interface WriteOperation<T> {
 
 interface VoidWriteOperation extends WriteOperation<void> {
   action: () => Promise<void>;
-  parseOverride?: never;
 }
 
 interface ResultWriteOperation<T> extends WriteOperation<T> {
   action: () => Promise<T>;
-  parseOverride: (value: string) => T;
-}
-
-async function appendPauseEvent(
-  audit: AuditLog,
-  event: Omit<AuditEvent, "result" | "error">,
-  operator: OperatorIO,
-  result: string,
-): Promise<void> {
-  await supervisedAuditWrite(
-    () =>
-      audit.append({
-        ...event,
-        operation: "operator_pause",
-        result,
-        error: null,
-      }),
-    operator,
-  );
-}
-
-export async function recordOperatorOverride(
-  audit: AuditLog,
-  event: Omit<AuditEvent, "result" | "error">,
-  operator: OperatorIO,
-): Promise<void> {
-  await appendPauseEvent(audit, event, operator, "operator_override");
-  await supervisedAuditWrite(
-    () => audit.append({ ...event, result: "operator_override", error: null }),
-    operator,
-  );
 }
 
 export async function pauseForOperator(
@@ -121,8 +110,22 @@ export async function pauseForOperator(
   event: Omit<AuditEvent, "result" | "error">,
   operator: OperatorIO,
   message: string,
-): Promise<string> {
-  return waitForOperator(audit, event, operator, message, false);
+): Promise<void> {
+  const actions = operator.skipScope
+    ? `Enter to retry, s to skip ${operator.skipScope}, q/EOF to cancel.`
+    : "Enter to retry, q/EOF to cancel.";
+  const response = await waitForOperator(
+    audit,
+    event,
+    operator,
+    `${message} Actions: ${actions} Other input is unsupported.`,
+    operator.skipScope !== undefined,
+    false,
+  );
+  if (response === "s")
+    throw new TicketSkipped(
+      `skipped ${operator.skipScope}; side effects may remain, including unknown resources from unobserved writes`,
+    );
 }
 
 export type TicketAgentPauseDecision =
@@ -135,8 +138,16 @@ export async function pauseTicketAgentForOperator(
   event: Omit<AuditEvent, "result" | "error">,
   operator: OperatorIO,
   message: string,
+  continuable = true,
 ): Promise<TicketAgentPauseDecision> {
-  const response = await waitForOperator(audit, event, operator, message, true);
+  const response = await waitForOperator(
+    audit,
+    event,
+    operator,
+    message,
+    true,
+    continuable,
+  );
   if (response === "") return { decision: "retry" };
   if (response === "s") return { decision: "skip" };
   return { decision: "continue", response };
@@ -148,55 +159,46 @@ async function waitForOperator(
   operator: OperatorIO,
   message: string,
   allowsSkip: boolean,
+  allowsInstructions: boolean,
 ): Promise<string> {
-  await supervisedAuditWrite(
-    () =>
-      audit.append({
-        ...event,
-        operation: "operator_pause",
-        result: "started",
-        error: null,
-        transition: "pause_started",
-      }),
-    operator,
-  );
-  const response = await operator.pause(message);
-  if (response === null || response === "q") {
-    await supervisedAuditWrite(
+  const record = (result: string, transition = result) =>
+    supervisedAuditWrite(
       () =>
         audit.append({
           ...event,
           operation: "operator_pause",
-          result: "cancelled",
+          result,
           error: null,
-          transition: "cancelled",
+          transition,
         }),
       operator,
     );
-    throw new OperatorCancelled("operator cancelled");
+  for (;;) {
+    await record("started", "pause_started");
+    const response = await operator.pause(message);
+    if (response === null || response === "q") {
+      await record("cancelled");
+      throw new OperatorCancelled("operator cancelled");
+    }
+    const result =
+      response === ""
+        ? "retry"
+        : allowsSkip && response === "s"
+          ? "skipped"
+          : allowsInstructions
+            ? "continue"
+            : "unsupported_input";
+    await record(
+      result,
+      result === "continue"
+        ? "operator_prompt"
+        : result === "unsupported_input"
+          ? "pause_started"
+          : result,
+    );
+    if (result !== "unsupported_input") return response;
+    operator.write("Unsupported input. " + message);
   }
-  await supervisedAuditWrite(
-    () =>
-      audit.append({
-        ...event,
-        operation: "operator_pause",
-        result:
-          response === ""
-            ? "retry"
-            : allowsSkip && response === "s"
-              ? "skipped"
-              : "continue",
-        error: null,
-        transition:
-          response === ""
-            ? "retry"
-            : allowsSkip && response === "s"
-              ? "skipped"
-              : "operator_prompt",
-      }),
-    operator,
-  );
-  return response;
 }
 
 export async function externalRead<T>(operation: ReadOperation<T>): Promise<T> {
@@ -244,45 +246,12 @@ export async function externalRead<T>(operation: ReadOperation<T>): Promise<T> {
       return result;
     }
 
-    for (;;) {
-      const pauseEvent = operation.event(maxAttempts);
-      const response = await pauseForOperator(
-        operation.audit,
-        pauseEvent,
-        operation.operator,
-        "Operation failed. Enter to retry, q to cancel, or supply a trusted result.",
-      );
-      if (response === "") break;
-      let result: T;
-      try {
-        result = operation.parseOverride(response);
-      } catch {
-        await appendPauseEvent(
-          operation.audit,
-          pauseEvent,
-          operation.operator,
-          "invalid_override",
-        );
-        // An unusable trusted read result returns to the same Operator Pause.
-        continue;
-      }
-      await appendPauseEvent(
-        operation.audit,
-        pauseEvent,
-        operation.operator,
-        "operator_override",
-      );
-      await supervisedAuditWrite(
-        () =>
-          operation.audit.append({
-            ...operation.event(1),
-            result: "operator_override",
-            error: null,
-          }),
-        operation.operator,
-      );
-      return result;
-    }
+    await pauseForOperator(
+      operation.audit,
+      operation.event(maxAttempts),
+      operation.operator,
+      "Operation failed.",
+    );
   }
 }
 
@@ -359,39 +328,14 @@ export async function workflowWrite<T>(
         attempt += 1;
         continue;
       }
-      for (;;) {
-        const response = await pauseForOperator(
-          operation.audit,
-          event,
-          operation.operator,
-          "Operation failed. Enter to retry, q to cancel, or acknowledge a trusted successful write.",
-        );
-        if (response === "") {
-          await operation.beforeRetry?.();
-          attempt = 1;
-          break;
-        }
-        let result: T | void;
-        try {
-          result = operation.parseOverride
-            ? operation.parseOverride(response)
-            : undefined;
-        } catch {
-          await appendPauseEvent(
-            operation.audit,
-            event,
-            operation.operator,
-            "invalid_override",
-          );
-          continue;
-        }
-        await recordOperatorOverride(
-          operation.audit,
-          event,
-          operation.operator,
-        );
-        return result;
-      }
+      await pauseForOperator(
+        operation.audit,
+        event,
+        operation.operator,
+        "Operation failed.",
+      );
+      await operation.beforeRetry?.();
+      attempt = 1;
       continue;
     }
     await supervisedAuditWrite(

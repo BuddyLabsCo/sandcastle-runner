@@ -205,7 +205,7 @@ test("a CI-ready no-auto-merge Run removes local artifacts and preserves manual 
 });
 
 for (const accepted of [false, true]) {
-  test(`no-auto-merge cleanup ${accepted ? "accepts residual artifacts" : "retries through Operator Pause"}`, async () => {
+  test(`no-auto-merge cleanup ${accepted ? "keeps pending residual artifacts when skipped" : "retries through Operator Pause"}`, async () => {
     const root = await createProject();
     const { tracker } = createAttemptTracker(9);
     const commit = {
@@ -277,16 +277,20 @@ for (const accepted of [false, true]) {
         operator: {
           async pause(message) {
             pauses.push(message);
-            return accepted ? "manual cleanup required" : "";
+            return accepted
+              ? pauses.length === 1
+                ? "manual cleanup required"
+                : "s"
+              : "";
           },
         },
       }),
     );
 
-    assert.equal(result.exitCode, 0);
-    assert.equal(result.summary.outcome, "succeeded");
+    assert.equal(result.exitCode, accepted ? 1 : 0);
+    assert.equal(result.summary.outcome, accepted ? "incomplete" : "succeeded");
     assert.equal(mergeRequests, 0);
-    assert.equal(pauses.length, 1);
+    assert.equal(pauses.length, accepted ? 2 : 1);
     assert.match(pauses[0]!, /cleanup for Ticket 9 failed/u);
     assert.equal(result.summary.tickets?.[0]?.status, "PR ready");
     assert.deepEqual(result.summary.tickets?.[0]?.retainedWorktrees, [

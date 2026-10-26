@@ -5,6 +5,9 @@ import { discoverAndReserve, releaseTerminalReservation } from "./discovery.ts";
 import {
   externalRead,
   OperatorCancelled,
+  pauseForOperator,
+  scopeOperator,
+  TicketSkipped,
   workflowWrite,
 } from "./operations.ts";
 import { runDocumentationMaintenance } from "./maintenance.ts";
@@ -99,16 +102,6 @@ async function runProjectInternal(
     input.configuredTargetBranch ??
     (await externalRead({
       action: () => input.codeHost.resolveTargetBranch(input.repository),
-      parseOverride: (value) => {
-        const parsed = JSON.parse(value) as { targetBranch?: unknown };
-        if (
-          typeof parsed.targetBranch !== "string" ||
-          parsed.targetBranch.length === 0
-        ) {
-          throw new Error("override has no Target Branch");
-        }
-        return parsed.targetBranch;
-      },
       audit: input.audit,
       event: event("startup", "resolve_target_branch", input.repository),
       clock: input.clock,
@@ -120,6 +113,9 @@ async function runProjectInternal(
   const batches: number[] = [...(input.recoveredRunTickets ?? [])];
   const skippedTickets = new Set<number>();
   const skippedMaintenance = new Set<number>();
+  let skippedMaintenanceOccurrence = false;
+  let unfinishedCleanup = false;
+  const deferredCleanup = new Set<number>();
   const handoffs: VerifiedHandoff[] = [];
   const pullRequests: PullRequestObservation[] = [];
   const completedDeliveries: CompletedDelivery[] = [
@@ -287,6 +283,13 @@ async function runProjectInternal(
     outcome: RunOutcome,
     finalReasons: string[] = reasons,
   ): RunSummary => {
+    if (
+      (outcome === "succeeded" || outcome === "no_work") &&
+      (skippedTickets.size > 0 ||
+        skippedMaintenanceOccurrence ||
+        unfinishedCleanup)
+    )
+      outcome = "incomplete";
     if (outcome === "no_work" && ticketReports.length > 0)
       outcome = "incomplete";
     const resolvedReasons =
@@ -367,7 +370,7 @@ async function runProjectInternal(
     for (const { ticket, pullRequest, reason } of publication.skipped ?? []) {
       skippedTickets.add(ticket);
       updateTicket(ticket, {
-        pullRequest,
+        pullRequest: pullRequest ?? null,
         status: "failed",
         detail: `skipped Delivery Ticket ${ticket}: ${reason}`,
       });
@@ -485,27 +488,74 @@ async function runProjectInternal(
         };
         await input.persistCleanup?.(ticket, failed);
         cleanupRecords.set(ticket, failed);
-        const response = await input.operator.pause(
-          `Terminal cleanup for Ticket ${ticket} failed. Enter to retry, q to cancel, or supply accepted residual artifacts.`,
-        );
-        if (response === null || response === "q")
-          throw new OperatorCancelled(
-            `terminal cleanup pending for Ticket ${ticket}`,
-            {
-              cause: error,
-            },
+        try {
+          await pauseForOperator(
+            input.audit,
+            event("cleanup", "terminal_cleanup", `ticket:${ticket}`)(1),
+            scopeOperator(
+              input.operator,
+              `remaining cleanup for Ticket ${ticket}`,
+            ),
+            `Terminal cleanup for Ticket ${ticket} failed: ${failed.error}`,
           );
-        if (response !== "") {
-          const accepted = {
-            status: "accepted" as const,
-            candidates: failed.candidates,
-            residual: response.split("\n").filter(Boolean),
-          };
-          await input.persistCleanup?.(ticket, accepted);
-          cleanupRecords.set(ticket, accepted);
+        } catch (pauseError) {
+          if (!(pauseError instanceof TicketSkipped)) throw pauseError;
+          unfinishedCleanup = true;
+          deferredCleanup.add(ticket);
+          const detail = `Terminal cleanup pending for Ticket ${ticket}: ${failed.error}; retained artifacts: ${failed.candidates.join(", ") || "enumeration incomplete"}`;
+          reasons.push(detail);
+          const report = ticketReports.find((row) => row.ticket === ticket);
+          if (report)
+            updateTicket(ticket, { detail: `${report.detail}; ${detail}` });
           return;
         }
       }
+    }
+  };
+
+  const releaseCompletedReservation = async (
+    ticket: number,
+    observed?: Ticket,
+  ): Promise<void> => {
+    const pending: CleanupRecord = {
+      status: "pending",
+      candidates: [],
+      error: "Reservation release pending",
+    };
+    await input.persistCleanup?.(ticket, pending);
+    cleanupRecords.set(ticket, pending);
+    const scoped = {
+      ...input,
+      event,
+      operator: scopeOperator(
+        input.operator,
+        `remaining Reservation release for Ticket ${ticket}`,
+      ),
+    };
+    try {
+      const current =
+        observed ??
+        (await externalRead({
+          action: () => input.tracker.getTicket(input.repository, ticket),
+          audit: input.audit,
+          event: event("release", "read_completed_ticket", `ticket:${ticket}`),
+          clock: input.clock,
+          operator: scoped.operator,
+          retryPolicy: input.retryPolicy,
+        }));
+      await releaseTerminalReservation(scoped, current);
+      const cleaned: CleanupRecord = { status: "cleaned", candidates: [] };
+      await input.persistCleanup?.(ticket, cleaned);
+      cleanupRecords.set(ticket, cleaned);
+    } catch (error) {
+      if (!(error instanceof TicketSkipped)) throw error;
+      unfinishedCleanup = true;
+      const detail = `Reservation release pending for completed Ticket ${ticket}; possible Reservation residue`;
+      reasons.push(detail);
+      const report = ticketReports.find((row) => row.ticket === ticket);
+      updateTicket(ticket, {
+        detail: `${report?.detail ?? "Completed"}; ${detail}`,
+      });
     }
   };
 
@@ -517,8 +567,16 @@ async function runProjectInternal(
       ) ||
         (input.recoveredMaintenance?.phase === "completed" &&
           input.recoveredMaintenance.ticket === ticket))
-    )
+    ) {
       await cleanupTerminal(ticket);
+      if (
+        !deferredCleanup.has(ticket) &&
+        input.recoveredCompletedDeliveries?.some(
+          (delivery) => delivery.ticket === ticket,
+        )
+      )
+        await releaseCompletedReservation(ticket);
+    }
   }
   let maintainedDeliveryTickets = new Set(
     input.recoveredMaintenance?.phase === "completed"
@@ -630,6 +688,7 @@ async function runProjectInternal(
       return null;
     }
     if (result.outcome === "skipped") {
+      skippedMaintenanceOccurrence = true;
       if (result.ticket !== undefined) {
         skippedMaintenance.add(result.ticket);
         publicationIntents.delete(result.ticket);
@@ -640,6 +699,14 @@ async function runProjectInternal(
       return null;
     }
     return result.outcome;
+  };
+
+  const recordSkip = (ticket: number, reason: string): Promise<void> => {
+    skippedTickets.add(ticket);
+    recordTicket(ticket, "delivery");
+    updateTicket(ticket, { status: "failed", detail: reason });
+    reasons.push(reason);
+    return Promise.resolve();
   };
 
   const publicationInput = createPublicationInput(
@@ -693,28 +760,44 @@ async function runProjectInternal(
       );
       for (const { observation, handoff } of publication.published) {
         if (skippedTickets.has(observation.ticket)) continue;
-        await cleanupTerminal(observation.ticket, worktreeRoot, [
-          currentRepairHandoff(publicationInputs, handoff),
-        ]);
         updateTicket(observation.ticket, {
           status: "PR ready",
           pullRequest: observation.number,
           detail: `Pull Request #${observation.number} is CI-ready; awaiting manual merge`,
         });
+        await cleanupTerminal(observation.ticket, worktreeRoot, [
+          currentRepairHandoff(publicationInputs, handoff),
+        ]);
       }
       return null;
     }
-    const ordered = await Promise.all(
+    const observations = await Promise.all(
       publication.published
         .filter(({ handoff }) => !skippedTickets.has(handoff.ticket))
-        .map(async (published) => ({
-          ...published,
-          state: await observePullRequestForIntegration(
-            publicationInputs,
-            published.pullRequest.number,
-          ),
-        })),
+        .map(async (published) => {
+          try {
+            const scoped = {
+              ...publicationInputs,
+              operator: scopeOperator(
+                publicationInputs.operator,
+                `Delivery Ticket ${published.handoff.ticket}`,
+              ),
+            };
+            return {
+              ...published,
+              state: await observePullRequestForIntegration(
+                scoped,
+                published.pullRequest.number,
+              ),
+            };
+          } catch (error) {
+            if (!(error instanceof TicketSkipped)) throw error;
+            await recordSkip(published.handoff.ticket, error.reason);
+            return null;
+          }
+        }),
     );
+    const ordered = observations.filter((published) => published !== null);
     ordered.sort(
       (left, right) =>
         left.state.createdAt.localeCompare(right.state.createdAt) ||
@@ -787,7 +870,8 @@ async function runProjectInternal(
       );
       try {
         await cleanupTerminal(integration.ticket.number);
-        await releaseTerminalReservation(publicationInputs, integration.ticket);
+        if (deferredCleanup.has(integration.ticket.number)) continue;
+        await releaseCompletedReservation(handoff.ticket, integration.ticket);
       } catch (error) {
         if (!(error instanceof OperatorCancelled)) throw error;
         reasons.push("operator cancelled");
@@ -943,6 +1027,7 @@ async function runProjectInternal(
       applyAttempts,
       skippedTickets,
       skippedMaintenance,
+      recordSkip,
     });
   }
 
@@ -963,6 +1048,7 @@ async function runProjectInternal(
       applyAttempts,
       skippedTickets,
       skippedMaintenance,
+      recordSkip,
     });
   }
 
@@ -982,11 +1068,12 @@ async function runProjectInternal(
       issueList: input.issueList,
       hadChildren,
       excludedTickets: skippedTickets,
+      onSkip: recordSkip,
     });
     if (discovery.outcome === "incomplete") hasBatchState = true;
     if (discovery.outcome === "close_parent") {
       reasons.push(...discovery.reasons);
-      if (skippedTickets.size > 0 || skippedMaintenance.size > 0)
+      if (skippedTickets.size > 0 || skippedMaintenanceOccurrence)
         return summary("incomplete");
       await workflowWrite({
         action: () =>

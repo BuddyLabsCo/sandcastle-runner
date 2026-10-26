@@ -145,7 +145,7 @@ test("Parent cancellation after conflict repair verification prevents its first 
   assert.equal(pushes, 1);
 });
 
-test("a trusted conflict-repair override repeats required-check discovery", async () => {
+test("conflict recovery instructions continue the Agent before required-check discovery", async () => {
   const root = await createProject();
   const { tracker } = createAttemptTracker(9);
   const implementation = {
@@ -382,4 +382,82 @@ test("blocked conflict repairs pause without consuming the repair budget", async
     )
     .map((event) => event.attempt);
   assert.deepEqual(attempts, [1]);
+});
+
+test("exhausted conflict recovery waits for fresh mergeability before requesting merge", async () => {
+  const root = await createProject();
+  const delivery = createCommittedDelivery();
+  let agents = 0;
+  let requests = 0;
+  let merged = false;
+  let resumed = false;
+  let mergeabilityReady = false;
+  const result = await executeCli(
+    ["run", "--project", "demo", "--parent", "8"],
+    createCliDependencies(root, {
+      ...delivery,
+      gitWorkspace: {
+        ...delivery.gitWorkspace,
+        async inspect(input) {
+          const evidence = await delivery.gitWorkspace.inspect!(input);
+          return { ...evidence, commits: agents > 1 ? [] : evidence.commits };
+        },
+      },
+      agentExecutor: {
+        async execute(input) {
+          agents += 1;
+          return agents === 1
+            ? delivery.agentExecutor.execute!(input)
+            : {
+                outcome: "no_change",
+                summary: "no safe resolution",
+                commits: [],
+                checks: [],
+                blocker: null,
+              };
+        },
+      },
+      codeHost: {
+        async getPullRequest() {
+          return {
+            headSha: "b".repeat(40),
+            createdAt: "2026-09-09T00:00:00Z",
+            merged,
+            mergeFailure: null,
+            mergeable: resumed
+              ? mergeabilityReady
+                ? "mergeable"
+                : "unknown"
+              : "conflicting",
+          };
+        },
+        async requestSquashMerge() {
+          requests += 1;
+          if (requests === 1) return { outcome: "conflict", error: "conflict" };
+          assert.equal(
+            mergeabilityReady,
+            true,
+            "must wait for observed conflict evidence",
+          );
+          merged = true;
+          return { outcome: "accepted" };
+        },
+      },
+      clock: {
+        async sleep(milliseconds) {
+          if (resumed && milliseconds === 10_000) mergeabilityReady = true;
+        },
+      },
+      operator: {
+        async pause(message) {
+          assert.match(message, /Conflict repair failed after two attempts/u);
+          resumed = true;
+          return "";
+        },
+      },
+    }),
+  );
+  assert.equal(result.summary.outcome, "succeeded");
+  assert.equal(agents, 3);
+  assert.equal(requests, 2);
 });

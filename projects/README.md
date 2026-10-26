@@ -19,55 +19,101 @@ This directory is a project template for Sandcastle Runner. Copy it to `projects
 - `ticketClosure`: `runner` or `code_host`.
 - `maintenanceTicket`: title, body, and `doc-maintain` label for maintenance tickets.
 
-Keep credentials in the environment, for example `export GH_TOKEN=...`. `workflow.review` defaults to `true`; `workflow.docMaintainTriggerLabel` defaults to an empty string. Use YAML `#` comments for explanations; the loader ignores them.
-
-Each configured agent profile selects one supported native Sandcastle factory
-and forwards `options` to it unchanged. `agent`, `model`, and the profile key
-are distinct: the model string never selects the agent, and the profile key
-selects the workflow purpose. Codex and Claude Code accept native `effort`; Pi
-accepts native `thinking`. Native options are agent-specific, so switching
-agents does not translate them or promise that the previous options remain
-valid.
-
-There is no default agent or model. A profile must name both explicitly. Migrate
-an older profile by adding `agent: codex`, preserving its `model` verbatim, and
-moving `reasoningEffort` verbatim to `options.effort`, including a value such as
-`max`. The obsolete field is rejected even when the new fields are present;
-Runner does not backfill or convert it.
-
-Each Agent Attempt probes a `SESSION_READY` session with the purpose's profile,
-then resumes that same session through Sandcastle for the substantive work.
-Runner does not read `CODEX_HOME` or infer a lookup root for the selected agent
-from the OS home directory. If Sandcastle's default session lookup does not
+If Sandcastle's default session lookup does not
 match the agent's actual storage, set the native lookup root:
 `sessionStorage.hostSessionsDir` for Codex or Pi, or
-`sessionStorage.hostProjectsDir` for Claude Code. This selects where sessions
-are looked up and does not relocate the agent's storage. Whether an override is
-needed depends on whether the default matches actual storage, not solely on the
-operating system. The former automatic Codex directory discovery is removed.
+`sessionStorage.hostProjectsDir` for Claude Code.
 
-Native run names identify Agent Attempt tasks in log output, but do not title
-the agent application's session list. Runner intentionally does not guarantee
-application-session titles. When automatic recovery stops, Operator Pause shows
-the selected agent, the session ID when available, the working directory, the
-diagnostic log, and the permitted Runner actions. The log path is shown even
-when a session ID is available. It does not print a copyable manual resume
-command; take over with the selected agent's own recovery interface using that
-evidence.
+## Operator Pause actions
 
-Ordinary Sandcastle invocation failures are handled generically, without
-agent-name or provider-error-text classification. Successful process settlement
-precedes every automatic probe retry, same-session continuation, missing-output
-recovery, or structured-output correction. A missing or unusable session enters
-manual handling rather than a fresh conversation. Authentication and
-configuration errors can consume the bounded Agent Retry budget before pausing,
-and native structured-output retries do not cover every invocation failure.
-Cancellation stops automatic work after settlement, while a substantive
-timeout pauses without restarting the invocation or resetting its total
-deadline. A schema-valid success still proceeds through normal outcomes and
-independent Git verification even if its output mentions an internal provider
-error; Runner does not inspect provider-specific raw events to replace that
-decision.
+When automatic recovery stops, the Runner waits for your input. These terminal examples use illustrative paths and diagnostics; `[Enter]` means press Enter without typing text.
+
+### Continue an Agent session
+
+Use the session, working directory, and diagnostic log to investigate the failure, then enter recovery instructions:
+
+```text
+Outcome: blocked
+Reason: Required API credentials are missing
+Agent: codex
+Provider session: session-123
+Working directory: /runner/worktrees/ticket-247
+Diagnostic log: /runner/logs/implement-247.log
+Actions: Enter to continue, s to skip, q to cancel, or provide recovery instructions.
+> Credentials are configured. Retry the API request and run the tests.
+```
+
+The Runner sends your text to the same session. Pressing Enter sends `continue` instead. JSON input is also recovery text; subsequent results still require normal validation and independent Git verification. These actions apply to implementation, Review, documentation, CI repair, and conflict repair.
+
+### Retry when the Agent session is unavailable
+
+A failed session probe or unusable session offers a fresh attempt:
+
+```text
+Outcome: failed
+Reason: Agent session is unavailable
+Agent: codex
+Provider session: unavailable
+Working directory: /runner/worktrees/ticket-247
+Diagnostic log: /runner/logs/implement-247.log
+Actions: Enter to retry, s to skip, q to cancel. Other input is unsupported.
+> [Enter]
+```
+
+Enter starts a fresh attempt after process settlement. Other text leaves this pause open; `s` skips the current issue, and `q` or EOF cancels the Run.
+
+### Retry or skip an issue operation
+
+After repairing the cause of a failed read or write, press Enter to retry:
+
+```text
+Operation failed. Actions: Enter to retry, s to skip Delivery Ticket 247, q/EOF to cancel. Other input is unsupported.
+> [Enter]
+```
+
+If you choose to stop processing that issue, enter `s` instead:
+
+```text
+Operation failed. Actions: Enter to retry, s to skip Delivery Ticket 247, q/EOF to cancel. Other input is unsupported.
+> s
+```
+
+Other issues continue, and the Run does not select the skipped issue again. Existing PRs, comments, branches, and merges remain. Before publication, the Runner attempts Reservation release; `s` at a failed release abandons it and reports possible residue. Maintenance preparation also permits `s` before its issue exists, skipping that occurrence.
+
+After delivery, `s` skips only the remaining cleanup or release, preserving completed delivery and pending cleanup evidence:
+
+```text
+Terminal cleanup for Ticket 247 failed: permission denied Actions: Enter to retry, s to skip remaining cleanup for Ticket 247, q/EOF to cancel. Other input is unsupported.
+> s
+```
+
+Skipped work and unfinished cleanup make the Run return `incomplete`.
+
+Enter retries reads, creation, label/assignee writes, push, and Worktree creation directly. Creation retries can produce duplicates when an earlier write succeeded without confirmation. Repair partial Worktree state before retrying. Merge retries refresh status and HEAD; already merged or queued work proceeds without another merge request. Check and repair timeouts refresh evidence before waiting or repairing. Closure and publication recovery recheck current state; cleanup retries remaining owned artifacts.
+
+### Retry or cancel a global operation
+
+Startup, discovery, shared Batch fetch, and final Parent closure have no current issue to skip:
+
+```text
+Operation failed. Actions: Enter to retry, q/EOF to cancel. Other input is unsupported.
+> q
+```
+
+Enter retries; `q` or EOF cancels the Run. Other input, including `s` and successful-result JSON, leaves the pause open without retrying or resetting the budget.
+
+### Retry an audit failure
+
+Audit failures permit only retry or cancellation, even while skipping an issue. Enter retries the same log action:
+
+```text
+Audit write failed. Enter to retry the same log action, q/EOF to cancel. Other input is unsupported.
+> s
+Audit write failed. Enter to retry the same log action, q/EOF to cancel. Other input is unsupported.
+> [Enter]
+```
+
+The Runner does not replay the business action that already completed. Enter `q` or send EOF to cancel. Input cannot accept an audit gap, acknowledge a successful write, or mark cleanup complete.
 
 ## Documentation Maintenance workflow
 

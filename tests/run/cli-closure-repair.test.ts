@@ -359,7 +359,7 @@ test("failed required checks are repaired on the existing branch and Pull Reques
   });
   assert.deepEqual(sleeps.slice(0, 2), [30_000, 30_000]);
   assert.deepEqual(pauses, [
-    "Required checks timed out. Enter to retry, q to cancel, or acknowledge trusted readiness.",
+    "Required checks timed out. Actions: Enter to retry, s to skip Delivery Ticket 9, q/EOF to cancel. Other input is unsupported.",
   ]);
   assert.equal(agentInputs.length, 2);
   assert.equal(result.summary.pullRequests?.[0]?.readiness, "ready");
@@ -430,7 +430,7 @@ test("an externally merged Pull Request skips pending repair work", async () => 
   }
 });
 
-test("a trusted repair Agent override needs no replacement PR metadata", async () => {
+test("repair instruction text resumes the Agent and validates a fresh result", async () => {
   const root = await createProject();
   const delivery = createCommittedDelivery();
   let agentCalls = 0;
@@ -491,6 +491,6 @@ test("a trusted repair Agent override needs no replacement PR metadata", async (
   );
 
   assert.equal(result.summary.outcome, "succeeded");
-  assert.equal(agentCalls, 2);
+  assert.equal(agentCalls, 3);
   assert.equal(pushes, 2);
 });

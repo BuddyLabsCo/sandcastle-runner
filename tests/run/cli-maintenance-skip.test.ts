@@ -14,6 +14,7 @@ import { createCliDependencies } from "../support/cli-dependencies.ts";
 import {
   createProject,
   readProjectConfig,
+  publicationIntent,
   validConfig,
   writeProjectConfig,
 } from "../support/cli-project.ts";
@@ -410,76 +411,92 @@ for (const selector of ["parent", "issue"] as const)
     });
   }
 
-test("skipping recovered Maintenance stays incomplete under --no-auto-merge", async () => {
-  const root = await createProject();
-  const configPath = path.join(root, "projects/demo/config.yaml");
-  const config = await readProjectConfig<{
-    workflow: { docMaintainTriggerLabel: string };
-  }>(configPath);
-  config.workflow.docMaintainTriggerLabel = "documentation";
-  await writeProjectConfig(configPath, config);
-  await writeRecoverySnapshot(
-    recoveryPaths(path.join(root, "projects/demo"), 9, "issue").snapshot,
-    {
-      schemaVersion: 2,
-      project: "demo",
-      repository: validConfig.repository,
-      checkout: validConfig.checkout,
-      parentTicket: 9,
-      runKind: "issue",
-      issueTicket: 9,
-      runId: "interrupted",
-      phase: "running",
-      targetBranch: "main",
-      createdAt: "2026-10-24T00:00:00.000Z",
-      updatedAt: "2026-10-24T00:00:00.000Z",
-      batch: [9],
-      activeBatch: [9],
-      completedDeliveries: [{ ticket: 9, labels: ["documentation"] }],
-      maintenance: {
-        phase: "blocked",
-        ticket: 100,
-        deliveryTickets: [9],
-        barrier: true,
-      },
-    },
-  );
-  const maintenance: Ticket = {
-    number: 100,
-    state: "open",
-    stateReason: null,
-    assignees: [],
-    labels: ["doc-maintain"],
-  };
-  let parentCloses = 0;
-  const result = await executeCli(
-    ["run", "--project", "demo", "--issue", "9", "--no-auto-merge"],
-    createCliDependencies(root, {
-      tracker: {
-        async getTicket() {
-          return maintenance;
+for (const phase of ["attempt", "publication"] as const)
+  test(`skipping recovered Maintenance ${phase} stays incomplete under --no-auto-merge`, async () => {
+    const root = await createProject();
+    const configPath = path.join(root, "projects/demo/config.yaml");
+    const config = await readProjectConfig<{
+      workflow: { docMaintainTriggerLabel: string };
+    }>(configPath);
+    config.workflow.docMaintainTriggerLabel = "documentation";
+    await writeProjectConfig(configPath, config);
+    await writeRecoverySnapshot(
+      recoveryPaths(path.join(root, "projects/demo"), 9, "issue").snapshot,
+      {
+        schemaVersion: 2,
+        project: "demo",
+        repository: validConfig.repository,
+        checkout: validConfig.checkout,
+        parentTicket: 9,
+        runKind: "issue",
+        issueTicket: 9,
+        runId: "interrupted",
+        phase: "running",
+        targetBranch: "main",
+        createdAt: "2026-10-24T00:00:00.000Z",
+        updatedAt: "2026-10-24T00:00:00.000Z",
+        batch: [9],
+        activeBatch: [9],
+        completedDeliveries: [{ ticket: 9, labels: ["documentation"] }],
+        maintenance: {
+          phase: "blocked",
+          ticket: 100,
+          deliveryTickets: [9],
+          barrier: true,
         },
-        async closeParent() {
-          parentCloses += 1;
-        },
+        ...(phase === "publication"
+          ? {
+              publications: [
+                {
+                  ...publicationIntent("pr_created", 100),
+                  kind: "maintenance" as const,
+                },
+              ],
+            }
+          : {}),
       },
-      operator: {
-        async pause() {
-          return "s";
+    );
+    const maintenance: Ticket = {
+      number: 100,
+      state: "open",
+      stateReason: null,
+      assignees: [],
+      labels: ["doc-maintain"],
+    };
+    let parentCloses = 0;
+    const result = await executeCli(
+      ["run", "--project", "demo", "--issue", "9", "--no-auto-merge"],
+      createCliDependencies(root, {
+        tracker: {
+          async getTicket() {
+            return maintenance;
+          },
+          async closeParent() {
+            parentCloses += 1;
+          },
         },
-      },
-    }),
-  );
-  assert.equal(
-    result.summary.outcome,
-    "incomplete",
-    result.summary.reasons.join("; "),
-  );
-  assert.equal(result.exitCode, 1);
-  assert.equal(parentCloses, 0);
-  assert.equal(maintenance.state, "open");
-  assert.equal(
-    result.summary.tickets?.find(({ ticket }) => ticket === 100)?.status,
-    "failed",
-  );
-});
+        codeHost: {
+          async getRemoteBranchHead() {
+            return "f".repeat(40);
+          },
+        },
+        operator: {
+          async pause() {
+            return "s";
+          },
+        },
+      }),
+    );
+    assert.equal(
+      result.summary.outcome,
+      "incomplete",
+      result.summary.reasons.join("; "),
+    );
+    assert.equal(result.exitCode, 1);
+    assert.equal(parentCloses, 0);
+    assert.equal(maintenance.state, "open");
+    assert.equal(
+      result.summary.tickets?.find(({ ticket }) => ticket === 100)?.status,
+      "failed",
+    );
+  });

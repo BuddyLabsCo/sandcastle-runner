@@ -10,8 +10,9 @@ import {
 import {
   externalRead,
   pauseForOperator,
-  recordOperatorOverride,
   workflowWrite,
+  scopeOperator,
+  TicketSkipped,
 } from "./operations.ts";
 import {
   integratePullRequest,
@@ -41,32 +42,6 @@ export interface MaintenanceResult {
   ticket?: number;
   handoff?: VerifiedHandoff;
   pullRequest?: PullRequestObservation;
-}
-
-function labelPage(value: string): LabelPage {
-  const parsed = JSON.parse(value) as Partial<LabelPage>;
-  if (
-    !Array.isArray(parsed.labels) ||
-    parsed.labels.some((label) => typeof label !== "string") ||
-    (parsed.nextPage !== null && !Number.isSafeInteger(parsed.nextPage))
-  ) {
-    throw new Error("override has no usable label page");
-  }
-  return { labels: parsed.labels, nextPage: parsed.nextPage ?? null };
-}
-
-function createdTicket(value: string, label: string): Ticket {
-  const parsed = JSON.parse(value) as { number?: unknown };
-  if (!Number.isSafeInteger(parsed.number) || Number(parsed.number) <= 0) {
-    throw new Error("override has no Maintenance Ticket number");
-  }
-  return {
-    number: parsed.number as number,
-    state: "open",
-    stateReason: null,
-    assignees: [],
-    labels: [label, "ready-for-agent"],
-  };
 }
 
 function stopped(
@@ -113,7 +88,6 @@ async function maintenanceLabelExists(
     const current: number = page;
     const labels = await externalRead<LabelPage>({
       action: () => input.tracker.listLabelsPage(input.repository, current),
-      parseOverride: labelPage,
       audit: input.audit,
       event: input.event("maintenance", "read_labels", `page:${current}`),
       clock: input.clock,
@@ -225,29 +199,44 @@ async function closeNoChange(
       "confirm_no_change_closure",
       `ticket:${ticket}`,
     )(1);
-    const response = await pauseForOperator(
+    await pauseForOperator(
       input.audit,
       event,
       input.operator,
-      `Maintenance Ticket ${ticket} is not closed as completed. Enter to retry, q to cancel, or acknowledge trusted completion.`,
+      `Maintenance Ticket ${ticket} is not closed as completed.`,
     );
-    if (response === "") continue;
-    await recordOperatorOverride(input.audit, event, input.operator);
-    await input.persistMaintenance?.({
-      phase: "completed",
-      ticket,
-      deliveryTickets: input.recovery?.deliveryTickets ?? [],
-      barrier: false,
-    });
-    return {
-      outcome: "succeeded",
-      reasons: [`Completed Maintenance Ticket ${ticket} with no changes`],
-      ticket,
-    };
   }
 }
 
 export async function runDocumentationMaintenance(
+  input: MaintenanceInput,
+): Promise<MaintenanceResult> {
+  let ticket = input.recovery?.ticket;
+  const scoped = {
+    ...input,
+    operator: scopeOperator(
+      input.operator,
+      "the current Documentation Maintenance occurrence",
+    ),
+    persistMaintenance: async (state: MaintenanceState | null) => {
+      if (state?.ticket !== undefined) ticket = state.ticket;
+      await input.persistMaintenance?.(state);
+    },
+  };
+  try {
+    return await runMaintenanceOccurrence(scoped);
+  } catch (error) {
+    if (!(error instanceof TicketSkipped)) throw error;
+    await input.persistMaintenance?.(null);
+    return {
+      outcome: "skipped",
+      reasons: [error.reason],
+      ...(ticket === undefined ? {} : { ticket }),
+    };
+  }
+}
+
+async function runMaintenanceOccurrence(
   input: MaintenanceInput,
 ): Promise<MaintenanceResult> {
   const persist = (state: MaintenanceState) =>
@@ -285,8 +274,6 @@ export async function runDocumentationMaintenance(
           input.maintenanceTicket.body,
           input.maintenanceTicket.label,
         ),
-      parseOverride: (value) =>
-        createdTicket(value, input.maintenanceTicket.label),
       audit: input.audit,
       clock: input.clock,
       event: () =>
@@ -340,6 +327,8 @@ export async function runDocumentationMaintenance(
       input.recoveryPublication,
     ]);
     const published = recovered.published[0];
+    const skipped = recovered.skipped?.[0];
+    if (skipped) return skipMaintenance(input, ticket.number, skipped.reason);
     if (recovered.outcome === "succeeded" && published === undefined) {
       await input.persistPublication?.(ticket.number, null);
       await persist({
