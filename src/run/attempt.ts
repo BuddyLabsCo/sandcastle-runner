@@ -10,6 +10,7 @@ import {
   externalRead,
   OperatorCancelled,
   serializeOperator,
+  scopeOperator,
   workflowWrite,
 } from "./operations.ts";
 import {
@@ -31,18 +32,16 @@ export type {
   VerifiedHandoff,
 } from "./agent-operation.ts";
 
-function fullSha(value: unknown): string {
-  if (typeof value !== "string" || !/^[0-9a-f]{40,64}$/u.test(value))
-    throw new Error("override has no full base SHA");
-  return value;
-}
-
 async function implementTicket(
   input: AttemptInput,
   ticket: number,
   base: string,
   controller: AbortController,
 ): Promise<TicketAttemptOutcome> {
+  input = {
+    ...input,
+    operator: scopeOperator(input.operator, `Delivery Ticket ${ticket}`),
+  };
   const ticketInput =
     input.standaloneIssues === undefined
       ? input
@@ -98,7 +97,7 @@ async function implementTicket(
     if ("reason" in result)
       return { ticket, outcome: result.outcome, detail: result.reason };
     const handoff = input.review
-      ? await reviewHandoff(input, result, controller.signal)
+      ? await reviewHandoff(ticketInput, result, controller.signal)
       : result;
     return {
       ticket,
@@ -108,11 +107,14 @@ async function implementTicket(
     };
   } catch (error) {
     if (error instanceof TicketSkipped) {
-      await releasePrePublicationReservation(ticketInput, ticket);
+      const reason = await releasePrePublicationReservation(
+        ticketInput,
+        ticket,
+      );
       return {
         ticket,
         outcome: "skipped",
-        detail: `skipped Delivery Ticket ${ticket}: ${error.reason}`,
+        detail: `skipped Delivery Ticket ${ticket}: ${error.reason}${reason ? `; ${reason}` : ""}`,
       };
     }
     if (error instanceof BoundaryStop && error.result.outcome === "stopped")
@@ -278,10 +280,6 @@ export async function runMaintenanceAttempt(
           input.checkout,
           input.targetBranch,
         ),
-      parseOverride: (value) => {
-        const parsed = JSON.parse(value) as { base?: unknown };
-        return fullSha(parsed.base);
-      },
       audit: input.audit,
       event: input.event(
         "maintenance",
@@ -361,9 +359,37 @@ export async function implementReservedBatch(
   try {
     for (const ticket of input.batch) {
       try {
-        await boundary(input, ticket);
+        await boundary(
+          {
+            ...input,
+            operator: scopeOperator(
+              input.operator,
+              `Delivery Ticket ${ticket}`,
+            ),
+          },
+          ticket,
+        );
         candidates.push(ticket);
       } catch (error) {
+        if (error instanceof TicketSkipped) {
+          const scoped = {
+            ...input,
+            operator: scopeOperator(
+              input.operator,
+              `Delivery Ticket ${ticket}`,
+            ),
+          };
+          const residue = await releasePrePublicationReservation(
+            scoped,
+            ticket,
+          );
+          tickets.push({
+            ticket,
+            outcome: "skipped",
+            detail: `${error.reason}${residue ? `; ${residue}` : ""}`,
+          });
+          continue;
+        }
         if (!(error instanceof BoundaryStop)) throw error;
         const outcome: TicketAttemptOutcome = {
           ticket,
@@ -398,10 +424,6 @@ export async function implementReservedBatch(
           input.checkout,
           input.targetBranch,
         ),
-      parseOverride: (value) => {
-        const parsed = JSON.parse(value) as { base?: unknown };
-        return fullSha(parsed.base);
-      },
       audit: input.audit,
       event: input.event(
         "prepare_worktrees",

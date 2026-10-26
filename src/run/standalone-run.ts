@@ -34,6 +34,7 @@ export interface StandaloneRunContext {
   applyAttempts: (attempts: AttemptBatchResult) => Promise<void>;
   skippedTickets: ReadonlySet<number>;
   skippedMaintenance: ReadonlySet<number>;
+  recordSkip: (ticket: number, reason: string) => Promise<void>;
 }
 
 export async function runStandaloneIssue(
@@ -53,6 +54,7 @@ export async function runStandaloneIssue(
       return context.summary(skippedWork() ? "incomplete" : "succeeded");
     const discovery = input.standaloneIssueList
       ? await discoverAndReserveStandaloneBatch({
+          onSkip: context.recordSkip,
           repository: input.repository,
           parentTicket: input.parentTicket,
           standaloneIssues: remaining,
@@ -67,6 +69,7 @@ export async function runStandaloneIssue(
           reservationLabel: input.reservationLabel,
         })
       : await discoverAndReserveStandalone({
+          onSkip: context.recordSkip,
           repository: input.repository,
           parentTicket: input.parentTicket,
           standaloneIssue: input.issueTicket!,

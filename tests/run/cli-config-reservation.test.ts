@@ -309,7 +309,7 @@ test("enabled Documentation Maintenance rejects an empty prompt", async () => {
   assert.equal(result.logPath, null);
 });
 
-test("an accepted audit creation gap does not suppress later appends", async () => {
+test("audit gap text and skip stay paused until Enter retries log creation", async () => {
   const root = await createProject();
   const logs = path.join(root, "projects", "demo", "logs");
   await writeFile(logs, "blocks directory creation");
@@ -320,16 +320,19 @@ test("an accepted audit creation gap does not suppress later appends", async () 
       operator: {
         async pause() {
           pauseCalls += 1;
-          await rm(logs);
-          await mkdir(logs);
-          return "accept this audit gap";
+          if (pauseCalls === 1) {
+            await rm(logs);
+            await mkdir(logs);
+            return "accept this audit gap";
+          }
+          return pauseCalls === 2 ? "s" : "";
         },
       },
     }),
   );
 
   assert.equal(result.summary.outcome, "no_work");
-  assert.equal(pauseCalls, 1);
+  assert.equal(pauseCalls, 3);
   assert.ok(result.logPath);
   assert.match(await readFile(result.logPath, "utf8"), /read_parent/u);
 });
@@ -405,7 +408,7 @@ test("an omitted Target Branch is resolved once through CodeHost and fixed for t
   assert.equal(branchCalls, 1);
 });
 
-test("a trusted Target Branch override uses the project term", async () => {
+test("global Target Branch recovery rejects results and skip before retrying the read", async () => {
   const root = await createProject();
   const configPath = path.join(root, "projects", "demo", "config.yaml");
   const configWithoutBranch = { ...validConfig };
@@ -419,13 +422,14 @@ test("a trusted Target Branch override uses the project term", async () => {
       codeHost: {
         async resolveTargetBranch() {
           branchCalls += 1;
-          throw new Error("unavailable");
+          if (branchCalls <= 5) throw new Error("unavailable");
+          return "trunk";
         },
       },
       operator: {
         async pause() {
           pauseCalls += 1;
-          return pauseCalls === 1 ? '{"targetBranch":"trunk"}' : "q";
+          return ['{"targetBranch":"trunk"}', "s", ""][pauseCalls - 1] ?? "q";
         },
       },
     }),
@@ -433,8 +437,8 @@ test("a trusted Target Branch override uses the project term", async () => {
 
   assert.equal(result.summary.outcome, "no_work");
   assert.equal(result.summary.targetBranch, "trunk");
-  assert.equal(branchCalls, 5);
-  assert.equal(pauseCalls, 1);
+  assert.equal(branchCalls, 6);
+  assert.equal(pauseCalls, 3);
 });
 
 test("open children return an actionable incomplete summary", async () => {

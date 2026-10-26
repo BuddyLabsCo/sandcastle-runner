@@ -68,7 +68,7 @@ export function createFiveTicketScenario(
   let resolveTargetBranchCalls = 0;
   let correctionSessions = 0;
   let ticket2Executor: SandcastleAgentExecutor | undefined;
-  let trustedOverrideTicket: number | undefined;
+  let recoveryInstructionTicket: number | undefined;
   let interrupted = false;
   let activeAgents = 0;
   let maxActiveAgents = 0;
@@ -261,9 +261,10 @@ export function createFiveTicketScenario(
             recovery &&
             restartPoint.current === null &&
             purpose === "implement" &&
-            input.ticket === 4
+            input.ticket === 4 &&
+            attempt === 1
           ) {
-            trustedOverrideTicket = 4;
+            recoveryInstructionTicket = 4;
             throw new Error("Agent output unavailable");
           }
           const digit =
@@ -472,8 +473,8 @@ export function createFiveTicketScenario(
       write() {},
       async pause(message) {
         operations.push(`operator:pause:${message}`);
-        if (trustedOverrideTicket === 4) {
-          trustedOverrideTicket = undefined;
+        if (recoveryInstructionTicket === 4) {
+          recoveryInstructionTicket = undefined;
           return JSON.stringify({
             outcome: "committed",
             pr_title: "feat: trusted ticket 4",

@@ -44,29 +44,25 @@ export function agentPauseMessage(
 export const ticketAgentContinueActions =
   "Enter to continue, s to skip, q to cancel, or provide recovery instructions.";
 export const ticketAgentRetryActions =
-  "Enter to retry, s to skip, q to cancel, or supply a trusted result.";
+  "Enter to retry, s to skip, q to cancel. Other input is unsupported.";
 
 export async function pauseAgentAttempt(
   input: AgentOperationInput,
   event: Omit<AuditEvent, "result" | "error">,
   message: string,
+  continuable = true,
 ): Promise<TicketAgentPauseDecision> {
   return pauseTicketAgentForOperator(
     input.audit,
     event,
     input.operator,
     message,
+    continuable,
   );
 }
 
-export class TicketSkipped extends Error {
-  readonly reason: string;
-
-  constructor(reason: string) {
-    super(reason);
-    this.reason = reason;
-  }
-}
+export { TicketSkipped } from "./operations.ts";
+import { TicketSkipped } from "./operations.ts";
 
 export async function skipTicketAgentAttempt(
   input: AgentOperationInput,

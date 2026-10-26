@@ -146,9 +146,9 @@ test("GitHubCodeHost distinguishes an absent branch and maps all Pull Request st
 test("GitHubCodeHost observes merge state and requests a head-matched admin squash merge", async () => {
   const calls: string[][] = [];
   const responses = [
-    '{"headRefOid":"abc123","createdAt":"2026-09-09T00:00:00Z","state":"OPEN","mergedAt":null}',
+    '{"data":{"repository":{"pullRequest":{"headRefOid":"abc123","createdAt":"2026-09-09T00:00:00Z","state":"OPEN","mergedAt":null,"mergeable":"UNKNOWN","autoMergeRequest":null,"mergeQueueEntry":null}}}}',
     "",
-    '{"headRefOid":"abc123","createdAt":"2026-09-09T00:00:00Z","state":"CLOSED","mergedAt":null}',
+    '{"data":{"repository":{"pullRequest":{"headRefOid":"abc123","createdAt":"2026-09-09T00:00:00Z","state":"CLOSED","mergedAt":null,"mergeable":"UNKNOWN","autoMergeRequest":null,"mergeQueueEntry":null}}}}',
   ];
   const codeHost = new GitHubCodeHost("configured-token", async (args) => {
     calls.push(args);
@@ -160,6 +160,8 @@ test("GitHubCodeHost observes merge state and requests a head-matched admin squa
     createdAt: "2026-09-09T00:00:00Z",
     merged: false,
     mergeFailure: null,
+    mergeRequested: false,
+    mergeable: "unknown",
   });
   assert.deepEqual(
     await codeHost.requestSquashMerge({
@@ -175,44 +177,30 @@ test("GitHubCodeHost observes merge state and requests a head-matched admin squa
     createdAt: "2026-09-09T00:00:00Z",
     merged: false,
     mergeFailure: "Pull Request 41 closed without merging",
+    mergeRequested: false,
+    mergeable: "unknown",
   });
-  assert.deepEqual(calls, [
-    [
-      "pr",
-      "view",
-      "41",
-      "--repo",
-      "owner/repo",
-      "--json",
-      "headRefOid,createdAt,state,mergedAt",
-    ],
-    [
-      "pr",
-      "merge",
-      "41",
-      "--repo",
-      "owner/repo",
-      "--squash",
-      "--match-head-commit",
-      "abc123",
-      "--admin",
-    ],
-    [
-      "pr",
-      "view",
-      "41",
-      "--repo",
-      "owner/repo",
-      "--json",
-      "headRefOid,createdAt,state,mergedAt",
-    ],
+  assert.deepEqual(calls[1], [
+    "pr",
+    "merge",
+    "41",
+    "--repo",
+    "owner/repo",
+    "--squash",
+    "--match-head-commit",
+    "abc123",
+    "--admin",
   ]);
+  for (const index of [0, 2]) {
+    assert.deepEqual(calls[index]?.slice(0, 2), ["api", "graphql"]);
+    assert.ok(calls[index]?.includes("number=41"));
+  }
 });
 
 test("GitHubCodeHost confirms a merged Pull Request from either merged field", async () => {
   for (const response of [
-    '{"headRefOid":"abc123","createdAt":"2026-09-09T00:00:00Z","state":"MERGED","mergedAt":null}',
-    '{"headRefOid":"abc123","createdAt":"2026-09-09T00:00:00Z","state":"CLOSED","mergedAt":"2026-09-09T00:00:00Z"}',
+    '{"data":{"repository":{"pullRequest":{"headRefOid":"abc123","createdAt":"2026-09-09T00:00:00Z","state":"MERGED","mergedAt":null,"mergeable":"UNKNOWN","autoMergeRequest":null,"mergeQueueEntry":null}}}}',
+    '{"data":{"repository":{"pullRequest":{"headRefOid":"abc123","createdAt":"2026-09-09T00:00:00Z","state":"CLOSED","mergedAt":"2026-09-09T00:00:00Z","mergeable":"UNKNOWN","autoMergeRequest":null,"mergeQueueEntry":null}}}}',
   ]) {
     const codeHost = new GitHubCodeHost(
       "configured-token",
@@ -223,6 +211,8 @@ test("GitHubCodeHost confirms a merged Pull Request from either merged field", a
       createdAt: "2026-09-09T00:00:00Z",
       merged: true,
       mergeFailure: null,
+      mergeRequested: false,
+      mergeable: "unknown",
     });
   }
 });
@@ -253,3 +243,29 @@ test("GitHubCodeHost distinguishes explicit conflicts and preserves other merge 
     );
   }
 });
+
+for (const acceptance of ["autoMergeRequest", "mergeQueueEntry"] as const) {
+  test(`GitHubCodeHost exposes ${acceptance} so an accepted merge is not requested again`, async () => {
+    const codeHost = new GitHubCodeHost("configured-token", async () =>
+      JSON.stringify({
+        data: {
+          repository: {
+            pullRequest: {
+              headRefOid: "abc123",
+              createdAt: "2026-09-09T00:00:00Z",
+              state: "OPEN",
+              mergedAt: null,
+              autoMergeRequest: null,
+              mergeQueueEntry: null,
+              mergeable: "CONFLICTING",
+              [acceptance]: { id: "accepted" },
+            },
+          },
+        },
+      }),
+    );
+    const state = await codeHost.getPullRequest("owner/repo", 41);
+    assert.equal(state.mergeRequested, true);
+    assert.equal(state.mergeable, "conflicting");
+  });
+}

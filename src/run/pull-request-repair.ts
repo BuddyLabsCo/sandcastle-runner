@@ -10,17 +10,11 @@ import type {
   PullRequestState,
   RequiredCheck,
 } from "./contracts.ts";
-import { parseRequiredChecks } from "./contracts.ts";
 import {
   type DeliveryBoundaryResult,
   revalidateActiveTicket,
 } from "./discovery.ts";
-import {
-  externalRead,
-  pauseForOperator,
-  recordOperatorOverride,
-  workflowWrite,
-} from "./operations.ts";
+import { externalRead, pauseForOperator, workflowWrite } from "./operations.ts";
 import { removeReplacedWorkspace } from "./cleanup.ts";
 import {
   freshRepairHandoff,
@@ -33,13 +27,6 @@ import {
   type PullRequestObservation,
   type RepairBudget,
 } from "./pull-request-core.ts";
-
-function requiredChecksOverride(value: string): RequiredCheck[] {
-  return parseRequiredChecks(
-    JSON.parse(value) as unknown,
-    "override has invalid required-check evidence",
-  );
-}
 
 function checkResult(
   checks: RequiredCheck[],
@@ -145,7 +132,6 @@ export async function observeRequiredChecks(
             input.repository,
             pullRequest.number,
           ),
-        parseOverride: requiredChecksOverride,
         audit: input.audit,
         event: input.event(
           "ci_wait",
@@ -168,17 +154,12 @@ export async function observeRequiredChecks(
       "required_checks_timeout",
       `pull_request:${pullRequest.number}`,
     )(1);
-    const response = await pauseForOperator(
+    await pauseForOperator(
       input.audit,
       event,
       input.operator,
-      "Required checks timed out. Enter to retry, q to cancel, or acknowledge trusted readiness.",
+      "Required checks timed out.",
     );
-    if (response === "") continue;
-    const boundary = await revalidateActiveTicket(input, handoff.ticket);
-    if (boundary.outcome !== "ready") return boundary;
-    await recordOperatorOverride(input.audit, event, input.operator);
-    return { readiness: "ready", failedChecks: [] };
   }
 }
 
@@ -333,26 +314,27 @@ export async function repairRequiredChecks(
       "repair_budget_exhausted",
       `pull_request:${pullRequest.number}`,
     )(budget.consumed);
-    const response = await pauseForOperator(
+    await pauseForOperator(
       input.audit,
       event,
       input.operator,
-      "CI repair failed after two attempts. Enter to start a fresh repair budget, q to cancel, or acknowledge trusted readiness.",
+      "CI repair failed after two attempts. Resolve checks, then retry.",
     );
-    if (response === "") {
-      budget.consumed = 0;
-      budget.generation += 1;
-      await repairIntent(input, handoff.ticket, "ci", {
-        consumed: 0,
-        generation: budget.generation,
-        attempt: budget.attempts.value,
-      });
-      continue;
-    }
-    const boundary = await revalidateActiveTicket(input, currentHandoff.ticket);
-    if (boundary.outcome !== "ready") return boundary;
-    await recordOperatorOverride(input.audit, event, input.operator);
-    return { readiness: "ready", failedChecks: [] };
+    const refreshed = await observeRequiredChecks(
+      input,
+      currentHandoff,
+      pullRequest,
+    );
+    if ("outcome" in refreshed || refreshed.readiness === "ready")
+      return refreshed;
+    failedChecks = refreshed.failedChecks;
+    budget.consumed = 0;
+    budget.generation += 1;
+    await repairIntent(input, handoff.ticket, "ci", {
+      consumed: 0,
+      generation: budget.generation,
+      attempt: budget.attempts.value,
+    });
   }
 }
 
@@ -369,7 +351,7 @@ export async function repairMergeConflict(
 > {
   const controller = new AbortController();
   let currentHandoff = currentRepairHandoff(input, handoff);
-  for (;;) {
+  repairCycle: for (;;) {
     while (budget.consumed < 2) {
       const beforeRepair = await revalidateActiveTicket(
         input,
@@ -388,16 +370,6 @@ export async function repairMergeConflict(
             input.checkout,
             input.targetBranch,
           ),
-        parseOverride: (value) => {
-          const parsed = JSON.parse(value) as { base?: unknown };
-          if (
-            typeof parsed.base !== "string" ||
-            !/^[0-9a-f]{40,64}$/u.test(parsed.base)
-          ) {
-            throw new Error("override has no full Target Branch SHA");
-          }
-          return parsed.base;
-        },
         audit: input.audit,
         event: input.event(
           "conflict_repair",
@@ -543,46 +515,54 @@ export async function repairMergeConflict(
       "repair_budget_exhausted",
       `pull_request:${pullRequest.number}`,
     )(budget.consumed);
-    const response = await pauseForOperator(
+    await pauseForOperator(
       input.audit,
       event,
       input.operator,
-      "Conflict repair failed after two attempts. Enter to start a fresh repair budget, q to cancel, or acknowledge a trusted repair.",
+      "Conflict repair failed after two attempts. Resolve the conflict, then retry.",
     );
-    if (response === "") {
-      budget.consumed = 0;
-      budget.generation += 1;
-      await repairIntent(input, handoff.ticket, "conflict", {
-        consumed: 0,
-        generation: budget.generation,
-        attempt: budget.attempts.value,
-      });
-      continue;
-    }
-    const boundary = await revalidateActiveTicket(input, currentHandoff.ticket);
-    if (boundary.outcome !== "ready") return boundary;
-    await recordOperatorOverride(input.audit, event, input.operator);
-    let readiness: RequiredChecksResult = await observeRequiredChecks(
-      input,
-      currentHandoff,
-      pullRequest,
-    );
-    if (!("outcome" in readiness) && readiness.readiness === "failed") {
-      readiness = await repairRequiredChecks(
+    const deadline = input.clock.now().getTime() + input.mergeQueueTimeoutMs;
+    for (;;) {
+      const boundary = await revalidateActiveTicket(
         input,
-        currentHandoff,
-        pullRequest,
-        readiness.failedChecks,
-        controller.signal,
+        currentHandoff.ticket,
       );
-    }
-    if ("outcome" in readiness) return readiness;
-    return {
-      state: await observePullRequestForIntegration(
+      if (boundary.outcome !== "ready") return boundary;
+      const state = await observePullRequestForIntegration(
         input,
         pullRequest.number,
         "conflict_repair",
-      ),
-    };
+      );
+      if (state.merged || state.mergeRequested) return { state };
+      if (state.mergeable === "conflicting") break;
+      if (state.mergeable !== "mergeable") {
+        const remaining = deadline - input.clock.now().getTime();
+        if (remaining <= 0) continue repairCycle;
+        await input.clock.sleep(Math.min(10_000, remaining));
+        continue;
+      }
+      let readiness: RequiredChecksResult = await observeRequiredChecks(
+        input,
+        currentHandoff,
+        pullRequest,
+      );
+      if (!("outcome" in readiness) && readiness.readiness === "failed")
+        readiness = await repairRequiredChecks(
+          input,
+          currentHandoff,
+          pullRequest,
+          readiness.failedChecks,
+          controller.signal,
+        );
+      if ("outcome" in readiness) return readiness;
+      return { state };
+    }
+    budget.consumed = 0;
+    budget.generation += 1;
+    await repairIntent(input, handoff.ticket, "conflict", {
+      consumed: 0,
+      generation: budget.generation,
+      attempt: budget.attempts.value,
+    });
   }
 }

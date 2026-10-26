@@ -8,9 +8,10 @@ import type {
   Ticket,
   Tracker,
 } from "./contracts.ts";
-import { externalRead, workflowWrite } from "./operations.ts";
+import { externalRead, workflowWrite, TicketSkipped } from "./operations.ts";
 
 export interface DiscoveryInput {
+  onSkip?: (ticket: number, reason: string) => Promise<void>;
   repository: string;
   parentTicket: number;
   standaloneIssue?: number;
@@ -50,108 +51,12 @@ export interface Selection {
   missing: number[];
 }
 
-function record(value: unknown, message: string): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error(message);
-  }
-  return value as Record<string, unknown>;
-}
-
-export function parseTicket(
-  value: unknown,
-  expectedNumber?: number,
-  requireRepository = false,
-): Ticket {
-  const input = record(value, "override is not a ticket");
-  const number = expectedNumber ?? input.number;
-  if (!Number.isSafeInteger(number) || (number as number) <= 0) {
-    throw new Error("override has no ticket number");
-  }
-  if (input.state !== "open" && input.state !== "closed") {
-    throw new Error("override has no usable ticket state");
-  }
-  if (
-    input.state === "closed" &&
-    input.stateReason !== null &&
-    input.stateReason !== "completed" &&
-    input.stateReason !== "not_planned"
-  ) {
-    throw new Error("override has no usable closure reason");
-  }
-  for (const field of ["assignees", "labels"] as const) {
-    if (
-      input[field] !== undefined &&
-      (!Array.isArray(input[field]) ||
-        input[field].some((item) => typeof item !== "string"))
-    ) {
-      throw new Error(`override has no usable ${field}`);
-    }
-  }
-  if (
-    requireRepository &&
-    (typeof input.repository !== "string" || input.repository.length === 0)
-  ) {
-    throw new Error("override has no usable repository");
-  }
-  return {
-    number: number as number,
-    state: input.state,
-    stateReason:
-      input.state === "open"
-        ? null
-        : (input.stateReason as "completed" | "not_planned" | null),
-    ...(typeof input.repository === "string"
-      ? { repository: input.repository }
-      : {}),
-    ...(input.assignees === undefined
-      ? {}
-      : { assignees: input.assignees as string[] }),
-    ...(input.labels === undefined ? {} : { labels: input.labels as string[] }),
-  };
-}
-
-function parseChildPageOverride(value: string): ChildPage {
-  const input = record(
-    JSON.parse(value) as unknown,
-    "override is not a child page",
-  );
-  if (!Array.isArray(input.children))
-    throw new Error("override has no children");
-  if (input.nextPage !== null && !Number.isSafeInteger(input.nextPage)) {
-    throw new Error("override has no usable next page");
-  }
-  return {
-    children: input.children.map((child) =>
-      parseTicket(child, undefined, true),
-    ),
-    nextPage: input.nextPage as number | null,
-  };
-}
-
-function parseBlockerPageOverride(value: string): BlockerPage {
-  const input = record(
-    JSON.parse(value) as unknown,
-    "override is not a blocker page",
-  );
-  if (!Array.isArray(input.blockers))
-    throw new Error("override has no blockers");
-  if (input.nextPage !== null && !Number.isSafeInteger(input.nextPage)) {
-    throw new Error("override has no usable next page");
-  }
-  return {
-    blockers: input.blockers.map((blocker) => parseTicket(blocker)),
-    nextPage: input.nextPage as number | null,
-  };
-}
-
 export async function readParent(
   input: DiscoveryInput,
   phase = "discover",
 ): Promise<Ticket> {
   return externalRead({
     action: () => input.tracker.getParent(input.repository, input.parentTicket),
-    parseOverride: (value) =>
-      parseTicket(JSON.parse(value) as unknown, input.parentTicket),
     audit: input.audit,
     event: input.event(phase, "read_parent", `parent:${input.parentTicket}`),
     clock: input.clock,
@@ -175,7 +80,6 @@ export async function readChildren(
           input.parentTicket,
           currentPage,
         ),
-      parseOverride: parseChildPageOverride,
       audit: input.audit,
       event: input.event(
         phase,
@@ -212,7 +116,6 @@ export async function readBlockers(
     const page: BlockerPage = await externalRead<BlockerPage>({
       action: () =>
         input.tracker.listBlockersPage(input.repository, ticket, currentPage),
-      parseOverride: parseBlockerPageOverride,
       audit: input.audit,
       event: input.event(
         phase,
@@ -276,6 +179,19 @@ export async function releaseReservation(
       operator: input.operator,
       retryPolicy: input.retryPolicy,
     });
+  }
+}
+
+export async function releasePrePublicationReservation(
+  input: DiscoveryInput,
+  ticket: number,
+): Promise<string | undefined> {
+  try {
+    await releaseReservation(input, ticket, true, true);
+    return undefined;
+  } catch (error) {
+    if (!(error instanceof TicketSkipped)) throw error;
+    return `possible Reservation residue for Delivery Ticket ${ticket}; remaining release abandoned`;
   }
 }
 
@@ -370,8 +286,6 @@ export async function revalidateTicket(
     if (!selected.includes(ticketNumber)) return { inScope: false };
     const ticket = await externalRead({
       action: () => input.tracker.getTicket(input.repository, ticketNumber),
-      parseOverride: (value) =>
-        parseTicket(JSON.parse(value) as unknown, ticketNumber),
       audit: input.audit,
       event: input.event("revalidate", "read_ticket", `ticket:${ticketNumber}`),
       clock: input.clock,
@@ -396,8 +310,6 @@ export async function revalidateTicket(
   }
   const ticket = await externalRead({
     action: () => input.tracker.getTicket(input.repository, ticketNumber),
-    parseOverride: (value) =>
-      parseTicket(JSON.parse(value) as unknown, ticketNumber),
     audit: input.audit,
     event: input.event("revalidate", "read_ticket", `ticket:${ticketNumber}`),
     clock: input.clock,

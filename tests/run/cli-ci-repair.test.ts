@@ -391,12 +391,14 @@ test("repair execution and invalid handoff failures do not consume the budget", 
   );
 });
 
-test("a trusted repair-budget override continues the existing Pull Request", async () => {
+test("exhausted CI repair rejects readiness text and refreshes checks on Enter", async () => {
   const root = await createProject();
   const delivery = createCommittedDelivery();
   let agentCalls = 0;
   let pushes = 0;
   let merged = false;
+  let repaired = false;
+  let pauses = 0;
 
   const result = await executeCli(
     ["run", "--project", "demo", "--parent", "8"],
@@ -404,6 +406,13 @@ test("a trusted repair-budget override continues the existing Pull Request", asy
       tracker: delivery.tracker,
       gitWorkspace: {
         ...delivery.gitWorkspace,
+        async inspect(input) {
+          const evidence = await delivery.gitWorkspace.inspect!(input);
+          return {
+            ...evidence,
+            commits: agentCalls > 1 ? [] : evidence.commits,
+          };
+        },
         async push() {
           pushes += 1;
         },
@@ -427,19 +436,27 @@ test("a trusted repair-budget override continues the existing Pull Request", asy
               pr_body: "Implementation body.",
             };
           }
-          throw new Error("CI repair failed");
+          return {
+            outcome: "no_change",
+            summary: "no safe repair",
+            commits: [],
+            checks: [],
+            blocker: null,
+          };
         },
       },
       codeHost: {
         async getRequiredChecks() {
-          return [
-            {
-              name: "checks",
-              state: "FAILURE",
-              link: "https://github.com/owner/repo/actions/runs/1",
-              bucket: "fail",
-            },
-          ];
+          return repaired
+            ? []
+            : [
+                {
+                  name: "checks",
+                  state: "FAILURE",
+                  link: "https://github.com/owner/repo/actions/runs/1",
+                  bucket: "fail",
+                },
+              ];
         },
         async getPullRequest() {
           return {
@@ -455,12 +472,12 @@ test("a trusted repair-budget override continues the existing Pull Request", asy
         },
       },
       operator: {
-        async pause() {
-          return JSON.stringify({
-            outcome: "committed",
-            pr_title: "feat: trusted readiness",
-            pr_body: "Trusted readiness.",
-          });
+        async pause(message) {
+          assert.match(message, /CI repair failed after two attempts/u);
+          pauses += 1;
+          if (pauses === 1) return "trusted CI readiness";
+          repaired = true;
+          return "";
         },
       },
     }),
@@ -468,9 +485,10 @@ test("a trusted repair-budget override continues the existing Pull Request", asy
 
   assert.equal(result.summary.outcome, "succeeded");
   assert.equal(agentCalls, 3);
-  assert.equal(pushes, 3);
+  assert.equal(pushes, 1);
+  assert.equal(pauses, 2);
   assert.ok(result.logPath);
   const audit = await readFile(result.logPath, "utf8");
-  assert.match(audit, /operator_override/u);
+  assert.doesNotMatch(audit, /operator_override/u);
   assert.equal(audit.includes("trusted CI readiness"), false);
 });

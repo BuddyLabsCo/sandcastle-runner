@@ -8,9 +8,14 @@ import type {
 import {
   type DeliveryBoundaryResult,
   revalidateActiveTicket,
+  releasePrePublicationReservation,
 } from "./discovery.ts";
-import { serializeOperator, workflowWrite } from "./operations.ts";
-import { remoteBranchReconciliation } from "./write-reconciliation.ts";
+import {
+  serializeOperator,
+  workflowWrite,
+  scopeOperator,
+  TicketSkipped,
+} from "./operations.ts";
 import { type PublicationIntent } from "../recovery.ts";
 import { recoverPublishedHandoffs } from "./pull-request-recovery.ts";
 import {
@@ -24,7 +29,6 @@ import {
   waitForMerge,
   confirmCompletion,
   persistedBudget,
-  pullRequestOverride,
   stopped,
   DeliveryBoundaryChanged,
   type PublicationInput,
@@ -59,87 +63,111 @@ export async function integratePullRequest(
   | Exclude<DeliveryBoundaryResult, { outcome: "ready" }>
   | { outcome: "skipped"; reason: string }
 > {
-  const persistedConflict = persistedBudget(input, handoff.ticket, "conflict");
-  const conflictBudget = {
-    consumed: persistedConflict?.consumed ?? 0,
-    generation: persistedConflict?.generation ?? 0,
-    attempts: { value: persistedConflict?.attempt ?? 0 },
+  input = {
+    ...input,
+    operator: scopeOperator(
+      input.operator,
+      `${input.ticketKind ?? "Delivery Ticket"} ${handoff.ticket}`,
+    ),
   };
-  let current = observed;
-  for (;;) {
-    const boundary = await revalidateActiveTicket(input, handoff.ticket);
-    if (boundary.outcome !== "ready") return boundary;
-    if (current.merged) return confirmCompletion(input, handoff);
-    let request: MergeRequestResult;
-    try {
-      request = await workflowWrite<MergeRequestResult>({
-        action: async () => {
-          const result = await input.codeHost.requestSquashMerge({
-            repository: input.repository,
-            pullRequest: pullRequest.number,
-            headSha: current.headSha,
-            admin: input.adminMerge,
-          });
-          if (result.outcome === "rejected") throw new Error(result.error);
-          return result;
-        },
-        parseOverride: () => ({ outcome: "accepted" }),
-        beforeRetry: async () => {
-          const changed = await revalidateActiveTicket(input, handoff.ticket);
-          if (changed.outcome !== "ready") {
-            throw new DeliveryBoundaryChanged(changed);
-          }
-        },
-        audit: input.audit,
-        clock: input.clock,
-        automaticRetry: {
-          async reconcile() {
-            const state = await observePullRequestForIntegration(
-              input,
-              pullRequest.number,
-              "merge",
-            );
-            return state.merged
-              ? {
-                  outcome: "completed" as const,
-                  result: { outcome: "accepted" as const },
-                }
-              : { outcome: "pending" as const };
+  try {
+    const persistedConflict = persistedBudget(
+      input,
+      handoff.ticket,
+      "conflict",
+    );
+    const conflictBudget = {
+      consumed: persistedConflict?.consumed ?? 0,
+      generation: persistedConflict?.generation ?? 0,
+      attempts: { value: persistedConflict?.attempt ?? 0 },
+    };
+    let current = observed;
+    for (;;) {
+      const boundary = await revalidateActiveTicket(input, handoff.ticket);
+      if (boundary.outcome !== "ready") return boundary;
+      if (current.merged) return await confirmCompletion(input, handoff);
+      let request: MergeRequestResult;
+      try {
+        request = await workflowWrite<MergeRequestResult>({
+          action: async () => {
+            const result = await input.codeHost.requestSquashMerge({
+              repository: input.repository,
+              pullRequest: pullRequest.number,
+              headSha: current.headSha,
+              admin: input.adminMerge,
+            });
+            if (result.outcome === "rejected") throw new Error(result.error);
+            return result;
           },
-        },
-        event: (attempt) =>
-          input.event(
-            "merge",
-            "request_squash_merge",
-            `pull_request:${pullRequest.number}`,
-          )(attempt),
-        operator: input.operator,
-        retryPolicy: input.retryPolicy,
-      });
-    } catch (error) {
-      if (!(error instanceof DeliveryBoundaryChanged)) throw error;
-      return error.boundary.outcome === "terminal"
-        ? {
-            outcome: "stopped",
-            reason: `${input.ticketKind ?? "Delivery Ticket"} ${handoff.ticket} became terminal`,
-          }
-        : error.boundary;
+          beforeRetry: async () => {
+            const changed = await revalidateActiveTicket(input, handoff.ticket);
+            if (changed.outcome !== "ready") {
+              throw new DeliveryBoundaryChanged(changed);
+            }
+          },
+          audit: input.audit,
+          clock: input.clock,
+          automaticRetry: {
+            async reconcile() {
+              const state = await observePullRequestForIntegration(
+                input,
+                pullRequest.number,
+                "merge",
+              );
+              current = state;
+              return state.merged || state.mergeRequested
+                ? {
+                    outcome: "completed" as const,
+                    result: { outcome: "accepted" as const },
+                  }
+                : { outcome: "pending" as const };
+            },
+          },
+          event: (attempt) =>
+            input.event(
+              "merge",
+              "request_squash_merge",
+              `pull_request:${pullRequest.number}`,
+            )(attempt),
+          operator: input.operator,
+          retryPolicy: input.retryPolicy,
+        });
+      } catch (error) {
+        if (!(error instanceof DeliveryBoundaryChanged)) throw error;
+        return error.boundary.outcome === "terminal"
+          ? {
+              outcome: "stopped",
+              reason: `${input.ticketKind ?? "Delivery Ticket"} ${handoff.ticket} became terminal`,
+            }
+          : error.boundary;
+      }
+      if (request.outcome === "conflict") {
+        const repair = await repairMergeConflict(
+          input,
+          handoff,
+          pullRequest,
+          request.error,
+          conflictBudget,
+        );
+        if ("outcome" in repair) return repair;
+        current = repair.state;
+        continue;
+      }
+      const confirmation = await waitForMerge(input, handoff, pullRequest);
+      if (confirmation === "refresh") {
+        current = await observePullRequestForIntegration(
+          input,
+          pullRequest.number,
+          "merge",
+        );
+        continue;
+      }
+      if (confirmation !== "merged") return confirmation;
+      return await confirmCompletion(input, handoff);
     }
-    if (request.outcome === "conflict") {
-      const repair = await repairMergeConflict(
-        input,
-        handoff,
-        pullRequest,
-        request.error,
-        conflictBudget,
-      );
-      if ("outcome" in repair) return repair;
-      current = repair.state;
-      continue;
-    }
-    const confirmation = await waitForMerge(input, handoff, pullRequest);
-    if (confirmation !== "merged") return confirmation;
-    return confirmCompletion(input, handoff);
+  } catch (error) {
+    if (!(error instanceof TicketSkipped)) throw error;
+    return { outcome: "skipped", reason: error.reason };
   }
 }
 
@@ -164,128 +192,140 @@ export async function publishVerifiedHandoffs(
   }
   const publications = input.handoffs.map(
     async (handoff): Promise<PublicationAttempt> => {
-      let boundary = await revalidateActiveTicket(
-        concurrentInput,
-        handoff.ticket,
-      );
-      if (boundary.outcome !== "ready") return { boundary };
-      const intent: PublicationIntent = {
-        ticket: handoff.ticket,
-        kind:
-          input.ticketKind === "Maintenance Ticket"
-            ? "maintenance"
-            : "delivery",
-        originalBase: handoff.base,
-        targetBranch: input.targetBranch,
-        stableBranch: handoff.branch,
-        intendedHeadSha:
-          handoff.commits.at(-1)?.sha ??
-          handoff.implementationCommits?.at(-1)?.sha ??
-          handoff.base,
-        title: handoff.prTitle,
-        body: handoff.prBody,
-        phase: "pending_push",
-        implementationEvidence:
-          handoff.implementationCommits ?? handoff.commits,
-        reviewEvidence: handoff.reviewCommits ?? [],
-        completionEvidence: handoff,
+      const issueInput = {
+        ...concurrentInput,
+        operator: scopeOperator(
+          concurrentInput.operator,
+          `${input.ticketKind ?? "Delivery Ticket"} ${handoff.ticket}`,
+        ),
       };
-      input.publicationIntents?.set(handoff.ticket, intent);
-      await input.persistPublication?.(handoff.ticket, intent);
-      await workflowWrite({
-        action: () => input.gitWorkspace.push(handoff.worktree, handoff.branch),
-        audit: input.audit,
-        clock: input.clock,
-        automaticRetry: {
-          reconcile: remoteBranchReconciliation(
-            concurrentInput,
-            "publish",
-            handoff.branch,
-            intent.intendedHeadSha,
-            `ticket:${handoff.ticket}`,
-          ),
-        },
-        event: (attempt) =>
-          input.event(
-            "publish",
-            "push_branch",
-            `ticket:${handoff.ticket}`,
-          )(attempt),
-        operator: concurrentInput.operator,
-        retryPolicy: concurrentInput.retryPolicy,
-      });
-      await input.persistPublication?.(handoff.ticket, {
-        ...intent,
-        phase: "pushed",
-      });
-      input.publicationIntents?.set(handoff.ticket, {
-        ...intent,
-        phase: "pushed",
-      });
+      let pullRequest: PullRequestIdentity | undefined;
+      try {
+        let boundary = await revalidateActiveTicket(issueInput, handoff.ticket);
+        if (boundary.outcome !== "ready") return { boundary };
+        const intent: PublicationIntent = {
+          ticket: handoff.ticket,
+          kind:
+            input.ticketKind === "Maintenance Ticket"
+              ? "maintenance"
+              : "delivery",
+          originalBase: handoff.base,
+          targetBranch: input.targetBranch,
+          stableBranch: handoff.branch,
+          intendedHeadSha:
+            handoff.commits.at(-1)?.sha ??
+            handoff.implementationCommits?.at(-1)?.sha ??
+            handoff.base,
+          title: handoff.prTitle,
+          body: handoff.prBody,
+          phase: "pending_push",
+          implementationEvidence:
+            handoff.implementationCommits ?? handoff.commits,
+          reviewEvidence: handoff.reviewCommits ?? [],
+          completionEvidence: handoff,
+        };
+        input.publicationIntents?.set(handoff.ticket, intent);
+        await input.persistPublication?.(handoff.ticket, intent);
+        await workflowWrite({
+          action: () =>
+            input.gitWorkspace.push(handoff.worktree, handoff.branch),
+          audit: input.audit,
+          clock: input.clock,
+          automaticRetry: {},
+          event: (attempt) =>
+            input.event(
+              "publish",
+              "push_branch",
+              `ticket:${handoff.ticket}`,
+            )(attempt),
+          operator: issueInput.operator,
+          retryPolicy: concurrentInput.retryPolicy,
+        });
+        await input.persistPublication?.(handoff.ticket, {
+          ...intent,
+          phase: "pushed",
+        });
+        input.publicationIntents?.set(handoff.ticket, {
+          ...intent,
+          phase: "pushed",
+        });
 
-      boundary = await revalidateActiveTicket(concurrentInput, handoff.ticket);
-      if (boundary.outcome !== "ready") return { boundary };
-      await input.persistPublication?.(handoff.ticket, {
-        ...intent,
-        phase: "pending_pr",
-      });
-      input.publicationIntents?.set(handoff.ticket, {
-        ...intent,
-        phase: "pending_pr",
-      });
-      const pullRequest = await workflowWrite({
-        action: () =>
-          input.codeHost.createPullRequest({
-            repository: input.repository,
-            targetBranch: input.targetBranch,
-            branch: handoff.branch,
-            title: handoff.prTitle,
-            body: handoff.prBody,
-          }),
-        parseOverride: pullRequestOverride,
-        audit: input.audit,
-        clock: input.clock,
-        event: () =>
-          input.event(
-            "publish",
-            "create_pull_request",
-            `ticket:${handoff.ticket}`,
-          )(1),
-        operator: concurrentInput.operator,
-        retryPolicy: concurrentInput.retryPolicy,
-      });
-      const publishedIntent: PublicationIntent = {
-        ...intent,
-        phase: "pr_created",
-        pullRequest: {
-          ...pullRequest,
-          headSha: intent.intendedHeadSha,
-        },
-      };
-      await input.persistPublication?.(handoff.ticket, publishedIntent);
-      input.publicationIntents?.set(handoff.ticket, publishedIntent);
-      let readiness: RequiredChecksResult = await observeRequiredChecks(
-        concurrentInput,
-        handoff,
-        pullRequest,
-      );
-      if (!("outcome" in readiness) && readiness.readiness === "failed") {
-        readiness = await repairRequiredChecks(
-          concurrentInput,
+        boundary = await revalidateActiveTicket(issueInput, handoff.ticket);
+        if (boundary.outcome !== "ready") return { boundary };
+        await input.persistPublication?.(handoff.ticket, {
+          ...intent,
+          phase: "pending_pr",
+        });
+        input.publicationIntents?.set(handoff.ticket, {
+          ...intent,
+          phase: "pending_pr",
+        });
+        pullRequest = await workflowWrite({
+          action: () =>
+            input.codeHost.createPullRequest({
+              repository: input.repository,
+              targetBranch: input.targetBranch,
+              branch: handoff.branch,
+              title: handoff.prTitle,
+              body: handoff.prBody,
+            }),
+          audit: input.audit,
+          clock: input.clock,
+          event: () =>
+            input.event(
+              "publish",
+              "create_pull_request",
+              `ticket:${handoff.ticket}`,
+            )(1),
+          operator: issueInput.operator,
+          retryPolicy: concurrentInput.retryPolicy,
+        });
+        const publishedIntent: PublicationIntent = {
+          ...intent,
+          phase: "pr_created",
+          pullRequest: {
+            ...pullRequest,
+            headSha: intent.intendedHeadSha,
+          },
+        };
+        await input.persistPublication?.(handoff.ticket, publishedIntent);
+        input.publicationIntents?.set(handoff.ticket, publishedIntent);
+        let readiness: RequiredChecksResult = await observeRequiredChecks(
+          issueInput,
           handoff,
           pullRequest,
-          readiness.failedChecks,
-          controller.signal,
         );
-      }
-      if ("outcome" in readiness) {
-        if (readiness.outcome === "skipped")
+        if (!("outcome" in readiness) && readiness.readiness === "failed") {
+          readiness = await repairRequiredChecks(
+            issueInput,
+            handoff,
+            pullRequest,
+            readiness.failedChecks,
+            controller.signal,
+          );
+        }
+        if ("outcome" in readiness) {
+          if (readiness.outcome === "skipped")
+            return {
+              skipped: {
+                ticket: handoff.ticket,
+                pullRequest: pullRequest.number,
+                reason: readiness.reason,
+              },
+              published: {
+                handoff,
+                pullRequest,
+                observation: {
+                  ticket: handoff.ticket,
+                  branch: handoff.branch,
+                  ...pullRequest,
+                  readiness: "failed",
+                  failedChecks: [],
+                },
+              },
+            };
           return {
-            skipped: {
-              ticket: handoff.ticket,
-              pullRequest: pullRequest.number,
-              reason: readiness.reason,
-            },
+            boundary: readiness,
             published: {
               handoff,
               pullRequest,
@@ -293,13 +333,13 @@ export async function publishVerifiedHandoffs(
                 ticket: handoff.ticket,
                 branch: handoff.branch,
                 ...pullRequest,
-                readiness: "failed",
+                readiness: "stopped",
                 failedChecks: [],
               },
             },
           };
+        }
         return {
-          boundary: readiness,
           published: {
             handoff,
             pullRequest,
@@ -307,24 +347,26 @@ export async function publishVerifiedHandoffs(
               ticket: handoff.ticket,
               branch: handoff.branch,
               ...pullRequest,
-              readiness: "stopped",
-              failedChecks: [],
+              ...readiness,
             },
           },
         };
-      }
-      return {
-        published: {
-          handoff,
-          pullRequest,
-          observation: {
+      } catch (error) {
+        if (!(error instanceof TicketSkipped)) throw error;
+        const residue =
+          pullRequest === undefined && input.ticketKind !== "Maintenance Ticket"
+            ? await releasePrePublicationReservation(issueInput, handoff.ticket)
+            : undefined;
+        return {
+          skipped: {
             ticket: handoff.ticket,
-            branch: handoff.branch,
-            ...pullRequest,
-            ...readiness,
+            ...(pullRequest === undefined
+              ? {}
+              : { pullRequest: pullRequest.number }),
+            reason: `${error.reason}${residue ? `; ${residue}` : ""}`,
           },
-        },
-      };
+        };
+      }
     },
   );
   let published: Awaited<(typeof publications)[number]>[];

@@ -1,12 +1,17 @@
 import type { Ticket } from "./contracts.ts";
-import { externalRead, workflowWrite } from "./operations.ts";
+import {
+  externalRead,
+  workflowWrite,
+  scopeOperator,
+  TicketSkipped,
+} from "./operations.ts";
 import {
   inspect,
-  parseTicket,
   readBlockers,
   readChildren,
   readParent,
   releaseReservation,
+  releasePrePublicationReservation,
   revalidateTicket,
   readyForAgentLabel,
   type DiscoveryInput,
@@ -22,6 +27,7 @@ export type {
   MergedDeliveryBoundaryResult,
   TicketBoundary,
 } from "./discovery-state.ts";
+export { releasePrePublicationReservation } from "./discovery-state.ts";
 export {
   discoverAndReserveStandalone,
   discoverAndReserveStandaloneBatch,
@@ -132,13 +138,6 @@ export function releaseTerminalReservation(
   );
 }
 
-export function releasePrePublicationReservation(
-  input: DiscoveryInput,
-  ticket: number,
-): Promise<void> {
-  return releaseReservation(input, ticket, true, true);
-}
-
 export function revalidateActiveTicket(
   input: DiscoveryInput,
   ticket: number,
@@ -227,8 +226,6 @@ export async function revalidateStandaloneMaintenanceTicket(
   }
   const ticket = await externalRead({
     action: () => input.tracker.getTicket(input.repository, ticketNumber),
-    parseOverride: (value) =>
-      parseTicket(JSON.parse(value) as unknown, ticketNumber),
     audit: input.audit,
     event: input.event(
       "maintenance",
@@ -281,109 +278,131 @@ async function reserve(
 ): Promise<DiscoveryResult | null> {
   const batch: number[] = [];
   for (const candidate of selection.batch) {
-    const beforeLabelParent = boundaryResult(await readParent(input));
-    if (beforeLabelParent) return beforeLabelParent;
-    const beforeLabel = await revalidateTicket(input, candidate.number);
-    if (!beforeLabel.inScope) continue;
-    const hasRunner = (beforeLabel.ticket.assignees ?? []).includes(
-      input.runnerAccount,
-    );
-    const hasLabel = (beforeLabel.ticket.labels ?? []).includes(
-      input.reservationLabel,
-    );
-    if (
-      beforeLabel.ticket.state !== "open" ||
-      beforeLabel.blocked ||
-      !(beforeLabel.ticket.labels ?? []).includes(readyForAgentLabel) ||
-      (beforeLabel.ticket.assignees ?? []).some(
-        (assignee) => assignee !== input.runnerAccount,
-      ) ||
-      hasRunner !== hasLabel
-    ) {
-      continue;
-    }
-    const addedLabel = !hasLabel;
-    if (addedLabel) {
-      await workflowWrite({
-        action: () =>
-          input.tracker.addLabel(
-            input.repository,
-            candidate.number,
-            input.reservationLabel,
-          ),
-        audit: input.audit,
-        clock: input.clock,
-        automaticRetry: {},
-        event: (attempt) =>
-          input.event(
-            "reserve",
-            "add_reservation_label",
-            `ticket:${candidate.number}`,
-          )(attempt),
-        operator: input.operator,
-        retryPolicy: input.retryPolicy,
-      });
-    }
-
-    const beforeAssigneeParent = boundaryResult(await readParent(input));
-    if (beforeAssigneeParent) return beforeAssigneeParent;
-    const beforeAssignee = await revalidateTicket(input, candidate.number);
-    if (!beforeAssignee.inScope) continue;
-    if (beforeAssignee.ticket.state === "closed") {
-      await releaseReservation(
-        input,
-        candidate.number,
-        hasRunner,
-        hasLabel ? hasLabel : addedLabel,
+    const issueInput = {
+      ...input,
+      operator: scopeOperator(
+        input.operator,
+        `Delivery Ticket ${candidate.number}`,
+      ),
+    };
+    try {
+      const beforeLabelParent = boundaryResult(await readParent(issueInput));
+      if (beforeLabelParent) return beforeLabelParent;
+      const beforeLabel = await revalidateTicket(issueInput, candidate.number);
+      if (!beforeLabel.inScope) continue;
+      const hasRunner = (beforeLabel.ticket.assignees ?? []).includes(
+        input.runnerAccount,
       );
-      continue;
-    }
-    if (beforeAssignee.blocked) {
-      continue;
-    }
-    const hasRunnerAfterLabel = (
-      beforeAssignee.ticket.assignees ?? []
-    ).includes(input.runnerAccount);
-    if (!hasRunnerAfterLabel) {
-      await workflowWrite({
-        action: () =>
-          input.tracker.addAssignee(
-            input.repository,
-            candidate.number,
-            input.runnerAccount,
-          ),
-        audit: input.audit,
-        clock: input.clock,
-        automaticRetry: {},
-        event: (attempt) =>
-          input.event(
-            "reserve",
-            "add_runner_assignee",
-            `ticket:${candidate.number}`,
-          )(attempt),
-        operator: input.operator,
-        retryPolicy: input.retryPolicy,
-      });
-    }
+      const hasLabel = (beforeLabel.ticket.labels ?? []).includes(
+        input.reservationLabel,
+      );
+      if (
+        beforeLabel.ticket.state !== "open" ||
+        beforeLabel.blocked ||
+        !(beforeLabel.ticket.labels ?? []).includes(readyForAgentLabel) ||
+        (beforeLabel.ticket.assignees ?? []).some(
+          (assignee) => assignee !== input.runnerAccount,
+        ) ||
+        hasRunner !== hasLabel
+      ) {
+        continue;
+      }
+      const addedLabel = !hasLabel;
+      if (addedLabel) {
+        await workflowWrite({
+          action: () =>
+            issueInput.tracker.addLabel(
+              input.repository,
+              candidate.number,
+              input.reservationLabel,
+            ),
+          audit: input.audit,
+          clock: input.clock,
+          automaticRetry: {},
+          event: (attempt) =>
+            input.event(
+              "reserve",
+              "add_reservation_label",
+              `ticket:${candidate.number}`,
+            )(attempt),
+          operator: issueInput.operator,
+          retryPolicy: input.retryPolicy,
+        });
+      }
 
-    const checkpointParent = boundaryResult(await readParent(input));
-    if (checkpointParent) return checkpointParent;
-    const checkpoint = await revalidateTicket(input, candidate.number);
-    if (!checkpoint.inScope) continue;
-    if (checkpoint.ticket.state === "closed") {
-      await releaseReservation(input, candidate.number, true, true);
-      continue;
+      const beforeAssigneeParent = boundaryResult(await readParent(issueInput));
+      if (beforeAssigneeParent) return beforeAssigneeParent;
+      const beforeAssignee = await revalidateTicket(
+        issueInput,
+        candidate.number,
+      );
+      if (!beforeAssignee.inScope) continue;
+      if (beforeAssignee.ticket.state === "closed") {
+        await releaseReservation(
+          issueInput,
+          candidate.number,
+          hasRunner,
+          hasLabel ? hasLabel : addedLabel,
+        );
+        continue;
+      }
+      if (beforeAssignee.blocked) {
+        continue;
+      }
+      const hasRunnerAfterLabel = (
+        beforeAssignee.ticket.assignees ?? []
+      ).includes(input.runnerAccount);
+      if (!hasRunnerAfterLabel) {
+        await workflowWrite({
+          action: () =>
+            issueInput.tracker.addAssignee(
+              input.repository,
+              candidate.number,
+              input.runnerAccount,
+            ),
+          audit: input.audit,
+          clock: input.clock,
+          automaticRetry: {},
+          event: (attempt) =>
+            input.event(
+              "reserve",
+              "add_runner_assignee",
+              `ticket:${candidate.number}`,
+            )(attempt),
+          operator: issueInput.operator,
+          retryPolicy: input.retryPolicy,
+        });
+      }
+
+      const checkpointParent = boundaryResult(await readParent(issueInput));
+      if (checkpointParent) return checkpointParent;
+      const checkpoint = await revalidateTicket(issueInput, candidate.number);
+      if (!checkpoint.inScope) continue;
+      if (checkpoint.ticket.state === "closed") {
+        await releaseReservation(issueInput, candidate.number, true, true);
+        continue;
+      }
+      if (
+        checkpoint.blocked ||
+        !(checkpoint.ticket.labels ?? []).includes(readyForAgentLabel) ||
+        (checkpoint.ticket.assignees ?? []).some(
+          (assignee) => assignee !== input.runnerAccount,
+        )
+      ) {
+        continue;
+      }
+      batch.push(candidate.number);
+    } catch (error) {
+      if (!(error instanceof TicketSkipped)) throw error;
+      const residue = await releasePrePublicationReservation(
+        issueInput,
+        candidate.number,
+      );
+      await input.onSkip?.(
+        candidate.number,
+        `${error.reason}${residue ? `; ${residue}` : ""}`,
+      );
     }
-    if (
-      checkpoint.blocked ||
-      !(checkpoint.ticket.labels ?? []).includes(readyForAgentLabel) ||
-      (checkpoint.ticket.assignees ?? []).some(
-        (assignee) => assignee !== input.runnerAccount,
-      )
-    ) {
-      continue;
-    }
-    batch.push(candidate.number);
   }
   return batch.length === 0
     ? null

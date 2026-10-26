@@ -323,3 +323,44 @@ for (const repair of ["ci", "conflict"] as const) {
     );
   });
 }
+
+test("skip of a failed Worktree command leaves its concurrent peer able to deliver", async () => {
+  const root = await createProject();
+  const delivery = createCommittedBatch(9, 10);
+  const attempts: number[] = [];
+  const pauses: string[] = [];
+  const result = await executeCli(
+    ["run", "--project", "demo", "--parent", "8"],
+    createCliDependencies(root, {
+      tracker: delivery.tracker,
+      gitWorkspace: {
+        ...delivery.gitWorkspace,
+        async createWorktree(input) {
+          if (input.worktree.endsWith("ticket-9"))
+            throw new Error("partial Worktree");
+          await delivery.gitWorkspace.createWorktree(input);
+        },
+      },
+      agentExecutor: {
+        async execute(input) {
+          attempts.push(input.ticket);
+          return delivery.agentExecutor.execute(input);
+        },
+      },
+      operator: {
+        async pause(message) {
+          pauses.push(message);
+          return pauses.length === 1 ? "s" : "q";
+        },
+      },
+    }),
+  );
+  assert.equal(result.summary.outcome, "incomplete");
+  assert.deepEqual(attempts, [10]);
+  assert.deepEqual(result.summary.completedTickets, [10]);
+  assert.match(pauses[0]!, /s to skip/u);
+  assert.match(
+    result.summary.tickets?.find((row) => row.ticket === 9)?.detail ?? "",
+    /skipped/u,
+  );
+});

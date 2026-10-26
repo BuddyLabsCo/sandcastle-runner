@@ -117,6 +117,8 @@ export interface PullRequestIdentity {
 }
 
 export interface PullRequestState {
+  mergeRequested?: boolean;
+  mergeable?: "mergeable" | "conflicting" | "unknown";
   headSha: string;
   createdAt: string;
   merged: boolean;
@@ -306,6 +308,7 @@ export interface Clock {
 }
 
 export interface OperatorIO {
+  skipScope?: string;
   write(message: string): void;
   pause(message: string): Promise<string | null>;
 }

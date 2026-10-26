@@ -69,6 +69,22 @@ independent Git verification even if its output mentions an internal provider
 error; Runner does not inspect provider-specific raw events to replace that
 decision.
 
+## Operator Pause actions
+
+| Context | Actions |
+| --- | --- |
+| Usable Agent session | Enter sends `continue`; other text supplies recovery instructions; `s` skips; `q`/EOF cancels |
+| Unavailable Agent session, including a failed probe | Enter starts a fresh attempt; `s` skips; `q`/EOF cancels; other text stays paused |
+| Non-Agent operation within one issue | Enter retries; `s` skips that issue; `q`/EOF cancels; other text stays paused |
+| Startup, discovery, shared Batch fetch, final Parent closure | Enter retries; `q`/EOF cancels; other text stays paused |
+| Audit creation or append, in every context | Enter retries the same log action; `q`/EOF cancels; all other input, including `s`, stays paused |
+
+Maintenance preparation permits `s` before its issue exists. Skip ends that occurrence or issue's remaining work while other issues continue. Existing PRs, comments, branches, and merges remain. Before publication, the Runner attempts Reservation release; `s` at a failed release abandons it and reports possible residue. After delivery, skip preserves completion and leaves unfinished cleanup or release pending. Skipped work and unfinished cleanup return `incomplete`.
+
+Input never replaces successful results, acknowledges writes, accepts audit gaps, or marks cleanup complete. Agent JSON is ordinary recovery text in a usable session, and all subsequent results undergo normal validation. Unsupported input explains the actions without retrying the operation or resetting its budget.
+
+Enter retries reads, creation, label/assignee writes, push, and Worktree creation directly. An unobserved creation may leave an unknown resource; creation retries can produce duplicates. Repair partial Worktree state before retrying its command. Merge retries refresh status and HEAD, proceeding if merged and waiting if accepted or queued. Check and repair timeouts refresh evidence before waiting or repairing. Closure and publication recovery recheck current state. Cleanup retries remaining owned artifacts. Audit retries never replay a business action that already completed.
+
 ## Documentation Maintenance workflow
 
 At the normal post-Batch scheduling point, one automatic occurrence is required when at least one successfully delivered issue had the configured `workflow.docMaintainTriggerLabel` when its merged, completed closure was confirmed. Multiple matches in the same Batch still schedule one occurrence. Parent labels, delivery counts, Parent closeout, failed Batches, cancellation, and CI-ready unmerged Pull Requests do not trigger maintenance.

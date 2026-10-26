@@ -229,7 +229,7 @@ test(
     assert.equal(scenario.labelCalls.get(1), 2);
     assert.equal(scenario.agentCalls.get("implement:1"), 2);
     assert.equal(scenario.agentCalls.get("implement:3"), 2);
-    assert.equal(scenario.agentCalls.get("implement:4"), 1);
+    assert.equal(scenario.agentCalls.get("implement:4"), 2);
     assert.equal(scenario.correctionSessions, 1);
     assert.deepEqual(
       scenario.operations.filter(
@@ -264,7 +264,7 @@ test(
     );
     assert.equal(
       result.summary.handoffs?.find(({ ticket }) => ticket === 4)?.verification,
-      "operator_override",
+      "verified",
     );
     assert.deepEqual(milestones(scenario.operations), [
       "merge:1:1",
@@ -297,7 +297,7 @@ test(
     );
     assert.ok(result.logPath);
     const audit = await readFile(result.logPath, "utf8");
-    assert.match(audit, /"result":"operator_override"/u);
+    assert.doesNotMatch(audit, /"result":"operator_override"/u);
     assert.equal(audit.includes("Completes ticket 4."), false);
   },
 );

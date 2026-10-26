@@ -80,7 +80,7 @@ test("empty input starts a fresh Agent Attempt with a new Git configuration", as
 });
 
 for (const retryable of [true, false]) {
-  test(`a trusted committed override cleans logs and bypasses Git verification (retryable=${retryable})`, async () => {
+  test(`a former committed override cannot bypass the Agent or create a handoff (retryable=${retryable})`, async () => {
     const root = await createProject();
     const responses = [
       "not json",
@@ -91,6 +91,8 @@ for (const retryable of [true, false]) {
         ignored: "not copied downstream",
       }),
     ];
+    const instructions: (string | undefined)[] = [];
+    const suppliedJson = responses[1];
     let inspections = 0;
     const logFiles = new Set<string>();
     const { tracker } = createAttemptTracker(9);
@@ -109,6 +111,7 @@ for (const retryable of [true, false]) {
         },
         agentExecutor: {
           async execute(input) {
+            instructions.push(input.resumePrompt);
             const superseded = path.join(
               path.dirname(input.logFile),
               "implement-9-superseded.log",
@@ -130,19 +133,17 @@ for (const retryable of [true, false]) {
       }),
     );
 
-    await Promise.all(
-      [...logFiles].map((logFile) => assert.rejects(access(logFile))),
-    );
+    await Promise.all([...logFiles].map((logFile) => access(logFile)));
     assert.equal(inspections, 0);
-    assert.equal(
-      result.summary.handoffs?.[0]?.verification,
-      "operator_override",
+    assert.equal(result.summary.outcome, "cancelled");
+    assert.deepEqual(result.summary.handoffs, []);
+    assert.deepEqual(
+      instructions,
+      retryable ? [undefined, "not json", suppliedJson] : [undefined],
     );
-    assert.equal(result.summary.handoffs?.[0]?.prTitle, "feat: trusted result");
-    assert.deepEqual(result.summary.handoffs?.[0]?.commits, []);
     assert.ok(result.logPath);
     const audit = await readFile(result.logPath, "utf8");
-    assert.match(audit, /operator_override/u);
+    assert.doesNotMatch(audit, /operator_override/u);
     assert.equal(audit.includes("not json"), false);
     assert.equal(audit.includes("not copied downstream"), false);
   });
