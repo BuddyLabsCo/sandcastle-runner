@@ -19,55 +19,10 @@ This directory is a project template for Sandcastle Runner. Copy it to `projects
 - `ticketClosure`: `runner` or `code_host`.
 - `maintenanceTicket`: title, body, and `doc-maintain` label for maintenance tickets.
 
-Keep credentials in the environment, for example `export GH_TOKEN=...`. `workflow.review` defaults to `true`; `workflow.docMaintainTriggerLabel` defaults to an empty string. Use YAML `#` comments for explanations; the loader ignores them.
-
-Each configured agent profile selects one supported native Sandcastle factory
-and forwards `options` to it unchanged. `agent`, `model`, and the profile key
-are distinct: the model string never selects the agent, and the profile key
-selects the workflow purpose. Codex and Claude Code accept native `effort`; Pi
-accepts native `thinking`. Native options are agent-specific, so switching
-agents does not translate them or promise that the previous options remain
-valid.
-
-There is no default agent or model. A profile must name both explicitly. Migrate
-an older profile by adding `agent: codex`, preserving its `model` verbatim, and
-moving `reasoningEffort` verbatim to `options.effort`, including a value such as
-`max`. The obsolete field is rejected even when the new fields are present;
-Runner does not backfill or convert it.
-
-Each Agent Attempt probes a `SESSION_READY` session with the purpose's profile,
-then resumes that same session through Sandcastle for the substantive work.
-Runner does not read `CODEX_HOME` or infer a lookup root for the selected agent
-from the OS home directory. If Sandcastle's default session lookup does not
+If Sandcastle's default session lookup does not
 match the agent's actual storage, set the native lookup root:
 `sessionStorage.hostSessionsDir` for Codex or Pi, or
-`sessionStorage.hostProjectsDir` for Claude Code. This selects where sessions
-are looked up and does not relocate the agent's storage. Whether an override is
-needed depends on whether the default matches actual storage, not solely on the
-operating system. The former automatic Codex directory discovery is removed.
-
-Native run names identify Agent Attempt tasks in log output, but do not title
-the agent application's session list. Runner intentionally does not guarantee
-application-session titles. When automatic recovery stops, Operator Pause shows
-the selected agent, the session ID when available, the working directory, the
-diagnostic log, and the permitted Runner actions. The log path is shown even
-when a session ID is available. It does not print a copyable manual resume
-command; take over with the selected agent's own recovery interface using that
-evidence.
-
-Ordinary Sandcastle invocation failures are handled generically, without
-agent-name or provider-error-text classification. Successful process settlement
-precedes every automatic probe retry, same-session continuation, missing-output
-recovery, or structured-output correction. A missing or unusable session enters
-manual handling rather than a fresh conversation. Authentication and
-configuration errors can consume the bounded Agent Retry budget before pausing,
-and native structured-output retries do not cover every invocation failure.
-Cancellation stops automatic work after settlement, while a substantive
-timeout pauses without restarting the invocation or resetting its total
-deadline. A schema-valid success still proceeds through normal outcomes and
-independent Git verification even if its output mentions an internal provider
-error; Runner does not inspect provider-specific raw events to replace that
-decision.
+`sessionStorage.hostProjectsDir` for Claude Code.
 
 ## Operator Pause actions
 
