@@ -53,12 +53,15 @@ codeHost:
   tokenEnv: GH_TOKEN
   adminMerge: true
 agents:
-  # Each purpose independently selects agent, model, and optional native options.
+  # Each purpose independently selects agent (codex/claude-code/pi/codebuddy),
+  # model, and optional native options.
   # Options are forwarded unchanged; switching agents does not translate them.
   # Review requires a profile when enabled. Documentation requires one for a nonempty
   # maintenance trigger or --document, which uses the same documentation profile.
   # If native session lookup differs from actual storage, set options.sessionStorage:
   # hostSessionsDir for Codex/Pi, or hostProjectsDir for Claude Code.
+  # CodeBuddy uses options.env.CODEBUDDY_CONFIG_DIR (absolute) for CLI and lookup.
+  # Prepare native authentication and unattended permissions; see README CodeBuddy setup.
   implement:
     # Initial Delivery Ticket implementation.
     agent: codex

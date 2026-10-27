@@ -1,5 +1,6 @@
 import * as sandcastle from "@ai-hero/sandcastle";
 import type { AgentProvider } from "@ai-hero/sandcastle";
+import { codebuddy } from "./codebuddy.ts";
 
 type AgentFactory = (
   model: string,
@@ -11,6 +12,7 @@ export function nativeAgent(
   model: string,
   options?: Record<string, unknown>,
 ): AgentProvider {
+  if (agent === "codebuddy") return codebuddy(model, options);
   // Sandcastle names providers in kebab-case and exports factories in camelCase.
   const exportName = agent.replace(/-([a-z])/gu, (_, letter: string) =>
     letter.toUpperCase(),

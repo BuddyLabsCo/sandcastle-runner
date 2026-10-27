@@ -1,0 +1,5 @@
+{"type":"system","subtype":"init","session_id":"main-session-1","cwd":"/disposable/worktree","model":"deepseek-v4.1-flash","tools":[]}
+{"type":"system","subtype":"status","session_id":"main-session-1"}
+{"type":"assistant","session_id":"main-session-1","message":{"content":[{"type":"thinking","thinking":"omitted"}]}}
+{"type":"assistant","session_id":"main-session-1","message":{"content":[{"type":"text","text":"SESSION_READY"}]}}
+{"type":"result","subtype":"success","is_error":false,"session_id":"main-session-1","result":"SESSION_READY","permission_denials":[]}

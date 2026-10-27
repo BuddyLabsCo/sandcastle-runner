@@ -5,6 +5,7 @@ This directory is a project template for Sandcastle Runner. Copy it to `projects
 ## Configure a Project
 
 Edit the [example config.yaml](sandcastle-runner/config.yaml); its inline comments explain each field and native session lookup options.
+Select `codebuddy` through the same role profiles; see [CodeBuddy setup](../README.md#codebuddy-setup) for native options, authentication, permissions, and session storage.
 The implementation prompt must be nonempty. Review and documentation prompts are required when their workflow is enabled. CI and conflict repairs use fixed input templates under `src/prompts`; no Project repair prompt is required.
 
 ## Operator Pause actions

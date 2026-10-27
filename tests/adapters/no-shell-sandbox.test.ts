@@ -153,6 +153,7 @@ for (const [agent, executable, model, expected] of [
   ["codex", "codex", "gpt-5", ['model_reasoning_effort="high"']],
   ["claude-code", "claude", "claude-sonnet", ["--effort", "high"]],
   ["pi", "pi", "pi-model", ["--thinking", "high"]],
+  ["codebuddy", "codebuddy", "deepseek-v4.1-flash", ["--effort", "high"]],
 ] as const) {
   test(`noShellSandbox preserves the ${agent} provider command through a command shim`, async () => {
     const directory = await mkdtemp(

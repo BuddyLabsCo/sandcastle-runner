@@ -17,6 +17,11 @@ const identities = [
   { agent: "codex", model: "gpt-5", options: { effort: "max" } },
   { agent: "claude-code", model: "claude-sonnet", options: { effort: "high" } },
   { agent: "pi", model: "pi-model", options: { thinking: "high" } },
+  {
+    agent: "codebuddy",
+    model: "deepseek-v4.1-flash",
+    options: { effort: "high" },
+  },
 ] as const;
 
 type Identity = (typeof identities)[number];
@@ -78,6 +83,14 @@ test("nativeAgent resolves each supported Sandcastle factory", () => {
   assert.equal(nativeAgent("claude-code", "claude-sonnet").name, "claude-code");
   assert.equal(nativeAgent("claudeCode", "claude-sonnet").name, "claude-code");
   assert.equal(nativeAgent("pi", "pi-model").name, "pi");
+  assert.equal(
+    nativeAgent("codebuddy", "deepseek-v4.1-flash").name,
+    "codebuddy",
+  );
+  assert.match(
+    command("codebuddy", "deepseek-v4.1-flash", { effort: "high" }),
+    /--model 'deepseek-v4.1-flash' --effort 'high'/u,
+  );
   assert.match(
     command("codex", "gpt-5", { effort: "max" }),
     /-m 'gpt-5'.*model_reasoning_effort="max"/u,
