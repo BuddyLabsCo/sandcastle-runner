@@ -370,9 +370,6 @@ test("multiple matching Delivery Tickets trigger one committed Documentation Mai
       },
       gitWorkspace: {
         ...delivery.gitWorkspace,
-        async readReviewStandards() {
-          return [];
-        },
         async inspectReview({ worktree }) {
           const ticket = Number(worktree.split("-").at(-1));
           return {

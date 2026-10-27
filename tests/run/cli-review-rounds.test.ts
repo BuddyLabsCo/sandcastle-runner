@@ -60,9 +60,6 @@ test("review rounds reuse both sessions, fix every findings round, and review on
               commits: commits.slice(index + 1),
             };
           },
-          async readReviewStandards() {
-            return [];
-          },
           async inspectReview({ implementationHead }) {
             assert.equal(implementationHead, commits.at(-1)!.sha);
             return {
@@ -115,14 +112,13 @@ test("review rounds reuse both sessions, fix every findings round, and review on
             calls.push("review");
             round += 1;
             const handoff = JSON.parse(
-              String(input.promptArgs.REVIEW_HANDOFF),
+              String(input.promptArgs.REVIEW_INPUT),
             ) as {
-              reviewRound: number;
               reviewBase: string;
               implementationHead: string;
               findingsFile: string;
             };
-            assert.equal(handoff.reviewRound, round);
+            assert.ok(handoff.findingsFile.endsWith(`-round-${round}.md`));
             assert.equal(
               handoff.reviewBase,
               round === 1 ? "a".repeat(40) : commits.at(-2)!.sha,
@@ -138,6 +134,8 @@ test("review rounds reuse both sessions, fix every findings round, and review on
               assert.ok(
                 input.resumePrompt?.includes(handoff.implementationHead),
               );
+              assert.ok(input.resumePrompt?.includes(JSON.stringify(handoff)));
+              assert.ok(input.resumePrompt?.startsWith("Review input:"));
               for (const filename of findingsFiles) await access(filename);
             }
             assert.notEqual(reviewLog, implementationLog);
@@ -231,9 +229,6 @@ test("findings pauses stay in the relevant session and retain files until succes
                     : [fix],
             };
           },
-          async readReviewStandards() {
-            return [];
-          },
           async inspectReview() {
             return {
               clean: true,
@@ -293,9 +288,9 @@ test("findings pauses stay in the relevant session and retain files until succes
           async executeReview(input) {
             reviews += 1;
             const handoff = JSON.parse(
-              String(input.promptArgs.REVIEW_HANDOFF),
-            ) as { findingsFile: string; reviewRound: number };
-            assert.equal(handoff.reviewRound, 1);
+              String(input.promptArgs.REVIEW_INPUT),
+            ) as { findingsFile: string };
+            assert.ok(handoff.findingsFile.endsWith("-round-1.md"));
             if (reviews === 1) {
               reviewLog = input.logFile;
               files.push(input.logFile);

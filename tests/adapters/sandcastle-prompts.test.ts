@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -58,8 +58,8 @@ test("Runner supplies task context even when project prompts contain only user i
         ...reviewInput(),
         promptFile,
         promptArgs: {
-          REVIEW_HANDOFF: JSON.stringify({
-            ...context,
+          REVIEW_INPUT: JSON.stringify({
+            deliveryTicket: context.TICKET_REFERENCE,
             worktree: input().worktree,
             deliveryBranch: input().branch,
             reviewBase: input().base,
@@ -69,7 +69,17 @@ test("Runner supplies task context even when project prompts contain only user i
         },
       });
     } else {
-      await executor.execute({ ...input(), promptFile, promptArgs: context });
+      await executor.execute({
+        ...input(),
+        promptFile,
+        promptArgs: context,
+        pullRequestMetadata:
+          purpose === "documentation"
+            ? "required_for_committed"
+            : purpose === "implement"
+              ? "required"
+              : "ignored",
+      });
     }
     const prompt = String(prompts[0]?.prompt);
     for (const value of [
@@ -82,11 +92,38 @@ test("Runner supplies task context even when project prompts contain only user i
     assert.match(prompt, /Follow this project's instructions/u);
     assert.match(prompt, /Work only in the supplied Worktree/u);
     assert.match(prompt, /Do not fetch or pull/u);
+    assert.doesNotMatch(prompt, /\bRunner\b/u);
+    assert.doesNotMatch(prompt, /For conflict repair/u);
     assert.ok(prompt.includes(`<${tag}>`));
     assert.doesNotMatch(prompt, /\{\{[A-Z_]+\}\}/u);
     if (review) {
       assert.ok(prompt.includes("/runner/logs/findings.md"));
       assert.ok(prompt.includes("b".repeat(40)));
+      const nextInput = {
+        deliveryTicket: context.TICKET_REFERENCE,
+        worktree: input().worktree,
+        deliveryBranch: input().branch,
+        reviewBase: "b".repeat(40),
+        implementationHead: "c".repeat(40),
+        findingsFile: "/logs/findings-round-2.md",
+      };
+      const continuation = (
+        await readFile("src/prompts/review-attempt-input.md", "utf8")
+      ).replaceAll("{{REVIEW_INPUT}}", JSON.stringify(nextInput));
+      await executor.executeReview({
+        ...reviewInput(),
+        promptFile,
+        promptArgs: { REVIEW_INPUT: JSON.stringify(nextInput) },
+        resumePrompt: continuation,
+      });
+      const resumedPrompt = String(prompts[1]?.prompt);
+      assert.equal(prompts[1]?.resumeSession, "session-id");
+      assert.ok(resumedPrompt.includes(JSON.stringify(nextInput)));
+      assert.doesNotMatch(
+        resumedPrompt,
+        /Follow this project's instructions|\bRunner\b/u,
+      );
+      assert.ok(!resumedPrompt.includes("a".repeat(40)));
     }
   }
 });

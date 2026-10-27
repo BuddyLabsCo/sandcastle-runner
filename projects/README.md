@@ -143,7 +143,7 @@ flowchart TD
 ```
 
 The reviewer writes actionable findings under the Project logs directory and returns the assigned path. A clean review needs no findings document.
-Both sessions are reused within one Runner process. Subsequent reviews inspect only the latest fix and verify earlier findings were resolved.
+Both sessions are reused within one Runner process. Each review receives the issue reference, Worktree, branch, diff boundaries, and findings path through `review-attempt-input.md`. The reviewer reads the issue and repository instructions itself. Subsequent reviews inspect only the latest fix and verify earlier findings were resolved.
 At the configured limit, implementation still fixes the final findings before publication, without another review. See `workflow.maxReviewRounds` in [config.yaml](sandcastle-runner/config.yaml) for counting and limits.
 
 Findings and session logs remain available throughout the loop. Completion or skip cleans owned files; pause and cancellation retain them.

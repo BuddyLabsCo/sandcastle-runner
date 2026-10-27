@@ -5,11 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { AuditEvent } from "../audit.ts";
-import type {
-  AgentDiagnostics,
-  ReviewAttemptResult,
-  Ticket,
-} from "./contracts.ts";
+import type { AgentDiagnostics, ReviewAttemptResult } from "./contracts.ts";
 import { agentLogFile } from "./agent-logs.ts";
 import {
   agentPauseMessage,
@@ -33,38 +29,20 @@ import {
 } from "./agent-operation.ts";
 import { appendOperation, discardAgentLogs } from "./operation-audit.ts";
 
-function snapshot(
-  ticket: Ticket,
-  name: string,
-): { source: string; title: string; body: string } {
-  if (!ticket.source || !ticket.title || ticket.body === undefined)
-    throw new Error(`${name} snapshot is incomplete`);
-  return { source: ticket.source, title: ticket.title, body: ticket.body };
-}
-
-async function readReviewSnapshot(
+function createReviewInput(
   input: AttemptInput,
-  ticket: number,
-  parent: boolean,
-) {
-  return snapshot(
-    await externalRead({
-      action: () =>
-        parent
-          ? input.tracker.getParent(input.repository, ticket)
-          : input.tracker.getTicket(input.repository, ticket),
-      audit: input.audit,
-      event: input.event(
-        "review",
-        parent ? "read_specification" : "read_ticket_snapshot",
-        `${parent ? "parent" : "ticket"}:${ticket}`,
-      ),
-      clock: input.clock,
-      operator: input.operator,
-      retryPolicy: input.retryPolicy,
-    }),
-    parent ? "governing specification" : "Delivery Ticket",
-  );
+  handoff: VerifiedHandoff,
+  reviewBase: string,
+  findingsFile: string,
+): string {
+  return JSON.stringify({
+    worktree: handoff.worktree,
+    deliveryBranch: handoff.branch,
+    deliveryTicket: `${input.repository}#${handoff.ticket}`,
+    reviewBase,
+    implementationHead: handoff.commits.at(-1)!.sha,
+    findingsFile,
+  });
 }
 
 async function acceptReview(
@@ -153,31 +131,6 @@ async function runReviewRound(
     );
     let resultDiagnostics: AgentDiagnostics | undefined;
     try {
-      const [deliveryTicket, governingSpecification, standardsSources] =
-        await Promise.all([
-          readReviewSnapshot(input, handoff.ticket, false),
-          readReviewSnapshot(
-            input,
-            input.standaloneIssue ?? input.parentTicket,
-            input.standaloneIssue === undefined,
-          ),
-          externalRead({
-            action: () =>
-              input.gitWorkspace.readReviewStandards(
-                handoff.worktree,
-                handoff.base,
-              ),
-            audit: input.audit,
-            event: input.event(
-              "review",
-              "read_standards",
-              `ticket:${handoff.ticket}`,
-            ),
-            clock: input.clock,
-            operator: input.operator,
-            retryPolicy: input.retryPolicy,
-          }),
-        ]);
       const gitDirectory = await mkdtemp(
         path.join(tmpdir(), "sandcastle-runner-git-"),
       );
@@ -185,24 +138,12 @@ async function runReviewRound(
         /\.log$/u,
         `-round-${round.number}.md`,
       );
-      const reviewHandoff = JSON.stringify({
-        repository: input.repository,
-        projectTargetBranch: input.targetBranch,
-        worktree: handoff.worktree,
-        deliveryBranch: handoff.branch,
-        originalFixedPoint: handoff.base,
-        reviewBase: round.base,
-        reviewRound: round.number,
-        implementationHead,
+      const reviewInput = createReviewInput(
+        input,
+        handoff,
+        round.base,
         findingsFile,
-        deliveryTicket,
-        governingSpecification,
-        standardsSources,
-        acceptedExceptions: [
-          "Runner verifies Worktree cleanliness and rejects reviewer-created commits without comparing frozen branch or merge-base values.",
-        ],
-        implementationReportedChecks: handoff.checks,
-      });
+      );
       let result: ReviewAttemptResult;
       try {
         const gitConfigGlobal = path.join(gitDirectory, "config");
@@ -216,7 +157,7 @@ async function runReviewRound(
           targetBranch: input.targetBranch,
           promptFile: input.reviewPrompt,
           promptArgs: {
-            REVIEW_HANDOFF: reviewHandoff,
+            REVIEW_INPUT: reviewInput,
           },
           agent: input.reviewAgent.agent,
           model: input.reviewAgent.model,
@@ -418,17 +359,18 @@ export async function reviewHandoff(
     reviewBase = reviewedHead;
     reviewSession.resumePrompt = (
       await readFile(
-        new URL("../prompts/review-continuation.md", import.meta.url),
+        new URL("../prompts/review-attempt-input.md", import.meta.url),
         "utf8",
       )
-    )
-      .replaceAll("{{REVIEW_BASE}}", reviewBase)
-      .replaceAll("{{IMPLEMENTATION_HEAD}}", fixed.commits.at(-1)!.sha)
-      .replaceAll("{{REVIEW_ROUND}}", String(round + 1))
-      .replaceAll(
-        "{{FINDINGS_FILE}}",
+    ).replaceAll(
+      "{{REVIEW_INPUT}}",
+      createReviewInput(
+        input,
+        handoff,
+        reviewBase,
         reviewSession.logFile!.replace(/\.log$/u, `-round-${round + 1}.md`),
-      );
+      ),
+    );
   }
   for (const stage of ["implement", "review"] as const)
     await discardAgentLogs(input, "review", handoff.ticket, stage, 1);

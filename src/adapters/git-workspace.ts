@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
 import { formatToolError } from "./process-errors.ts";
@@ -225,37 +225,6 @@ export class LocalGitWorkspace implements GitWorkspace {
     await this.command(checkout, ["branch", "-D", branch], {
       timeout: 60_000,
     });
-  }
-
-  async readReviewStandards(worktree: string, base: string) {
-    const [changed, instructionFiles] = await Promise.all([
-      this.command(worktree, ["diff", "--name-only", `${base}..HEAD`], {
-        timeout: 60_000,
-      }),
-      this.command(worktree, ["ls-files", "AGENTS.md", ":(glob)**/AGENTS.md"], {
-        timeout: 60_000,
-      }),
-    ]);
-    const changedFiles = changed.trim().split("\n").filter(Boolean);
-    const applicable = instructionFiles
-      .trim()
-      .split("\n")
-      .filter(Boolean)
-      .filter((filename) => {
-        const directory = path.posix.dirname(filename);
-        return (
-          directory === "." ||
-          changedFiles.some((changedFile) =>
-            changedFile.startsWith(`${directory}/`),
-          )
-        );
-      });
-    return Promise.all(
-      applicable.map(async (filename) => ({
-        source: path.join(worktree, filename),
-        content: await readFile(path.join(worktree, filename), "utf8"),
-      })),
-    );
   }
 
   async inspectReview({

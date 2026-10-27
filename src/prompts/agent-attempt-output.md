@@ -1,4 +1,4 @@
-Once done, commit only inside the supplied Worktree. Do not push, create or modify a Pull Request, operate CI, merge, or mutate the tracker; those operations belong to the Runner.
+Once done, commit only inside the supplied Worktree. Do not push, create or modify a Pull Request, operate CI, merge, or mutate the tracker.
 
 Return exactly one result enclosed in these tags:
 <agent_attempt_result>

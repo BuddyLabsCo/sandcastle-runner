@@ -178,9 +178,6 @@ export function createCliDependencies(
       return "base";
     },
     async push() {},
-    async readReviewStandards() {
-      return [];
-    },
     async inspectReview() {
       return { clean: true, deliveryCommits: [], reviewCommits: [] };
     },

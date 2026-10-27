@@ -285,14 +285,10 @@ export class SandcastleAgentExecutor implements AgentExecutor {
       "pullRequestMetadata" in input
         ? (input as AgentAttemptInput).pullRequestMetadata
         : "ignored";
+    const promptKind = tag === "review_attempt_result" ? "review" : "agent";
     const outputPrompt = replacePromptPlaceholders(
       await readFile(
-        join(
-          runnerPromptDirectory,
-          tag === "review_attempt_result"
-            ? "review-attempt-output.md"
-            : "agent-attempt-output.md",
-        ),
+        join(runnerPromptDirectory, `${promptKind}-attempt-output.md`),
         "utf8",
       ),
       {
@@ -312,20 +308,19 @@ export class SandcastleAgentExecutor implements AgentExecutor {
       );
       const context = replacePromptPlaceholders(
         await readFile(
-          join(runnerPromptDirectory, "agent-attempt-input.md"),
+          join(runnerPromptDirectory, `${promptKind}-attempt-input.md`),
           "utf8",
         ),
         {
-          RUNNER_INPUT:
-            input.promptArgs.REVIEW_HANDOFF ??
-            JSON.stringify({
-              ...input.promptArgs,
-              TICKET_NUMBER: input.ticket,
-              WORKTREE_PATH: input.worktree,
-              SOURCE_BRANCH: input.branch,
-              BASE_SHA: input.base,
-              PROJECT_TARGET_BRANCH: input.targetBranch,
-            }),
+          ...input.promptArgs,
+          ATTEMPT_INPUT: JSON.stringify({
+            ...input.promptArgs,
+            TICKET_NUMBER: input.ticket,
+            WORKTREE_PATH: input.worktree,
+            SOURCE_BRANCH: input.branch,
+            BASE_SHA: input.base,
+            PROJECT_TARGET_BRANCH: input.targetBranch,
+          }),
         },
       );
       prompt = `${context.trimEnd()}\n\n${template.trimEnd()}\n\n${outputPrompt}`;

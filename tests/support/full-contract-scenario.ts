@@ -188,9 +188,6 @@ export function createFiveTicketScenario(
           clean: true,
         };
       },
-      async readReviewStandards() {
-        return [];
-      },
       async inspectReview() {
         return { clean: true, deliveryCommits: [], reviewCommits: [] };
       },

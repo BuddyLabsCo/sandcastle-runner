@@ -190,11 +190,6 @@ export interface RegisteredWorktree {
   repository: string;
 }
 
-export interface SourceSnapshot {
-  source: string;
-  content: string;
-}
-
 export interface ReviewWorkspaceEvidence {
   clean: boolean;
   deliveryCommits: CommitEvidence[];
@@ -214,10 +209,6 @@ export interface GitWorkspace {
     base: string;
     requiredAncestor?: string;
   }): Promise<WorkspaceEvidence>;
-  readReviewStandards(
-    worktree: string,
-    base: string,
-  ): Promise<SourceSnapshot[]>;
   inspectReview(input: {
     worktree: string;
     base: string;

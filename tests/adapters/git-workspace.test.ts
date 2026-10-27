@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -151,14 +151,10 @@ test("LocalGitWorkspace surfaces a Worktree name collision without adopting it",
   );
 });
 
-test("LocalGitWorkspace supplies scoped standards and post-review commit evidence without frozen-state checks", async () => {
+test("LocalGitWorkspace supplies post-review commit evidence without frozen-state checks", async () => {
   const root = registerTempRoot(
     await mkdtemp(path.join(tmpdir(), "git-review-test-")),
   );
-  const nested = path.join(root, "src", "feature");
-  await mkdir(nested, { recursive: true });
-  await writeFile(path.join(root, "AGENTS.md"), "root rules");
-  await writeFile(path.join(root, "src", "AGENTS.md"), "source rules");
   const base = "a".repeat(40);
   const implementationHead = "b".repeat(40);
   const reviewHead = "c".repeat(40);
@@ -166,10 +162,6 @@ test("LocalGitWorkspace supplies scoped standards and post-review commit evidenc
   const workspace = new LocalGitWorkspace("token", async (_cwd, args) => {
     const command = args.join(" ");
     calls.push(command);
-    if (command === `diff --name-only ${base}..HEAD`)
-      return "src/feature/index.ts\n";
-    if (args[0] === "ls-files")
-      return "AGENTS.md\nsrc/AGENTS.md\ntests/AGENTS.md\n";
     if (command === "status --porcelain") return "";
     if (command.endsWith(`${base}..HEAD`))
       return `${implementationHead}\0feat: implementation\n${reviewHead}\0fix: review finding\n`;
@@ -179,10 +171,6 @@ test("LocalGitWorkspace supplies scoped standards and post-review commit evidenc
   });
 
   try {
-    assert.deepEqual(await workspace.readReviewStandards(root, base), [
-      { source: path.join(root, "AGENTS.md"), content: "root rules" },
-      { source: path.join(root, "src/AGENTS.md"), content: "source rules" },
-    ]);
     assert.deepEqual(
       await workspace.inspectReview({
         worktree: root,

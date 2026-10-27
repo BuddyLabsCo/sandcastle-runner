@@ -46,9 +46,6 @@ test("implementation and review logs are stage-named and removed on success", as
       tracker: delivery.tracker,
       gitWorkspace: {
         ...delivery.gitWorkspace,
-        async readReviewStandards() {
-          return [];
-        },
         async inspectReview() {
           return {
             clean: true,

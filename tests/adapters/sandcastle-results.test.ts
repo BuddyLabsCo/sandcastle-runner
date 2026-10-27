@@ -24,7 +24,7 @@ import {
 test("Pull Request metadata rules preserve downstream handoff context", () => {
   assert.match(
     pullRequestMetadataRule("required"),
-    /pr_title and pr_body.*Runner will use them later to create the Pull Request/u,
+    /pr_title and pr_body are required complete non-empty strings/u,
   );
   assert.match(
     pullRequestMetadataRule("required"),
@@ -32,7 +32,7 @@ test("Pull Request metadata rules preserve downstream handoff context", () => {
   );
   assert.match(
     pullRequestMetadataRule("required_for_committed"),
-    /even if this attempt does not create one/u,
+    /when outcome is committed, include pr_title and pr_body/u,
   );
   assert.equal(pullRequestMetadataRule("ignored"), "omit both fields");
 });
@@ -99,8 +99,7 @@ test("structured output retry explains validation and repeats the complete proto
         "utf8",
       ),
       {
-        PULL_REQUEST_METADATA_RULE:
-          "pr_title and pr_body are required complete non-empty strings; the Runner will use them later to create the Pull Request, even if this attempt does not create one; inspect the target repository's contribution and Pull Request documentation and follow its title and body conventions when generating both fields",
+        PULL_REQUEST_METADATA_RULE: pullRequestMetadataRule("required"),
       },
     ).trim();
     assert.ok(String(retryPrompt).endsWith(protocol));

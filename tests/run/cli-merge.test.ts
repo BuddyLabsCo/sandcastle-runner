@@ -210,9 +210,6 @@ test("an explicit merge conflict is repaired on the original branch and Pull Req
                 : [implementation];
           return { worktree, branch, base, commits, clean: true };
         },
-        async readReviewStandards() {
-          return [];
-        },
         async inspectReview() {
           return {
             clean: true,

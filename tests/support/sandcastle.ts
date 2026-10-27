@@ -66,7 +66,7 @@ export function reviewInput() {
     ...review,
     runName: "review issue 9",
     promptFile: path.resolve("projects/sandcastle-runner/prompts/review.md"),
-    promptArgs: { REVIEW_HANDOFF: "{}" },
+    promptArgs: { REVIEW_INPUT: "{}" },
   };
 }
 

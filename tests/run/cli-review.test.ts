@@ -123,14 +123,6 @@ test("a clean fresh-context review gates publication and preserves implementatio
             clean: true,
           };
         },
-        async readReviewStandards(worktree) {
-          return [
-            {
-              source: path.join(worktree, "AGENTS.md"),
-              content: "Review both Standards and Spec.",
-            },
-          ];
-        },
         async inspectReview() {
           return {
             clean: true,
@@ -178,31 +170,34 @@ test("a clean fresh-context review gates publication and preserves implementatio
   assert.equal(reviewInput.agent, "pi");
   assert.equal(reviewInput.model, "claude-sonnet-4-6");
   assert.deepEqual(reviewInput.options, { thinking: "high" });
-  assert.deepEqual(Object.keys(reviewInput.promptArgs), ["REVIEW_HANDOFF"]);
-  const reviewHandoff = JSON.parse(
-    String(reviewInput.promptArgs.REVIEW_HANDOFF),
+  assert.deepEqual(Object.keys(reviewInput.promptArgs), ["REVIEW_INPUT"]);
+  const reviewInputData = JSON.parse(
+    String(reviewInput.promptArgs.REVIEW_INPUT),
   ) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(reviewInputData).sort(), [
+    "deliveryBranch",
+    "deliveryTicket",
+    "findingsFile",
+    "implementationHead",
+    "reviewBase",
+    "worktree",
+  ]);
+  assert.equal(reviewInputData.deliveryTicket, "owner/repo#9");
+  assert.equal(reviewInputData.worktree, implementationInput?.worktree);
+  assert.equal(reviewInputData.deliveryBranch, branch);
+  assert.equal(reviewInputData.reviewBase, "a".repeat(40));
+  assert.equal(reviewInputData.implementationHead, implementation.sha);
+  assert.equal(
+    path.dirname(String(reviewInputData.findingsFile)),
+    path.join(root, "projects/demo/logs"),
+  );
   assert.equal(
     reviewInput.promptFile,
     path.join(root, "projects/demo/prompts/review.md"),
   );
-  assert.equal(reviewInput.base, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+  assert.equal(reviewInput.base, "a".repeat(40));
   assert.equal(reviewInput.branch, branch);
   assert.equal(reviewInput.worktree, implementationInput?.worktree);
-  assert.deepEqual(reviewHandoff.deliveryTicket, {
-    source: "https://github.com/owner/repo/issues/9",
-    title: "Delivery ticket",
-    body: "Acceptance criteria body.",
-  });
-  assert.deepEqual(reviewHandoff.governingSpecification, {
-    source: "https://github.com/owner/repo/issues/8",
-    title: "Parent specification",
-    body: "Accepted specification body.",
-  });
-  assert.equal(
-    JSON.stringify(reviewHandoff).includes("Implementation body."),
-    false,
-  );
   assert.deepEqual(result.summary.handoffs?.[0]?.reviewCommits, []);
   assert.deepEqual(runNames, ["review issue 9"]);
 });
@@ -233,9 +228,6 @@ test("blocked, dirty, or invalid review pauses before publication", async () => 
         tracker: delivery.tracker,
         gitWorkspace: {
           ...delivery.gitWorkspace,
-          async readReviewStandards() {
-            return [];
-          },
           async inspectReview() {
             return {
               clean: failure !== "dirty",
@@ -259,7 +251,7 @@ test("blocked, dirty, or invalid review pauses before publication", async () => 
               throw new Error("second invalid review result");
             if (failure === "wrong_path" || failure === "missing_file") {
               const handoff = JSON.parse(
-                String(input.promptArgs.REVIEW_HANDOFF),
+                String(input.promptArgs.REVIEW_INPUT),
               ) as { findingsFile: string };
               return {
                 outcome: "findings",
@@ -272,7 +264,8 @@ test("blocked, dirty, or invalid review pauses before publication", async () => 
             return failure === "blocked"
               ? {
                   outcome: "blocked",
-                  blocker: "P1 unresolved",
+                  blocker:
+                    "GitHub authentication failed while reading the issue",
                 }
               : {
                   outcome: "passed",
@@ -292,6 +285,11 @@ test("blocked, dirty, or invalid review pauses before publication", async () => 
     assert.equal(result.summary.outcome, "cancelled");
     assert.equal(pauses, 1);
     assert.equal(pushes, 0);
+    if (failure === "blocked")
+      assert.match(
+        pauseMessage,
+        /^Reason: GitHub authentication failed while reading the issue$/mu,
+      );
     if (failure === "dirty") {
       assert.match(pauseMessage, /^Provider session: review-session$/mu);
       assert.match(pauseMessage, /^Diagnostic log: .+review-9-.+\.log$/mu);
@@ -322,9 +320,6 @@ test("review continuation verifies the Worktree without consuming a review round
       tracker: delivery.tracker,
       gitWorkspace: {
         ...delivery.gitWorkspace,
-        async readReviewStandards() {
-          return [];
-        },
         async inspectReview() {
           return {
             clean: true,
@@ -382,9 +377,6 @@ test("a trusted review result cannot bypass the clean Worktree gate", async () =
       tracker: delivery.tracker,
       gitWorkspace: {
         ...delivery.gitWorkspace,
-        async readReviewStandards() {
-          return [];
-        },
         async inspectReview() {
           return { clean: false, deliveryCommits: [], reviewCommits: [] };
         },

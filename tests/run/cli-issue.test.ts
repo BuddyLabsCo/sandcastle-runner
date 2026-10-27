@@ -184,15 +184,10 @@ test("standalone issue uses the selected issue as the Review specification", asy
       agentExecutor: {
         ...delivery.agentExecutor,
         async executeReview(input) {
-          const handoff = JSON.parse(
-            String(input.promptArgs.REVIEW_HANDOFF),
-          ) as {
-            governingSpecification?: { source?: unknown };
+          const handoff = JSON.parse(String(input.promptArgs.REVIEW_INPUT)) as {
+            deliveryTicket: string;
           };
-          governing =
-            typeof handoff.governingSpecification?.source === "string"
-              ? handoff.governingSpecification.source
-              : "";
+          governing = handoff.deliveryTicket;
           return {
             outcome: "passed",
           };
@@ -204,7 +199,7 @@ test("standalone issue uses the selected issue as the Review specification", asy
   assert.equal(result.summary.outcome, "succeeded");
   assert.deepEqual(result.summary.batch, [9]);
   assert.deepEqual(result.summary.completedTickets, [9]);
-  assert.equal(governing, "https://github.com/owner/repo/issues/9");
+  assert.equal(governing, "owner/repo#9");
 });
 
 test("run accepts options in any order", async () => {
