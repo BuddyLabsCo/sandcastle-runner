@@ -51,7 +51,11 @@ export async function deleteAgentLogs(
       .filter(
         (name) =>
           name.startsWith(prefix) &&
-          name.endsWith(".log") &&
+          (name.endsWith(".log") ||
+            (stage === "review" &&
+              /-[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}-round-[1-9][0-9]*\.md$/u.test(
+                name,
+              ))) &&
           (runIds === undefined ||
             runIds.some((runId) => name.startsWith(`${prefix}${runId}-`))),
       )

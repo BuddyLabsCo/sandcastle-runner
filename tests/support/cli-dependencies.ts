@@ -178,9 +178,6 @@ export function createCliDependencies(
       return "base";
     },
     async push() {},
-    async readReviewStandards() {
-      return [];
-    },
     async inspectReview() {
       return { clean: true, deliveryCommits: [], reviewCommits: [] };
     },
@@ -246,10 +243,6 @@ export function createCliDependencies(
         return overrides.agentExecutor.executeReview(input);
       return {
         outcome: "blocked",
-        summary: "not enabled for this scenario",
-        standards: { verdict: "blocked", unresolved_findings: [] },
-        spec: { verdict: "blocked", unresolved_findings: [] },
-        checks: [],
         blocker: "not enabled for this scenario",
       };
     },

@@ -535,17 +535,14 @@ export async function executeCli(
       ),
       implementationAgent: loaded.config.agents.implement,
       review: loaded.config.workflow.review,
+      ...(loaded.config.workflow.maxReviewRounds === undefined
+        ? {}
+        : { maxReviewRounds: loaded.config.workflow.maxReviewRounds }),
       reviewPrompt: path.join(loaded.directory, "prompts", "review.md"),
       ...(loaded.config.agents.review === undefined
         ? {}
         : { reviewAgent: loaded.config.agents.review }),
-      ciRepairPrompt: path.join(loaded.directory, "prompts", "ci-repair.md"),
       ciRepairAgent: loaded.config.agents.ciRepair,
-      conflictRepairPrompt: path.join(
-        loaded.directory,
-        "prompts",
-        "conflict-repair.md",
-      ),
       conflictRepairAgent: loaded.config.agents.conflictRepair,
       docMaintainTriggerLabel: loaded.config.workflow.docMaintainTriggerLabel,
       ...(selector === "document" ? { documentOnly: true } : {}),

@@ -14,7 +14,7 @@ src/
   recovery.ts     Durable recovery snapshot I/O
   run/            Workflow decisions and in-memory Run state
   adapters/       GitHub, Git, Sandcastle, clock, and terminal operations
-  prompts/        Runner-owned output-protocol prompts, not Project prompts
+  prompts/        Runner-owned task-context, continuation, and output prompts
 tests/
   recovery.test.ts Recovery snapshot behavior
   run/            Behavioral scenarios through the real Run
@@ -27,8 +27,9 @@ importable without starting a process so tests can exercise command handling.
 `config.ts` reads and validates Project files and resolves credential references;
 it does not select tickets or start agents. Project YAML and Markdown prompts,
 logs, and Recovery Snapshots remain external files in their configured
-locations. Runner-owned output-protocol prompts under `src/prompts/` are code
-contracts, not Project prompt content.
+locations. Runner-owned templates under `src/prompts/` supply task context, execution restrictions,
+continuation instructions, and output contracts. Project prompts contain only
+repository-specific instructions.
 
 ## Workflow modules
 
@@ -40,9 +41,9 @@ Place these modules under `src/run/`. Each owns a cohesive workflow responsibili
 | `report.ts` | Ordered per-ticket Run outcome presentation and final operator report rendering. |
 | `run-input.ts` / `run-batch.ts` | Run contracts and the wiring from a reserved Batch into Agent Attempts. |
 | `discovery.ts` / `discovery-state.ts` | Eligibility, Reservations, Parent/child/blocker reads and revalidation, exhaustion, and Parent closeout eligibility. |
-| `attempt.ts` / `agent-operation.ts` / `review-attempt.ts` | Worktree preparation, per-Attempt Git configuration, prompt metadata, Agent and Review Attempt execution, and Verified Handoff decisions using observed Git state. Reused for implementation, repairs, and maintenance. |
+| `attempt.ts` / `agent-operation.ts` / `review-attempt.ts` | Worktree preparation, per-Attempt Git configuration, prompt metadata, Agent and Review Attempt execution, the alternating review/fix loop with independent in-process session reuse, and Verified Handoff decisions using observed Git state. Reused for implementation, repairs, and maintenance. |
 | `agent-pause.ts` | Operator Pause presentation for Agent Attempt failures, ticket-bound skip decisions, and audit-only disposal of skipped Agent logs. |
-| `agent-logs.ts` | Stage-specific Agent Attempt log naming, owned-stage cleanup, and deletion-failure evidence. |
+| `agent-logs.ts` | Stage-specific Agent Attempt log naming, review findings Markdown lifecycle, owned-stage cleanup, and deletion-failure evidence. |
 | `operation-audit.ts` | Workflow operation audit appends and audit-only Agent log cleanup failures. |
 | `pull-request.ts` / `pull-request-core.ts` | Publication/readiness, integration, merge confirmation, and Ticket Closure Policy. It never decides Batch order. |
 | `pull-request-recovery.ts` / `pull-request-repair.ts` | Durable publication recovery, required-check polling, and CI/conflict repair budgets. |

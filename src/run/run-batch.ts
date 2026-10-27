@@ -33,6 +33,9 @@ export function implementBatch(
     promptFile: input.implementationPrompt,
     agent: input.implementationAgent,
     review: input.review,
+    ...(input.maxReviewRounds === undefined
+      ? {}
+      : { maxReviewRounds: input.maxReviewRounds }),
     reviewPrompt: input.reviewPrompt,
     ...(input.reviewAgent === undefined
       ? {}

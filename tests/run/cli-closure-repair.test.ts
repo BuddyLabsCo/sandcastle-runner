@@ -331,10 +331,7 @@ test("failed required checks are repaired on the existing branch and Pull Reques
   assert.equal(pushes, 2);
   assert.equal(pullRequests, 1);
   assert.equal(agentInputs.length, 2);
-  assert.equal(
-    agentInputs[1]?.promptFile,
-    path.join(root, "projects/demo/prompts/ci-repair.md"),
-  );
+  assert.equal(agentInputs[1]?.promptFile, undefined);
   assert.equal(agentInputs[1]?.model, "gpt-5.5");
   assert.equal(agentInputs[1]?.agent, "codex");
   assert.deepEqual(agentInputs[1]?.options, { effort: "medium" });

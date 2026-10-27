@@ -190,11 +190,6 @@ export interface RegisteredWorktree {
   repository: string;
 }
 
-export interface SourceSnapshot {
-  source: string;
-  content: string;
-}
-
 export interface ReviewWorkspaceEvidence {
   clean: boolean;
   deliveryCommits: CommitEvidence[];
@@ -214,10 +209,6 @@ export interface GitWorkspace {
     base: string;
     requiredAncestor?: string;
   }): Promise<WorkspaceEvidence>;
-  readReviewStandards(
-    worktree: string,
-    base: string,
-  ): Promise<SourceSnapshot[]>;
   inspectReview(input: {
     worktree: string;
     base: string;
@@ -265,7 +256,7 @@ export interface AgentAttemptInput {
   branch: string;
   base: string;
   targetBranch: string;
-  promptFile: string;
+  promptFile?: string;
   promptArgs: Record<string, string | number>;
   pullRequestMetadata: "required" | "required_for_committed" | "ignored";
   agent: string;
@@ -280,20 +271,11 @@ export interface AgentAttemptInput {
   resumePrompt?: string;
 }
 
-export interface ReviewVerdict {
-  verdict: "passed" | "blocked";
-  unresolved_findings: string[];
-}
-
-export interface ReviewAttemptResult {
-  outcome: "passed" | "blocked";
-  summary: string;
-  standards: ReviewVerdict;
-  spec: ReviewVerdict;
-  checks: CheckEvidence[];
-  blocker: string | null;
-  diagnostics?: AgentDiagnostics;
-}
+export type ReviewAttemptResult = (
+  | { outcome: "passed" }
+  | { outcome: "findings"; findings_file: string }
+  | { outcome: "blocked"; blocker: string }
+) & { diagnostics?: AgentDiagnostics };
 
 export type ReviewAttemptInput = Omit<AgentAttemptInput, "pullRequestMetadata">;
 

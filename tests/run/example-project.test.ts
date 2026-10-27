@@ -8,45 +8,9 @@ import { loadProject } from "../../src/config.ts";
 const root = path.resolve(import.meta.dirname, "../..");
 
 const placeholders = {
-  "implement.md": [
-    "BASE_SHA",
-    "PROJECT_TARGET_BRANCH",
-    "SOURCE_BRANCH",
-    "TICKET_NUMBER",
-    "TICKET_REFERENCE",
-    "WORKTREE_PATH",
-  ],
-  "review.md": ["PROJECT_TARGET_BRANCH", "REVIEW_HANDOFF"],
-  "ci-repair.md": [
-    "BASE_SHA",
-    "FAILED_CHECKS",
-    "PROJECT_TARGET_BRANCH",
-    "PULL_REQUEST_NUMBER",
-    "PULL_REQUEST_URL",
-    "SOURCE_BRANCH",
-    "TICKET_NUMBER",
-    "TICKET_REFERENCE",
-    "WORKTREE_PATH",
-  ],
-  "conflict-repair.md": [
-    "BASE_SHA",
-    "MERGE_CONFLICT",
-    "PROJECT_TARGET_BRANCH",
-    "PULL_REQUEST_NUMBER",
-    "PULL_REQUEST_URL",
-    "SOURCE_BRANCH",
-    "TARGET_BRANCH_SHA",
-    "TICKET_NUMBER",
-    "TICKET_REFERENCE",
-    "WORKTREE_PATH",
-  ],
-  "documentation.md": [
-    "PROJECT_TARGET_BRANCH",
-    "SOURCE_BRANCH",
-    "TICKET_NUMBER",
-    "TICKET_REFERENCE",
-    "WORKTREE_PATH",
-  ],
+  "implement.md": [],
+  "review.md": [],
+  "documentation.md": [],
 } as const;
 
 test("checked-in projects are loadable and have exact prompt placeholders", async () => {
@@ -84,7 +48,7 @@ test("Runner-owned output protocols use the configured tags and fields", async (
     },
     "review-attempt-output.md": {
       tag: "review_attempt_result",
-      fields: ["outcome", "summary", "standards", "spec", "checks", "blocker"],
+      fields: ["outcome", "findings_file", "blocker"],
     },
   } as const;
   for (const [filename, expected] of Object.entries(protocols)) {

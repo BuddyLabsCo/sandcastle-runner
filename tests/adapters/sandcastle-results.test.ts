@@ -24,7 +24,7 @@ import {
 test("Pull Request metadata rules preserve downstream handoff context", () => {
   assert.match(
     pullRequestMetadataRule("required"),
-    /pr_title and pr_body.*Runner will use them later to create the Pull Request/u,
+    /pr_title and pr_body are required complete non-empty strings/u,
   );
   assert.match(
     pullRequestMetadataRule("required"),
@@ -32,7 +32,7 @@ test("Pull Request metadata rules preserve downstream handoff context", () => {
   );
   assert.match(
     pullRequestMetadataRule("required_for_committed"),
-    /even if this attempt does not create one/u,
+    /when outcome is committed, include pr_title and pr_body/u,
   );
   assert.equal(pullRequestMetadataRule("ignored"), "omit both fields");
 });
@@ -99,8 +99,7 @@ test("structured output retry explains validation and repeats the complete proto
         "utf8",
       ),
       {
-        PULL_REQUEST_METADATA_RULE:
-          "pr_title and pr_body are required complete non-empty strings; the Runner will use them later to create the Pull Request, even if this attempt does not create one; inspect the target repository's contribution and Pull Request documentation and follow its title and body conventions when generating both fields",
+        PULL_REQUEST_METADATA_RULE: pullRequestMetadataRule("required"),
       },
     ).trim();
     assert.ok(String(retryPrompt).endsWith(protocol));
@@ -120,11 +119,6 @@ test("structured output retry explains validation and repeats the complete proto
 test("review structured output retry repeats the review protocol", async () => {
   const review = {
     outcome: "passed",
-    summary: "Both axes pass.",
-    standards: { verdict: "passed", unresolved_findings: [] },
-    spec: { verdict: "passed", unresolved_findings: [] },
-    checks: [{ command: "npm test", status: "passed", details: "ok" }],
-    blocker: null,
   };
   const prompts: RunOptions[] = [];
   let attempts = 0;
@@ -157,8 +151,8 @@ test("review structured output retry repeats the review protocol", async () => {
   const retryPrompt = prompts.at(-1)?.prompt;
   assert.match(String(retryPrompt), /unexpected fields: extra/u);
   assert.match(String(retryPrompt), /<review_attempt_result>/u);
-  assert.match(String(retryPrompt), /"standards"/u);
-  assert.match(String(retryPrompt), /"spec"/u);
+  assert.match(String(retryPrompt), /"findings_file"/u);
+  assert.match(String(retryPrompt), /"blocker"/u);
   const protocol = (
     await readFile(path.resolve("src/prompts/review-attempt-output.md"), "utf8")
   ).trim();
@@ -169,11 +163,6 @@ test("review structured output retry repeats the review protocol", async () => {
 test("SandcastleAgentExecutor runs a fresh strict review result with one correction opportunity", async () => {
   const review = {
     outcome: "passed" as const,
-    summary: "Both axes pass.",
-    standards: { verdict: "passed" as const, unresolved_findings: [] },
-    spec: { verdict: "passed" as const, unresolved_findings: [] },
-    checks: [{ command: "npm test", status: "passed" as const, details: "ok" }],
-    blocker: null,
   };
   let options: RunOptions | undefined;
   const executor = createExecutor(async (received) => {
@@ -207,8 +196,8 @@ test("SandcastleAgentExecutor runs a fresh strict review result with one correct
   assert.equal(options?.promptArgs, undefined);
   assert.match(String(options?.prompt), /Review/u);
   assert.match(String(options?.prompt), /<review_attempt_result>/u);
-  assert.match(String(options?.prompt), /"standards"/u);
-  assert.match(String(options?.prompt), /"spec"/u);
+  assert.match(String(options?.prompt), /Standards and Spec/u);
+  assert.match(String(options?.prompt), /"findings_file"/u);
   assert.ok(
     String(options?.prompt).indexOf("<review_attempt_result>") >
       String(options?.prompt).indexOf("Use the `/code-review` skill"),
@@ -421,11 +410,6 @@ test("SandcastleAgentExecutor resumes the captured session for continuation", as
 test("SandcastleAgentExecutor appends the review output protocol to human continuation prompts", async () => {
   const review = {
     outcome: "passed" as const,
-    summary: "Both axes pass.",
-    standards: { verdict: "passed" as const, unresolved_findings: [] },
-    spec: { verdict: "passed" as const, unresolved_findings: [] },
-    checks: [{ command: "npm test", status: "passed" as const, details: "ok" }],
-    blocker: null,
   };
   const prompts: RunOptions[] = [];
   const executor = createExecutor(async (options) => {
@@ -459,4 +443,39 @@ test("SandcastleAgentExecutor reports an unavailable continuation session", asyn
     executor.execute({ ...input(), resumePrompt: "continue" }),
     /Provider session unavailable for continuation/u,
   );
+});
+
+test("review results contain only the outcome and its required detail", async () => {
+  const { reviewResultSchema } =
+    await import("../../src/adapters/sandcastle-output.ts");
+  const schema = reviewResultSchema();
+  const validate = (value: unknown) => schema["~standard"].validate(value);
+  const findings = {
+    outcome: "findings",
+    findings_file: "/project/logs/review-9-run-round-1.md",
+  };
+  const clean = { outcome: "passed" };
+  const blocked = {
+    outcome: "blocked",
+    blocker: "Cannot access specification",
+  };
+  for (const valid of [clean, findings, blocked])
+    assert.deepEqual(validate(valid), { value: valid });
+  for (const invalid of [
+    { outcome: "unknown" },
+    { outcome: "findings" },
+    { ...findings, findings_file: " " },
+    { ...findings, findings_file: 1 },
+    { outcome: "blocked" },
+    { ...blocked, blocker: " " },
+    { ...blocked, blocker: null },
+    { ...clean, findings_file: findings.findings_file },
+    { ...clean, summary: "obsolete" },
+    { ...clean, checks: [] },
+    { ...findings, blocker: "execution failed" },
+    { ...blocked, findings_file: findings.findings_file },
+    { ...clean, pr_title: "not owned" },
+  ]) {
+    assert.ok("issues" in validate(invalid));
+  }
 });

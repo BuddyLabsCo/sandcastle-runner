@@ -101,7 +101,7 @@ A schema-validated JSON account of an Agent Attempt's outcome, summary, claimed 
 _Avoid_: Completion marker, final message
 
 **Review Attempt Result**:
-A schema-validated account of a fresh-context review's Standards and Spec verdicts, unresolved findings, checks, and blocker. It never owns Pull Request metadata or commit claims.
+A schema-validated account of a review's clean, findings, or blocked outcome. A findings result returns only the reviewer-written Markdown path for the original implementation session to fix. A blocked result includes only the obstacle explanation. The original review session reviews subsequent fixes within the same Run. It never owns Pull Request metadata or commit claims.
 _Avoid_: Review Handoff, approval
 
 **Verified Handoff**:

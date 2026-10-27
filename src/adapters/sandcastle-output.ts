@@ -8,7 +8,6 @@ import type {
   CommitEvidence,
   ReviewAttemptInput,
   ReviewAttemptResult,
-  ReviewVerdict,
 } from "../run/contracts.ts";
 
 export interface StandardSchema<T> {
@@ -23,9 +22,9 @@ export function pullRequestMetadataRule(
   metadata: AgentAttemptInput["pullRequestMetadata"],
 ): string {
   if (metadata === "required")
-    return "pr_title and pr_body are required complete non-empty strings; the Runner will use them later to create the Pull Request, even if this attempt does not create one; inspect the target repository's contribution and Pull Request documentation and follow its title and body conventions when generating both fields";
+    return "pr_title and pr_body are required complete non-empty strings; inspect the target repository's contribution and Pull Request documentation and follow its title and body conventions when generating both fields";
   if (metadata === "required_for_committed")
-    return "when outcome is committed, include pr_title and pr_body as complete non-empty strings because the Runner will use them later to create the Pull Request, even if this attempt does not create one; inspect the target repository's contribution and Pull Request documentation and follow its title and body conventions when generating both fields; omit both otherwise";
+    return "when outcome is committed, include pr_title and pr_body as complete non-empty strings; inspect the target repository's contribution and Pull Request documentation and follow its title and body conventions when generating both fields; omit both otherwise";
   return "omit both fields";
 }
 
@@ -194,63 +193,23 @@ export function resultSchema(
   } satisfies StandardSchema<AgentAttemptResult>;
 }
 
-function parseVerdict(value: unknown, name: string): ReviewVerdict {
-  const input = object(value, name);
-  if (input.verdict !== "passed" && input.verdict !== "blocked")
-    throw new Error(`${name}.verdict is unsupported`);
-  if (
-    !Array.isArray(input.unresolved_findings) ||
-    input.unresolved_findings.some(
-      (finding) => typeof finding !== "string" || finding.trim() === "",
-    )
-  ) {
-    throw new Error(`${name}.unresolved_findings must be strings`);
-  }
-  return {
-    verdict: input.verdict,
-    unresolved_findings: input.unresolved_findings as string[],
-  };
-}
-
 function parseReviewResult(value: unknown): ReviewAttemptResult {
   const input = object(value, "Review Attempt Result");
   const expected = [
-    "blocker",
-    "checks",
     "outcome",
-    "spec",
-    "standards",
-    "summary",
+    ...(input.outcome === "findings" ? ["findings_file"] : []),
+    ...(input.outcome === "blocked" ? ["blocker"] : []),
   ];
   assertExactFields(input, expected, "Review Attempt Result");
-  if (input.outcome !== "passed" && input.outcome !== "blocked")
-    throw new Error("review outcome is unsupported");
-  if (!Array.isArray(input.checks)) throw new Error("checks must be an array");
-  const standards = parseVerdict(input.standards, "standards");
-  const spec = parseVerdict(input.spec, "spec");
-  if (
-    input.outcome === "passed" &&
-    (standards.verdict !== "passed" ||
-      spec.verdict !== "passed" ||
-      standards.unresolved_findings.length !== 0 ||
-      spec.unresolved_findings.length !== 0)
-  ) {
-    throw new Error("passed review requires both axes to pass cleanly");
-  }
-  const blocker =
-    input.outcome === "blocked"
-      ? nonempty(input.blocker, "blocker")
-      : input.blocker;
-  if (input.outcome === "passed" && blocker !== null)
-    throw new Error("blocker must be null when review passes");
-  return {
-    outcome: input.outcome,
-    summary: nonempty(input.summary, "summary"),
-    standards,
-    spec,
-    checks: input.checks.map(parseCheck),
-    blocker: blocker as string | null,
-  };
+  if (input.outcome === "passed") return { outcome: "passed" };
+  if (input.outcome === "findings")
+    return {
+      outcome: "findings",
+      findings_file: nonempty(input.findings_file, "findings_file"),
+    };
+  if (input.outcome === "blocked")
+    return { outcome: "blocked", blocker: nonempty(input.blocker, "blocker") };
+  throw new Error("review outcome is unsupported");
 }
 
 export function reviewResultSchema(): StandardSchema<ReviewAttemptResult> {

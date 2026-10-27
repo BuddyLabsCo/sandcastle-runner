@@ -165,11 +165,6 @@ test("Review and Documentation Maintenance trigger operate independently", async
             reviews += 1;
             return {
               outcome: "passed",
-              summary: "Both review axes pass.",
-              standards: { verdict: "passed", unresolved_findings: [] },
-              spec: { verdict: "passed", unresolved_findings: [] },
-              checks: [],
-              blocker: null,
             };
           },
         },

@@ -128,10 +128,14 @@ for (const {
       },
       agentExecutor: {
         async execute(input) {
-          const repairing = input.promptFile.endsWith("-repair.md");
+          const repairing =
+            input.promptArgs.FAILED_CHECKS !== undefined ||
+            input.promptArgs.MERGE_CONFLICT !== undefined;
           if (repairing) {
             assert.ok(
-              input.promptFile.endsWith(`${stages[repairs]}-repair.md`),
+              input.promptArgs[
+                stages[repairs] === "ci" ? "FAILED_CHECKS" : "MERGE_CONFLICT"
+              ] !== undefined,
             );
             if (cancel && repairs === 1) {
               cancel = false;

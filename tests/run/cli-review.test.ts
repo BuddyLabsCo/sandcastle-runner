@@ -123,14 +123,6 @@ test("a clean fresh-context review gates publication and preserves implementatio
             clean: true,
           };
         },
-        async readReviewStandards(worktree) {
-          return [
-            {
-              source: path.join(worktree, "AGENTS.md"),
-              content: "Review both Standards and Spec.",
-            },
-          ];
-        },
         async inspectReview() {
           return {
             clean: true,
@@ -153,13 +145,6 @@ test("a clean fresh-context review gates publication and preserves implementatio
           reviewInput = input;
           return {
             outcome: "passed",
-            summary: "Both review axes pass.",
-            standards: { verdict: "passed", unresolved_findings: [] },
-            spec: { verdict: "passed", unresolved_findings: [] },
-            checks: [
-              { command: "npm test", status: "passed", details: "all passed" },
-            ],
-            blocker: null,
           };
         },
       },
@@ -185,114 +170,47 @@ test("a clean fresh-context review gates publication and preserves implementatio
   assert.equal(reviewInput.agent, "pi");
   assert.equal(reviewInput.model, "claude-sonnet-4-6");
   assert.deepEqual(reviewInput.options, { thinking: "high" });
-  assert.deepEqual(Object.keys(reviewInput.promptArgs), ["REVIEW_HANDOFF"]);
-  const reviewHandoff = JSON.parse(
-    String(reviewInput.promptArgs.REVIEW_HANDOFF),
+  assert.deepEqual(Object.keys(reviewInput.promptArgs), ["REVIEW_INPUT"]);
+  const reviewInputData = JSON.parse(
+    String(reviewInput.promptArgs.REVIEW_INPUT),
   ) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(reviewInputData).sort(), [
+    "deliveryBranch",
+    "deliveryTicket",
+    "findingsFile",
+    "implementationHead",
+    "reviewBase",
+    "worktree",
+  ]);
+  assert.equal(reviewInputData.deliveryTicket, "owner/repo#9");
+  assert.equal(reviewInputData.worktree, implementationInput?.worktree);
+  assert.equal(reviewInputData.deliveryBranch, branch);
+  assert.equal(reviewInputData.reviewBase, "a".repeat(40));
+  assert.equal(reviewInputData.implementationHead, implementation.sha);
+  assert.equal(
+    path.dirname(String(reviewInputData.findingsFile)),
+    path.join(root, "projects/demo/logs"),
+  );
   assert.equal(
     reviewInput.promptFile,
     path.join(root, "projects/demo/prompts/review.md"),
   );
-  assert.equal(reviewInput.base, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+  assert.equal(reviewInput.base, "a".repeat(40));
   assert.equal(reviewInput.branch, branch);
   assert.equal(reviewInput.worktree, implementationInput?.worktree);
-  assert.deepEqual(reviewHandoff.deliveryTicket, {
-    source: "https://github.com/owner/repo/issues/9",
-    title: "Delivery ticket",
-    body: "Acceptance criteria body.",
-  });
-  assert.deepEqual(reviewHandoff.governingSpecification, {
-    source: "https://github.com/owner/repo/issues/8",
-    title: "Parent specification",
-    body: "Accepted specification body.",
-  });
-  assert.equal(
-    JSON.stringify(reviewHandoff).includes("Implementation body."),
-    false,
-  );
   assert.deepEqual(result.summary.handoffs?.[0]?.reviewCommits, []);
   assert.deepEqual(runNames, ["review issue 9"]);
 });
 
-test("review fix commits become part of the complete delivery without replacing implementation identity", async () => {
-  const root = await createProject();
-  const config = structuredClone(validConfig);
-  config.workflow.review = true;
-  await writeProjectConfig(
-    path.join(root, "projects/demo/config.yaml"),
-    config,
-  );
-  const delivery = createCommittedDelivery(9);
-  const implementation = {
-    sha: "b".repeat(40),
-    message: "feat: implementation",
-  };
-  const fix = { sha: "c".repeat(40), message: "fix: review finding" };
-  let branch = "";
-
-  const result = await executeCli(
-    ["run", "--project", "demo", "--parent", "8"],
-    createCliDependencies(root, {
-      tracker: delivery.tracker,
-      gitWorkspace: {
-        async fetchTargetBranch() {
-          return "a".repeat(40);
-        },
-        async createWorktree(input) {
-          branch = input.branch;
-        },
-        async inspect({ worktree, base }) {
-          return {
-            worktree,
-            branch,
-            base,
-            commits: [implementation],
-            clean: true,
-          };
-        },
-        async readReviewStandards() {
-          return [];
-        },
-        async inspectReview() {
-          return {
-            clean: true,
-            deliveryCommits: [implementation, fix],
-            reviewCommits: [fix],
-          };
-        },
-      },
-      agentExecutor: {
-        async execute(input) {
-          return delivery.agentExecutor.execute!(input);
-        },
-        async executeReview() {
-          return {
-            outcome: "passed",
-            summary: "Fixed one finding.",
-            standards: { verdict: "passed", unresolved_findings: [] },
-            spec: { verdict: "passed", unresolved_findings: [] },
-            checks: [],
-            blocker: null,
-          };
-        },
-      },
-    }),
-  );
-
-  assert.equal(result.summary.outcome, "succeeded");
-  assert.deepEqual(result.summary.handoffs?.[0]?.commits, [
-    implementation,
-    fix,
-  ]);
-  assert.deepEqual(result.summary.handoffs?.[0]?.implementationCommits, [
-    implementation,
-  ]);
-  assert.deepEqual(result.summary.handoffs?.[0]?.reviewCommits, [fix]);
-  assert.equal(result.summary.handoffs?.[0]?.prTitle, "feat: implementation");
-});
-
 test("blocked, dirty, or invalid review pauses before publication", async () => {
-  for (const failure of ["blocked", "dirty", "invalid"] as const) {
+  for (const failure of [
+    "blocked",
+    "dirty",
+    "invalid",
+    "reviewer_commit",
+    "wrong_path",
+    "missing_file",
+  ] as const) {
     const root = await createProject();
     const config = structuredClone(validConfig);
     config.workflow.review = true;
@@ -310,14 +228,14 @@ test("blocked, dirty, or invalid review pauses before publication", async () => 
         tracker: delivery.tracker,
         gitWorkspace: {
           ...delivery.gitWorkspace,
-          async readReviewStandards() {
-            return [];
-          },
           async inspectReview() {
             return {
               clean: failure !== "dirty",
               deliveryCommits: [],
-              reviewCommits: [],
+              reviewCommits:
+                failure === "reviewer_commit"
+                  ? [{ sha: "c".repeat(40), message: "forbidden reviewer fix" }]
+                  : [],
             };
           },
           async push() {
@@ -328,29 +246,30 @@ test("blocked, dirty, or invalid review pauses before publication", async () => 
           async execute(input) {
             return delivery.agentExecutor.execute!(input);
           },
-          async executeReview() {
+          async executeReview(input) {
             if (failure === "invalid")
               throw new Error("second invalid review result");
+            if (failure === "wrong_path" || failure === "missing_file") {
+              const handoff = JSON.parse(
+                String(input.promptArgs.REVIEW_INPUT),
+              ) as { findingsFile: string };
+              return {
+                outcome: "findings",
+                findings_file:
+                  failure === "wrong_path"
+                    ? "/unrelated/findings.md"
+                    : handoff.findingsFile,
+              };
+            }
             return failure === "blocked"
               ? {
                   outcome: "blocked",
-                  summary: "Review cannot pass.",
-                  standards: {
-                    verdict: "blocked",
-                    unresolved_findings: ["P1 unresolved"],
-                  },
-                  spec: { verdict: "passed", unresolved_findings: [] },
-                  checks: [],
-                  blocker: "P1 unresolved",
+                  blocker:
+                    "GitHub authentication failed while reading the issue",
                 }
               : {
                   outcome: "passed",
-                  summary: "Axes pass but files are dirty.",
                   diagnostics: { sessionId: "review-session" },
-                  standards: { verdict: "passed", unresolved_findings: [] },
-                  spec: { verdict: "passed", unresolved_findings: [] },
-                  checks: [],
-                  blocker: null,
                 };
           },
         },
@@ -366,6 +285,11 @@ test("blocked, dirty, or invalid review pauses before publication", async () => 
     assert.equal(result.summary.outcome, "cancelled");
     assert.equal(pauses, 1);
     assert.equal(pushes, 0);
+    if (failure === "blocked")
+      assert.match(
+        pauseMessage,
+        /^Reason: GitHub authentication failed while reading the issue$/mu,
+      );
     if (failure === "dirty") {
       assert.match(pauseMessage, /^Provider session: review-session$/mu);
       assert.match(pauseMessage, /^Diagnostic log: .+review-9-.+\.log$/mu);
@@ -374,7 +298,7 @@ test("blocked, dirty, or invalid review pauses before publication", async () => 
   }
 });
 
-test("review retry uses a fresh attempt and verifies the Worktree", async () => {
+test("review continuation verifies the Worktree without consuming a review round", async () => {
   const root = await createProject();
   const config = structuredClone(validConfig);
   config.workflow.review = true;
@@ -387,7 +311,6 @@ test("review retry uses a fresh attempt and verifies the Worktree", async () => 
     sha: "b".repeat(40),
     message: "feat: implementation",
   };
-  const fix = { sha: "c".repeat(40), message: "fix: review finding" };
   const gitConfigs: string[] = [];
   let reviews = 0;
 
@@ -397,14 +320,11 @@ test("review retry uses a fresh attempt and verifies the Worktree", async () => 
       tracker: delivery.tracker,
       gitWorkspace: {
         ...delivery.gitWorkspace,
-        async readReviewStandards() {
-          return [];
-        },
         async inspectReview() {
           return {
             clean: true,
-            deliveryCommits: [implementation, fix],
-            reviewCommits: [fix],
+            deliveryCommits: [implementation],
+            reviewCommits: [],
           };
         },
       },
@@ -418,14 +338,9 @@ test("review retry uses a fresh attempt and verifies the Worktree", async () => 
           if (reviews === 2) {
             return {
               outcome: "passed",
-              summary: "review passed",
-              standards: { verdict: "passed", unresolved_findings: [] },
-              spec: { verdict: "passed", unresolved_findings: [] },
-              checks: [],
-              blocker: null,
             };
           }
-          throw new Error("review failed after committing a fix");
+          throw new Error("review could not finish");
         },
       },
       operator: {
@@ -439,11 +354,8 @@ test("review retry uses a fresh attempt and verifies the Worktree", async () => 
   assert.equal(result.summary.outcome, "succeeded");
   assert.equal(reviews, 2);
   assert.notEqual(gitConfigs[0], gitConfigs[1]);
-  assert.deepEqual(result.summary.handoffs?.[0]?.commits, [
-    implementation,
-    fix,
-  ]);
-  assert.deepEqual(result.summary.handoffs?.[0]?.reviewCommits, [fix]);
+  assert.deepEqual(result.summary.handoffs?.[0]?.commits, [implementation]);
+  assert.deepEqual(result.summary.handoffs?.[0]?.reviewCommits, []);
   assert.equal(result.summary.handoffs?.[0]?.reviewVerification, "verified");
 });
 
@@ -465,9 +377,6 @@ test("a trusted review result cannot bypass the clean Worktree gate", async () =
       tracker: delivery.tracker,
       gitWorkspace: {
         ...delivery.gitWorkspace,
-        async readReviewStandards() {
-          return [];
-        },
         async inspectReview() {
           return { clean: false, deliveryCommits: [], reviewCommits: [] };
         },

@@ -4,7 +4,6 @@ import { parse } from "yaml";
 
 import type { RetryPolicy, TicketClosurePolicy } from "./run/contracts.ts";
 
-const promptNames = ["implement", "ci-repair", "conflict-repair"] as const;
 const documentationConfigurationError =
   "Documentation Maintenance is enabled; supply agents.documentation and prompts/documentation.md";
 const reviewConfigurationError =
@@ -29,7 +28,11 @@ export interface ProjectConfig {
     reservationLabel: string;
   };
   codeHost: { type: "github"; tokenEnv: string; adminMerge: boolean };
-  workflow: { review: boolean; docMaintainTriggerLabel: string };
+  workflow: {
+    review: boolean;
+    maxReviewRounds?: number;
+    docMaintainTriggerLabel: string;
+  };
   agents: {
     implement: AgentConfig;
     review?: AgentConfig;
@@ -153,10 +156,20 @@ function parseConfig(
   const workflow =
     input.workflow === undefined ? {} : record(input.workflow, "workflow");
   const unknownWorkflowField = Object.keys(workflow).find(
-    (name) => !["review", "docMaintainTriggerLabel"].includes(name),
+    (name) =>
+      !["review", "maxReviewRounds", "docMaintainTriggerLabel"].includes(name),
   );
   if (unknownWorkflowField) {
     throw new Error(`workflow contains unknown field ${unknownWorkflowField}`);
+  }
+  const maxReviewRounds = workflow.maxReviewRounds;
+  if (
+    maxReviewRounds !== undefined &&
+    (typeof maxReviewRounds !== "number" ||
+      !Number.isSafeInteger(maxReviewRounds) ||
+      maxReviewRounds <= 0)
+  ) {
+    throw new Error("workflow.maxReviewRounds must be a positive integer");
   }
   const timeouts = record(input.timeouts, "timeouts");
   const retryPolicy: RetryPolicy = {
@@ -247,6 +260,7 @@ function parseConfig(
     },
     workflow: {
       review: reviewEnabled,
+      ...(maxReviewRounds === undefined ? {} : { maxReviewRounds }),
       docMaintainTriggerLabel,
     },
     agents: {
@@ -303,18 +317,13 @@ export async function loadProject(
     );
   }
   const config = parseConfig(value, options);
-  await Promise.all(
-    promptNames.map(async (name) => {
-      const filename = `${name}.md`;
-      if (
-        (
-          await readFile(path.join(directory, "prompts", filename), "utf8")
-        ).trim() === ""
-      ) {
-        throw new Error(`${filename} must not be empty`);
-      }
-    }),
-  );
+  if (
+    (
+      await readFile(path.join(directory, "prompts", "implement.md"), "utf8")
+    ).trim() === ""
+  ) {
+    throw new Error("implement.md must not be empty");
+  }
   if (
     options.requireDocumentationMaintenance === true ||
     config.workflow.docMaintainTriggerLabel.length > 0

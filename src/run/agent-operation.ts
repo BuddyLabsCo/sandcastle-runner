@@ -61,12 +61,18 @@ export interface AgentOperationInput extends DiscoveryInput {
   agentExecutor: AgentExecutor;
 }
 
+export interface AgentSession {
+  logFile?: string;
+  resumePrompt?: string;
+}
+
 export interface AttemptInput extends AgentOperationInput {
   batch: number[];
   checkout: string;
   promptFile: string;
   agent: AgentConfig;
   review: boolean;
+  maxReviewRounds?: number;
   reviewPrompt: string;
   reviewAgent?: AgentConfig;
 }
@@ -140,16 +146,17 @@ export async function runAgentOperation(
     branch: string;
     base: string;
     requiredAncestor?: string;
-    promptFile: string;
+    promptFile?: string;
     promptArgs: Record<string, string | number>;
     pullRequestMetadata: "required" | "required_for_committed" | "ignored";
     existingPrMetadata?: Pick<VerifiedHandoff, "prTitle" | "prBody">;
     agent: AgentConfig;
     signal: AbortSignal;
     attemptCounter: { value: number };
+    session?: AgentSession;
   },
 ): Promise<VerifiedHandoff | AgentStop> {
-  let continuationPrompt: string | undefined;
+  let continuationPrompt = operation.session?.resumePrompt;
   let attemptNumber!: number;
   let attemptId = "";
   let logFile = "";
@@ -160,16 +167,19 @@ export async function runAgentOperation(
     await boundary(input, operation.ticket);
     const resumePrompt = continuationPrompt;
     continuationPrompt = undefined;
-    if (resumePrompt === undefined) {
+    if (attemptNumber === undefined || resumePrompt === undefined) {
       operation.attemptCounter.value += 1;
       attemptNumber = operation.attemptCounter.value;
       attemptId = randomUUID();
-      logFile = agentLogFile(
-        input.projectDirectory,
-        operation.ticket,
-        agentLogStage(operation.phase),
-        `${input.runId}-${attemptId}`,
-      );
+      logFile =
+        (resumePrompt === undefined ? undefined : operation.session?.logFile) ??
+        agentLogFile(
+          input.projectDirectory,
+          operation.ticket,
+          agentLogStage(operation.phase),
+          `${input.runId}-${attemptId}`,
+        );
+      if (operation.session) operation.session.logFile = logFile;
       event = input.event(
         operation.phase,
         "agent_attempt",
@@ -200,7 +210,9 @@ export async function runAgentOperation(
           branch: operation.branch,
           base: operation.base,
           targetBranch: input.targetBranch,
-          promptFile: operation.promptFile,
+          ...(operation.promptFile === undefined
+            ? {}
+            : { promptFile: operation.promptFile }),
           promptArgs: operation.promptArgs,
           pullRequestMetadata: operation.pullRequestMetadata,
           agent: operation.agent.agent,
@@ -286,6 +298,10 @@ export async function runAgentOperation(
         throw new Error("Agent Attempt left mismatched or dirty Git state");
       }
       if (result.outcome === "no_change") {
+        if (operation.session?.resumePrompt !== undefined)
+          throw new Error(
+            "Review findings require an implementation fix or an explicit blocker",
+          );
         if (observed.commits.length !== 0)
           throw new Error("no_change left new commits");
         await appendOperation(input, event, "no_change", null);
@@ -349,13 +365,14 @@ export async function runAgentOperation(
         null,
         result.diagnostics,
       );
-      await discardAgentLogs(
-        input,
-        operation.phase,
-        operation.ticket,
-        agentLogStage(operation.phase),
-        attemptNumber,
-      );
+      if (operation.session === undefined)
+        await discardAgentLogs(
+          input,
+          operation.phase,
+          operation.ticket,
+          agentLogStage(operation.phase),
+          attemptNumber,
+        );
       return handoff;
     } catch (error) {
       if (error instanceof OperatorCancelled || error instanceof TicketSkipped)

@@ -71,13 +71,7 @@ export async function createProject(): Promise<string> {
   await mkdir(path.join(project, "prompts"), { recursive: true });
   await writeProjectConfig(path.join(project, "config.yaml"), validConfig);
   await Promise.all(
-    [
-      "implement",
-      "review",
-      "ci-repair",
-      "conflict-repair",
-      "documentation",
-    ].map((name) =>
+    ["implement", "review", "documentation"].map((name) =>
       writeFile(path.join(project, "prompts", `${name}.md`), `${name} prompt`),
     ),
   );

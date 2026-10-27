@@ -13,20 +13,7 @@ Runner runs on Windows, macOS, and Linux and currently supports only `codex`,
 `claude-code`, and `pi`. It uses Sandcastle's native agent factories but does not
 use its sandbox features; agents run locally on the host.
 
-## Workflow
-
-```mermaid
-flowchart TD
-    A[Load project and parent issue] --> B[Discover eligible child tickets]
-    B --> C[Reserve tickets and create isolated worktrees]
-    C --> D[Run implementation and optional review]
-    D --> E[Publish pull requests]
-    E --> F{Checks pass?}
-    F -- No --> G[Repair checks or explicit conflicts]
-    G --> E
-    F -- Yes --> H[Merge pull requests and close tickets]
-    H --> I[Rescan until complete or paused]
-```
+See the [Project guide](projects/README.md) for workflow details.
 
 ## Prerequisites
 
@@ -129,8 +116,6 @@ projects/<project-key>/
   prompts/
     implement.md
     review.md
-    ci-repair.md
-    conflict-repair.md
     documentation.md
   logs/
 ```
@@ -139,49 +124,8 @@ Start from `projects/sandcastle-runner/config.yaml` and configure the
 repository, absolute checkout, target branch, credential variable names,
 timeouts, workflow flags, and agent profiles.
 
-Each `agents.<purpose>` profile requires `agent` and `model`, and accepts an
-optional native `options` object:
-
-```yaml
-agents:
-  implement:
-    agent: codex
-    model: gpt-6-sol
-    options:
-      effort: max
-  review:
-    agent: claude-code
-    model: claude-opus-4-8
-    options:
-      effort: high
-  ciRepair:
-    agent: pi
-    model: claude-sonnet-4-6
-    options:
-      thinking: high
-  conflictRepair:
-    agent: codex
-    model: gpt-6-sol
-    options:
-      effort: medium
-  documentation:
-    agent: claude-code
-    model: claude-opus-4-8
-    options:
-      effort: high
-workflow:
-  review: true
-  docMaintainTriggerLabel: doc-check
-```
-
-The five purpose keys are `implement`, `review`, `ciRepair`, `conflictRepair`,
-and `documentation`. `review` is required when review is enabled;
-`documentation` is required for Documentation Maintenance. Agent, model, and
-purpose are independent: Runner forwards the model and nested native options
-unchanged and never infers the agent from the model.
-
-Enabled workflow nodes require their prompt file. Implementation, CI repair,
-and conflict repair prompts must be non-empty.
+The [example configuration](projects/sandcastle-runner/config.yaml) explains each field in YAML comments.
+Write repository-specific instructions in the Project prompts; Runner supplies task context and output requirements.
 
 ## Run
 

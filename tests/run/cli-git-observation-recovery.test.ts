@@ -15,7 +15,7 @@ import { cleanupTempRoots } from "../support/temp-cleanup.ts";
 
 test.afterEach(cleanupTempRoots);
 
-for (const observation of ["implementation", "standards", "review"] as const) {
+for (const observation of ["implementation", "review"] as const) {
   test(`failed ${observation} Git observation retries only the read`, async () => {
     const root = await createProject();
     await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
@@ -44,10 +44,6 @@ for (const observation of ["implementation", "standards", "review"] as const) {
             read("implementation");
             return delivery.gitWorkspace.inspect!(input);
           },
-          async readReviewStandards() {
-            read("standards");
-            return [];
-          },
           async inspectReview() {
             read("review");
             return {
@@ -68,11 +64,6 @@ for (const observation of ["implementation", "standards", "review"] as const) {
             reviews += 1;
             return {
               outcome: "passed",
-              summary: "review passed",
-              standards: { verdict: "passed", unresolved_findings: [] },
-              spec: { verdict: "passed", unresolved_findings: [] },
-              checks: [],
-              blocker: null,
             };
           },
         },

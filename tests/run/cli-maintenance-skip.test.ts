@@ -76,7 +76,7 @@ for (const selector of ["parent", "issue"] as const)
       const deletedBranches: string[] = [];
       const comments: Ticket["number"][] = [];
       const pauses: string[] = [];
-      const agentCalls: { ticket: number; prompt: string }[] = [];
+      const agentCalls: { ticket: number; prompt: string | undefined }[] = [];
       const logs = new Map<number, string[]>();
       let nextMaintenanceTicket = 100;
       let nextPullRequest = 41;
@@ -225,7 +225,7 @@ for (const selector of ["parent", "issue"] as const)
             await mkdir(path.dirname(input.logFile), { recursive: true });
             await writeFile(input.logFile, `attempt ${input.ticket}`);
             rememberLog(input.ticket, input.logFile);
-            if (input.promptFile.endsWith("documentation.md")) {
+            if (input.promptFile?.endsWith("documentation.md")) {
               if (input.ticket === 100) {
                 if (point === "before_pr")
                   return {
@@ -255,7 +255,7 @@ for (const selector of ["parent", "issue"] as const)
                 blocker: null,
               };
             }
-            if (input.promptFile.endsWith("ci-repair.md"))
+            if (input.promptArgs.FAILED_CHECKS !== undefined)
               return {
                 outcome: "blocked",
                 summary: "CI repair needs a decision",

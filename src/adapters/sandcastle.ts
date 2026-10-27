@@ -285,14 +285,10 @@ export class SandcastleAgentExecutor implements AgentExecutor {
       "pullRequestMetadata" in input
         ? (input as AgentAttemptInput).pullRequestMetadata
         : "ignored";
+    const promptKind = tag === "review_attempt_result" ? "review" : "agent";
     const outputPrompt = replacePromptPlaceholders(
       await readFile(
-        join(
-          runnerPromptDirectory,
-          tag === "review_attempt_result"
-            ? "review-attempt-output.md"
-            : "agent-attempt-output.md",
-        ),
+        join(runnerPromptDirectory, `${promptKind}-attempt-output.md`),
         "utf8",
       ),
       {
@@ -302,15 +298,44 @@ export class SandcastleAgentExecutor implements AgentExecutor {
     ).trim();
     if (prompt === undefined) {
       resumeSession ??= await this.prepareSession(input, provider);
-      const template = replacePromptPlaceholders(
-        await readFile(input.promptFile, "utf8"),
+      const template =
+        input.promptFile === undefined
+          ? ""
+          : replacePromptPlaceholders(
+              await readFile(input.promptFile, "utf8"),
+              {
+                ...input.promptArgs,
+                SOURCE_BRANCH: input.branch,
+                TARGET_BRANCH: String(input.targetBranch),
+              },
+            );
+      const context = replacePromptPlaceholders(
+        await readFile(
+          join(
+            runnerPromptDirectory,
+            input.promptArgs.TARGET_BRANCH_SHA === undefined
+              ? input.promptArgs.FAILED_CHECKS === undefined
+                ? `${promptKind}-attempt-input.md`
+                : "ci-repair-input.md"
+              : "conflict-repair-input.md",
+          ),
+          "utf8",
+        ),
         {
           ...input.promptArgs,
-          SOURCE_BRANCH: input.branch,
-          TARGET_BRANCH: String(input.targetBranch),
+          ATTEMPT_INPUT: JSON.stringify({
+            ...input.promptArgs,
+            TICKET_NUMBER: input.ticket,
+            WORKTREE_PATH: input.worktree,
+            SOURCE_BRANCH: input.branch,
+            BASE_SHA: input.base,
+            PROJECT_TARGET_BRANCH: input.targetBranch,
+          }),
         },
       );
-      prompt = `${template.trimEnd()}\n\n${outputPrompt}`;
+      prompt = [context.trimEnd(), template.trimEnd(), outputPrompt]
+        .filter(Boolean)
+        .join("\n\n");
     }
     if (prompt !== undefined && !isUsableSessionId(resumeSession)) {
       throw new AgentOutputError(

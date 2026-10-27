@@ -188,9 +188,6 @@ export function createFiveTicketScenario(
           clean: true,
         };
       },
-      async readReviewStandards() {
-        return [];
-      },
       async inspectReview() {
         return { clean: true, deliveryCommits: [], reviewCommits: [] };
       },
@@ -218,13 +215,14 @@ export function createFiveTicketScenario(
     },
     agentExecutor: {
       async execute(input) {
-        const purpose = input.promptFile.endsWith("ci-repair.md")
-          ? "ci"
-          : input.promptFile.endsWith("conflict-repair.md")
-            ? "conflict"
-            : input.promptFile.endsWith("documentation.md")
-              ? "maintenance"
-              : "implement";
+        const purpose =
+          input.promptArgs.FAILED_CHECKS !== undefined
+            ? "ci"
+            : input.promptArgs.MERGE_CONFLICT !== undefined
+              ? "conflict"
+              : input.promptFile?.endsWith("documentation.md")
+                ? "maintenance"
+                : "implement";
         const attempt = call(`${purpose}:${input.ticket}`);
         const inFirstBatch = input.ticket <= maxBatchSize;
         operations.push(`agent:${purpose}:${input.ticket}:${attempt}`);

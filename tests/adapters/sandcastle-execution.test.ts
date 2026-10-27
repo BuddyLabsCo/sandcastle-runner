@@ -408,7 +408,8 @@ test("SandcastleAgentExecutor supplies the complete controlled invocation", asyn
   assert.equal(options.cwd, "/repo/worktree");
   assert.equal(options.promptFile, undefined);
   assert.equal(options.promptArgs, undefined);
-  assert.match(String(options.prompt), /# Implement Delivery Ticket 9/u);
+  assert.match(String(options.prompt), /"TICKET_NUMBER":9/u);
+  assert.match(String(options.prompt), /Implement the accepted ticket/u);
   assert.match(String(options.prompt), /sandcastle\/run-id\/ticket-9/u);
   assert.match(String(options.prompt), /<agent_attempt_result>/u);
   assert.match(String(options.prompt), /"pr_title"/u);

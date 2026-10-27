@@ -210,9 +210,6 @@ test("an explicit merge conflict is repaired on the original branch and Pull Req
                 : [implementation];
           return { worktree, branch, base, commits, clean: true };
         },
-        async readReviewStandards() {
-          return [];
-        },
         async inspectReview() {
           return {
             clean: true,
@@ -246,11 +243,6 @@ test("an explicit merge conflict is repaired on the original branch and Pull Req
           reviewCalls += 1;
           return {
             outcome: "passed",
-            summary: "Initial implementation review passed.",
-            standards: { verdict: "passed", unresolved_findings: [] },
-            spec: { verdict: "passed", unresolved_findings: [] },
-            checks: [],
-            blocker: null,
           };
         },
       },
@@ -299,10 +291,7 @@ test("an explicit merge conflict is repaired on the original branch and Pull Req
   assert.equal(mergeRequests, 2);
   assert.equal(agentInputs.length, 3);
   assert.equal(reviewCalls, 1);
-  assert.equal(
-    agentInputs[1]?.promptFile,
-    path.join(root, "projects/demo/prompts/conflict-repair.md"),
-  );
+  assert.equal(agentInputs[1]?.promptFile, undefined);
   assert.equal(agentInputs[1]?.model, "gpt-5.5");
   assert.equal(agentInputs[1]?.agent, "codex");
   assert.deepEqual(agentInputs[1]?.options, { effort: "medium" });
@@ -319,10 +308,7 @@ test("an explicit merge conflict is repaired on the original branch and Pull Req
     PULL_REQUEST_URL: "https://github.com/owner/repo/pull/41",
     MERGE_CONFLICT: conflict,
   });
-  assert.equal(
-    agentInputs[2]?.promptFile,
-    path.join(root, "projects/demo/prompts/ci-repair.md"),
-  );
+  assert.equal(agentInputs[2]?.promptFile, undefined);
   assert.equal(agentInputs[2]?.branch, branch);
   assert.ok(result.logPath);
   const conflictOperations = (await readFile(result.logPath, "utf8"))
