@@ -98,7 +98,7 @@ test("cancellation during probe backoff prevents another probe", async () => {
   assert.equal(waits, 1);
 });
 
-test("timeout prevents a settled substantive result from being accepted", async () => {
+test("timeout acknowledgement preserves a settled substantive result", async () => {
   let substantiveCalls = 0;
   const executor = new SandcastleAgentExecutor(
     async (options) => {
@@ -122,21 +122,25 @@ test("timeout prevents a settled substantive result from being accepted", async 
     async () => {},
   );
 
-  await assert.rejects(
-    executor.execute({ ...input(), timeoutMs: 1 }),
-    (error) => {
-      const failure = error as Error & {
-        diagnostics?: { sessionId?: string };
-      };
-      assert.match(failure.message, /Agent Attempt timed out/u);
-      assert.equal(failure.diagnostics?.sessionId, "probe-session");
-      return true;
-    },
+  let pauses = 0;
+  assert.equal(
+    (
+      await executor.execute({
+        ...input(),
+        timeoutMs: 1,
+        pauseForTimeout: async (cause) => {
+          assert.equal(cause, "overall");
+          pauses += 1;
+        },
+      })
+    ).outcome,
+    "committed",
   );
+  assert.equal(pauses, 1);
   assert.equal(substantiveCalls, 1);
 });
 
-test("timeout after operator continuation reports the timeout", async () => {
+test("cancelling a timeout pause after operator continuation settles that invocation", async () => {
   let taskCalls = 0;
   const executor = new SandcastleAgentExecutor(
     async (options) => {
@@ -178,8 +182,11 @@ test("timeout after operator continuation reports the timeout", async () => {
       ...input(),
       resumePrompt: "operator instruction",
       timeoutMs: 1,
+      pauseForTimeout: async () => {
+        throw new OperatorCancelled("operator cancelled");
+      },
     }),
-    /Agent Attempt timed out/u,
+    OperatorCancelled,
   );
   assert.equal(taskCalls, 2);
 });
@@ -290,7 +297,7 @@ test("cancellation during structured-output backoff prevents correction", async 
   assert.equal(waits, 1);
 });
 
-test("total deadline expires during structured-output correction", async () => {
+test("settled structured-output failures retain their correction budget across backoff", async () => {
   let substantiveCalls = 0;
   let waits = 0;
   const executor = new SandcastleAgentExecutor(
@@ -323,17 +330,10 @@ test("total deadline expires during structured-output correction", async () => {
 
   await assert.rejects(
     executor.execute({ ...input(), timeoutMs: 1 }),
-    (error) => {
-      const failure = error as Error & {
-        diagnostics?: { sessionId?: string };
-      };
-      assert.match(failure.message, /Agent Attempt timed out/u);
-      assert.equal(failure.diagnostics?.sessionId, "session-id");
-      return true;
-    },
+    /invalid structured output/u,
   );
-  assert.equal(substantiveCalls, 1);
-  assert.equal(waits, 1);
+  assert.equal(substantiveCalls, 5);
+  assert.equal(waits, 4);
 });
 
 test("cancellation cannot be bypassed by recovered structured output", async () => {

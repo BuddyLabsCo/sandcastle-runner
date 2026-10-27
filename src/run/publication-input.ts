@@ -37,6 +37,7 @@ export function createPublicationInput(
     ciRepairAgent: input.ciRepairAgent,
     conflictRepairAgent: input.conflictRepairAgent,
     agentTimeoutMs: input.agentTimeoutMs,
+    agentIdleTimeoutMs: input.agentIdleTimeoutMs,
     requiredChecksTimeoutMs: input.requiredChecksTimeoutMs,
     mergeQueueTimeoutMs: input.mergeQueueTimeoutMs,
     adminMerge: input.adminMerge,

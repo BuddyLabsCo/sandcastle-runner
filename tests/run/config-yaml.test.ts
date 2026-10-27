@@ -92,6 +92,7 @@ maintenanceTicket:
 
   assert.deepEqual(loaded.config, {
     ...validConfig,
+    timeouts: { ...validConfig.timeouts, agentIdleMinutes: 10 },
     issueList: [1, 3],
     maxBatchSize: 2,
     workflow: {
@@ -104,6 +105,27 @@ maintenanceTicket:
       label: "doc-maintain",
     },
   });
+});
+
+test("agent idle threshold defaults to ten minutes and rejects invalid values", async () => {
+  const root = await createProject();
+  const configPath = path.join(root, "projects/demo/config.yaml");
+  const load = () => loadProject(root, "demo", { TEST_GH_TOKEN: "token" });
+  assert.equal((await load()).config.timeouts.agentIdleMinutes, 10);
+  for (const value of [0, -1, NaN, Infinity, "2", null, true]) {
+    await writeProjectConfig(configPath, {
+      ...validConfig,
+      timeouts: { ...validConfig.timeouts, agentIdleMinutes: value },
+    });
+    await assert.rejects(load(), /timeouts.agentIdleMinutes.*positive number/u);
+  }
+  await writeProjectConfig(configPath, {
+    ...validConfig,
+    timeouts: { ...validConfig.timeouts, agentIdleMinutes: 0.5 },
+  });
+  const loaded = await load();
+  assert.equal(loaded.config.timeouts.agentIdleMinutes, 0.5);
+  assert.equal(loaded.config.timeouts.agentMinutes, 120);
 });
 
 test("loadProject reports a missing config.yaml with its path", async () => {

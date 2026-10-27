@@ -109,6 +109,9 @@ test("review rounds reuse both sessions, fix every findings round, and review on
             };
           },
           async executeReview(input) {
+            assert.equal(input.idleTimeoutMs, 600_000);
+            assert.equal(input.timeoutMs, 7_200_000);
+            assert.equal(typeof input.pauseForTimeout, "function");
             calls.push("review");
             round += 1;
             const handoff = JSON.parse(

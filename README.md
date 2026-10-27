@@ -34,8 +34,9 @@ skills, MCP servers, and native configuration. Runner does not install or
 normalize them.
 
 Complete authentication and permission setup before starting Runner. Operator
-Pause sends recovery instructions after an Agent Attempt stops; conversation
-text cannot answer a native approval request or grant a denied permission.
+Pause accepts recovery instructions after an Agent Attempt stops. Timeout pauses
+keep the original invocation alive. Conversation text cannot answer a native
+approval request or grant a denied permission.
 
 Keep the Runner checkout, project checkout, worktrees, state, logs, temporary
 files, and agent session state on paths without Chinese characters.
@@ -169,8 +170,8 @@ this precedence before a Run; Runner does not rewrite native instruction files.
 
 The [provider evidence](docs/research/codebuddy-provider-evidence.md) separates
 measured durable continuation from remaining live operation and takeover checks.
-The shared timeout intervention and manual takeover lifecycle are separate work;
-this provider retains the current executor's timeout and cancellation behavior.
+All providers share the [timeout intervention lifecycle](projects/README.md#agent-timeout-thresholds).
+Selected-only termination and manual takeover remain separate work.
 
 ## Configuration
 

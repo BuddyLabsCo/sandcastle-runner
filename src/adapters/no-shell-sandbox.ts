@@ -7,6 +7,7 @@ import { createInterface } from "node:readline";
 
 import type {
   NoSandboxProvider,
+  NoSandboxHandle,
   SandboxExecOptions,
   InteractiveExecOptions,
 } from "@ai-hero/sandcastle";
@@ -76,6 +77,10 @@ export type ProcessSettlement =
   { outcome: "settled" } | { outcome: "failed"; error: string };
 
 export interface NoShellSandboxProvider extends NoSandboxProvider {
+  create(options: {
+    worktreePath: string;
+    env: Record<string, string>;
+  }): Promise<NoSandboxHandle>;
   settle(): Promise<ProcessSettlement>;
 }
 
@@ -132,6 +137,7 @@ async function stopOwnedProcesses(processes: OwnedProcess[]): Promise<void> {
 export function noShellSandbox(
   options: {
     env?: Record<string, string>;
+    onActivity?: () => void;
   } = {},
 ): NoShellSandboxProvider {
   const closeHandles = new Set<() => Promise<void>>();
@@ -183,9 +189,11 @@ export function noShellSandbox(
               : undefined;
             if (execOptions.onLine) readline?.on("line", execOptions.onLine);
             child.stdout.on("data", (chunk: Buffer) => {
+              if (chunk.length > 0) options.onActivity?.();
               stdout += chunk.toString();
             });
             child.stderr.on("data", (chunk: Buffer) => {
+              if (chunk.length > 0) options.onActivity?.();
               stderr += chunk.toString();
             });
             child.once("error", (error) => {

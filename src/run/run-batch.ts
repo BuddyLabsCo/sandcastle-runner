@@ -41,6 +41,7 @@ export function implementBatch(
       ? {}
       : { reviewAgent: input.reviewAgent }),
     timeoutMs: input.agentTimeoutMs,
+    idleTimeoutMs: input.agentIdleTimeoutMs,
     gitWorkspace: input.gitWorkspace,
     agentExecutor: input.agentExecutor,
   });

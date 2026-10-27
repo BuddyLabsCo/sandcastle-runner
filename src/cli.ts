@@ -557,6 +557,7 @@ export async function executeCli(
         ? {}
         : { documentationAgent: loaded.config.agents.documentation }),
       agentTimeoutMs: loaded.config.timeouts.agentMinutes * 60_000,
+      agentIdleTimeoutMs: loaded.config.timeouts.agentIdleMinutes * 60_000,
       requiredChecksTimeoutMs:
         loaded.config.timeouts.requiredChecksMinutes * 60_000,
       mergeQueueTimeoutMs: loaded.config.timeouts.mergeQueueMinutes * 60_000,

@@ -93,7 +93,12 @@ agents:
     options:
       effort: max
 timeouts:
-  # Positive minute limits for Agent Attempts, required-check readiness, and merge-queue confirmation.
+  # Positive minute thresholds. Agent thresholds pause while the invocation stays alive.
+  # Overall runtime per invocation; required, with no default (120 is this Project's choice).
   agentMinutes: 120
+  # Silence on stdout/stderr, including partial lines; optional, defaults to 10.
+  # Enter grants a fresh idle window without resetting overall runtime.
+  agentIdleMinutes: 10
+  # Readiness and merge-queue limits retain their existing behavior.
   requiredChecksMinutes: 60
   mergeQueueMinutes: 60

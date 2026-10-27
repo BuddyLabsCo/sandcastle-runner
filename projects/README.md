@@ -10,7 +10,21 @@ The implementation prompt must be nonempty. Review and documentation prompts are
 
 ## Operator Pause actions
 
-When automatic recovery stops, the Runner waits for your input. These terminal examples use illustrative paths and diagnostics; `[Enter]` means press Enter without typing text.
+When automatic recovery stops or an Agent reaches a timeout threshold, the Runner waits for your input. These terminal examples use illustrative paths and diagnostics; `[Enter]` means press Enter without typing text.
+
+### Agent timeout thresholds
+
+`timeouts.agentIdleMinutes` defaults to 10 when omitted. It measures silence on the invocation's stdout and stderr, including partial lines. Runner status, prompt, and diagnostic messages do not reset it. Silence can have several causes; it does not establish that an Agent needs permission.
+
+`timeouts.agentMinutes` remains the required, separately configured overall threshold. The sample's 120 minutes is an example, not a default. Both settings accept finite positive numbers, including fractional minutes. Required-check and merge-queue timeouts retain their existing meanings.
+
+Either Agent threshold opens Operator Pause without stopping the invocation. Its processes keep running and output keeps collecting. Enter keeps waiting on that same invocation and grants a fresh idle window. Overall elapsed time continues from the invocation's launch, and its overall threshold notifies once. A new probe, retry, or continuation starts a new invocation with fresh thresholds.
+
+If the Agent finishes during a pause, Runner retains its original success or failure and logs. After Enter and every pending pause in the Run resolves, normal validation, retry policy, and independent Git verification apply. Enter does not launch a duplicate Agent or consume a retry. Other attempts retain their outcomes while any intervention remains pending; they cannot start another Agent step, verify, publish, or integrate.
+
+These timeout actions apply to session probing, implementation, Review, review fixes, CI repair, conflict repair, and independent or automatic Documentation Maintenance. Only Enter and `q`/EOF are supported at a timeout pause. `q`/EOF cancels the Run and settles its owned processes and descendants. Cleanup failure fails the Run and blocks retries, continuation, and Worktree cleanup. Selected-only termination and manual takeover are not available.
+
+Retention lasts within the current Runner process. Recovery Snapshots preserve delivery evidence but do not adopt live Agent processes after a restart. Graceful shutdown closes owned handles; a timeout acknowledgement does not close them.
 
 ### Continue an Agent session
 

@@ -18,6 +18,7 @@ import {
   advance,
   externalRead,
   OperatorCancelled,
+  pauseForAgentTimeout,
   pauseTicketAgentForOperator,
 } from "./operations.ts";
 import {
@@ -174,6 +175,14 @@ async function runReviewRound(
             gitConfigGlobal,
             logFile,
             timeoutMs: input.timeoutMs,
+            idleTimeoutMs: input.idleTimeoutMs,
+            pauseForTimeout: (cause) =>
+              pauseForAgentTimeout(
+                input.audit,
+                event,
+                input.operator,
+                `Agent ${cause} threshold reached for review issue ${handoff.ticket}. Working directory: ${handoff.worktree}. Diagnostic log: ${logFile}.`,
+              ),
             retryPolicy: input.retryPolicy,
             signal: input.operator.coordination
               ? AbortSignal.any([
@@ -284,6 +293,7 @@ async function runReviewRound(
         diagnostics.error!,
         diagnostics,
       );
+      if (diagnostics.errorCategory === "process_cleanup") throw error;
       const continuable = diagnostics.retryable !== false;
       const decision = await pauseTicketAgentForOperator(
         input.audit,

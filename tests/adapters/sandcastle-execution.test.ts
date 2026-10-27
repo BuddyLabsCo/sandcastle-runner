@@ -204,7 +204,7 @@ test("SandcastleAgentExecutor recovers a process failure with continue", async (
   assert.equal(prompts[2]?.resumeSession, "probe-session");
 });
 
-test("SandcastleAgentExecutor stops process recovery when total timeout expires", async () => {
+test("a settled process failure gets fresh supervision for each automatic retry", async () => {
   const prompts: RunOptions[] = [];
   const executor = new SandcastleAgentExecutor(
     async (options) => {
@@ -226,16 +226,9 @@ test("SandcastleAgentExecutor stops process recovery when total timeout expires"
 
   await assert.rejects(
     executor.execute({ ...input(), timeoutMs: 1 }),
-    (error) => {
-      const failure = error as Error & {
-        diagnostics?: { sessionId?: string };
-      };
-      assert.match(failure.message, /Agent Attempt timed out/u);
-      assert.equal(failure.diagnostics?.sessionId, "probe-session");
-      return true;
-    },
+    /agent process exited with code 1/u,
   );
-  assert.equal(prompts.length, 2);
+  assert.equal(prompts.length, 6);
 });
 
 test("missing output tag with zero agent retries does not continue", async () => {
@@ -419,7 +412,7 @@ test("SandcastleAgentExecutor supplies the complete controlled invocation", asyn
   );
   assert.equal(options.maxIterations, 1);
   assert.deepEqual(options.completionSignal, []);
-  assert.equal(options.idleTimeoutSeconds, 120);
+  assert.equal(options.idleTimeoutSeconds, Infinity);
   assert.deepEqual(options.branchStrategy, { type: "head" });
   assert.deepEqual(options.logging, {
     type: "file",
