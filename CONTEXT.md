@@ -93,7 +93,7 @@ A Project rule that chooses whether the Runner closes PR-backed tickets after me
 _Avoid_: Auto-close mode, issue-closing flag
 
 **Agent Attempt**:
-One invocation using the Project-configured agent, model, and optional native options for implementation, review, CI repair, conflict repair, or Documentation Maintenance. Runner first probes the selected supported agent (Codex, Claude Code, or Pi), then resumes that same session through Sandcastle for the substantive work.
+One invocation using the Project-configured agent, model, and optional native options for implementation, review, CI repair, conflict repair, or Documentation Maintenance. Runner first probes the selected supported agent (Codex, Claude Code, Pi, or CodeBuddy), then resumes that same session through Sandcastle for the substantive work.
 _Avoid_: Agent session, worker
 
 **Agent Attempt Result**:
