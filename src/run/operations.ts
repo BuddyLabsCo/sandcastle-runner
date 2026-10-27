@@ -244,9 +244,8 @@ export async function externalRead<T>(operation: ReadOperation<T>): Promise<T> {
       );
       let result: T;
       try {
-        result = await (attempt === 1
-          ? operation.action()
-          : advance(operation.operator, operation.action));
+        // Observations, including retries, remain available during Operator Pause.
+        result = await operation.action();
       } catch (error) {
         operation.operator.coordination?.controller.signal.throwIfAborted();
         await supervisedAuditWrite(

@@ -358,10 +358,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
     const relayAbort = () => controller.abort(input.signal.reason);
     if (input.signal.aborted) relayAbort();
     else input.signal.addEventListener("abort", relayAbort, { once: true });
-    const timeout = setTimeout(
-      () => controller.abort(new Error("Agent Attempt timed out")),
-      input.timeoutMs,
-    );
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     let result: Awaited<ReturnType<SandcastleRun>>;
     let recoveryAttempt = 0;
     const policy = input.retryPolicy;
@@ -400,6 +397,10 @@ export class SandcastleAgentExecutor implements AgentExecutor {
               resumeSession,
             );
             if (stopped !== undefined) throw stopped;
+            timeout ??= setTimeout(
+              () => controller.abort(new Error("Agent Attempt timed out")),
+              input.timeoutMs,
+            );
             return invokeSandbox(this.run, {
               agent: provider,
               sandbox,

@@ -22,6 +22,7 @@ import {
 } from "./operations.ts";
 import {
   boundary,
+  observePausedAttempt,
   BoundaryStop,
   runAgentOperation,
   type AgentSession,
@@ -201,6 +202,7 @@ async function runReviewRound(
         await rm(gitDirectory, { recursive: true, force: true });
       }
       if (result.outcome === "blocked") {
+        await observePausedAttempt(input, handoff.ticket, releaseIntervention);
         await appendOperation(input, event, "blocked", null, resultDiagnostics);
         const continuable = resultDiagnostics?.retryable !== false;
         const decision = await pauseTicketAgentForOperator(

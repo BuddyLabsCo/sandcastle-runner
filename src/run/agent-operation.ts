@@ -25,6 +25,8 @@ import {
   type DeliveryBoundaryResult,
   type DiscoveryInput,
   revalidateActiveTicket,
+  revalidateMergedTicket,
+  releaseTerminalTicket,
 } from "./discovery.ts";
 import {
   advance,
@@ -123,6 +125,25 @@ export async function boundary(
     revalidateActiveTicket(input, ticket),
   );
   if (result.outcome !== "ready") throw new BoundaryStop(result);
+}
+
+export async function observePausedAttempt(
+  input: AgentOperationInput,
+  ticket: number,
+  releaseIntervention?: () => void,
+): Promise<void> {
+  // Observe without terminal cleanup, which must wait until this pause is released.
+  const result = await revalidateMergedTicket(input, ticket);
+  if (result.outcome === "ready") return;
+  releaseIntervention?.();
+  if (result.outcome === "terminal") {
+    await releaseTerminalTicket(input, result.ticket);
+    throw new BoundaryStop({
+      outcome: "stopped",
+      reason: `${input.ticketKind ?? "Delivery Ticket"} ${ticket} became terminal`,
+    });
+  }
+  throw new BoundaryStop(result);
 }
 
 function sameCommits(
@@ -257,6 +278,11 @@ export async function runAgentOperation(
       }
 
       if (result.outcome === "blocked") {
+        await observePausedAttempt(
+          input,
+          operation.ticket,
+          releaseIntervention,
+        );
         await appendOperation(input, event, "blocked", null, resultDiagnostics);
         const continuable = resultDiagnostics?.retryable !== false;
         const decision = await pause(
