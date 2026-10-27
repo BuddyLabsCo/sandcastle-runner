@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- adapter execution regressions stay together. */
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -24,6 +25,162 @@ test("replacePromptPlaceholders replaces repeated known values and ignores unuse
     }),
     "value/value/{{MISSING}}",
   );
+});
+
+test("Sandcastle startup chatter never reaches the terminal", async (t) => {
+  const log = t.mock.method(console, "log", () => {});
+  const executor = new SandcastleAgentExecutor(
+    async (options) => {
+      console.log(
+        "\u001b[1m[codex]\u001b[22m Started on branch sandcastle/ticket-9",
+      );
+      console.log(
+        "\u001b[2m  tail -f /runner/projects/demo/logs/implement-9.log\u001b[22m",
+      );
+      if (options.prompt === "Reply with exactly: SESSION_READY")
+        return {
+          iterations: [{ sessionId: "probe-session" }],
+          stdout: "SESSION_READY",
+          commits: [],
+          branch: input().branch,
+          output: undefined,
+        };
+      return makeResult(
+        `<agent_attempt_result>${JSON.stringify(committed)}</agent_attempt_result>`,
+        committed,
+      );
+    },
+    async () => {},
+    async () => {},
+    async () => {},
+  );
+
+  await executor.execute(input());
+
+  assert.equal(log.mock.callCount(), 0);
+});
+
+test("startup hints with spaced log paths never reach the terminal", async (t) => {
+  const log = t.mock.method(console, "log", () => {});
+  let invocations = 0;
+  const executor = new SandcastleAgentExecutor(
+    async (options) => {
+      invocations += 1;
+      console.log("[codex] Started on branch sandcastle/ticket-9");
+      console.log(
+        "\u001b[2m  tail -f /home/user/My Projects/demo/logs/implement-9.log\u001b[22m",
+      );
+      if (options.prompt === "Reply with exactly: SESSION_READY")
+        return {
+          iterations: [{ sessionId: "probe-session" }],
+          stdout: "SESSION_READY",
+          commits: [],
+          branch: input().branch,
+          output: undefined,
+        };
+      return makeResult(
+        `<agent_attempt_result>${JSON.stringify(committed)}</agent_attempt_result>`,
+        committed,
+      );
+    },
+    async () => {},
+    async () => {},
+    async () => {},
+  );
+
+  await executor.execute(input());
+
+  assert.equal(invocations, 2);
+  assert.equal(log.mock.callCount(), 0);
+});
+
+test("unrelated console output survives Sandcastle startup suppression", async (t) => {
+  const log = t.mock.method(console, "log", () => {});
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let started!: () => void;
+  const startedPromise = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const executor = new SandcastleAgentExecutor(
+    async (options) => {
+      console.log("[codex] Started on branch sandcastle/ticket-9");
+      if (options.prompt === "Reply with exactly: SESSION_READY")
+        return {
+          iterations: [{ sessionId: "probe-session" }],
+          stdout: "SESSION_READY",
+          commits: [],
+          branch: input().branch,
+          output: undefined,
+        };
+      started();
+      await released;
+      return makeResult(
+        `<agent_attempt_result>${JSON.stringify(committed)}</agent_attempt_result>`,
+        committed,
+      );
+    },
+    async () => {},
+    async () => {},
+    async () => {},
+  );
+
+  const execution = executor.execute(input());
+  await startedPromise;
+  console.log("external progress");
+  release();
+  await execution;
+
+  assert.deepEqual(
+    log.mock.calls.map((call) => String(call.arguments[0])),
+    ["external progress"],
+  );
+});
+
+test("only substantive invocations signal progress, including automatic retries", async () => {
+  let starts = 0;
+  let probes = 0;
+  let substantive = 0;
+  const executor = new SandcastleAgentExecutor(
+    async (options) => {
+      if (options.prompt === "Reply with exactly: SESSION_READY") {
+        probes += 1;
+        if (probes === 1) throw new Error("probe overloaded");
+        return {
+          iterations: [{ sessionId: "probe-session" }],
+          stdout: "SESSION_READY",
+          commits: [],
+          branch: input().branch,
+          output: undefined,
+        };
+      }
+      substantive += 1;
+      if (substantive === 1) throw new Error("transient invocation failure");
+      return makeResult(
+        `<agent_attempt_result>${JSON.stringify(committed)}</agent_attempt_result>`,
+        committed,
+      );
+    },
+    async () => {},
+    async () => {},
+    async () => {},
+  );
+
+  await executor.execute({
+    ...input(),
+    retryPolicy: { ...input().retryPolicy, agentRetry: 1 },
+    progress: {
+      start() {
+        starts += 1;
+      },
+    },
+  });
+
+  assert.equal(starts, 2);
+  assert.equal(probes, 2);
+  assert.equal(substantive, 2);
 });
 
 test("SandcastleAgentExecutor retries session probe with exponential backoff", async () => {

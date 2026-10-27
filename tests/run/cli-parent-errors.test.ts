@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Parent boundary and failure presentation stay together. */
 import assert from "node:assert/strict";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -15,6 +16,7 @@ test("a cross-repository child fails explicitly without Operator Pause", async (
   const root = await createProject();
   let closeCalls = 0;
   let pauseCalls = 0;
+  const messages: string[] = [];
   const result = await executeCli(
     ["run", "--project", "demo", "--parent", "8"],
     createCliDependencies(root, {
@@ -37,6 +39,7 @@ test("a cross-repository child fails explicitly without Operator Pause", async (
         },
       },
       operator: {
+        write: (message) => void messages.push(message),
         async pause() {
           pauseCalls += 1;
           return "q";
@@ -50,11 +53,13 @@ test("a cross-repository child fails explicitly without Operator Pause", async (
   assert.equal(result.exitCode, 1);
   assert.equal(closeCalls, 0);
   assert.equal(pauseCalls, 0);
+  assert.match(messages.at(-1)!, /^Error: .*cross-repository[\s\S]*\n\s+at /mu);
 });
 
 test("a completed Parent with an open child fails as contradictory", async () => {
   const root = await createProject();
   let closeCalls = 0;
+  const messages: string[] = [];
   const result = await executeCli(
     ["run", "--project", "demo", "--parent", "8"],
     createCliDependencies(root, {
@@ -83,6 +88,9 @@ test("a completed Parent with an open child fails as contradictory", async () =>
           closeCalls += 1;
         },
       },
+      operator: {
+        write: (message) => void messages.push(message),
+      },
     }),
   );
 
@@ -91,6 +99,11 @@ test("a completed Parent with an open child fails as contradictory", async () =>
     result.summary.reasons[0] ?? "",
     /completed Parent Ticket has open children/u,
   );
+  assert.match(messages.at(-1)!, /^Run failed:$/mu);
+  assert.match(
+    messages.at(-1)!,
+    /^- completed Parent Ticket has open children: 9$/mu,
+  );
   assert.equal(closeCalls, 0);
 });
 
@@ -98,6 +111,7 @@ test("a closed Parent without a supported reason fails before child discovery", 
   const root = await createProject();
   let childCalls = 0;
   let pauseCalls = 0;
+  const messages: string[] = [];
   const result = await executeCli(
     ["run", "--project", "demo", "--parent", "8"],
     createCliDependencies(root, {
@@ -111,6 +125,7 @@ test("a closed Parent without a supported reason fails before child discovery", 
         },
       },
       operator: {
+        write: (message) => void messages.push(message),
         async pause() {
           pauseCalls += 1;
           return "q";
@@ -121,6 +136,11 @@ test("a closed Parent without a supported reason fails before child discovery", 
 
   assert.equal(result.summary.outcome, "failed");
   assert.match(result.summary.reasons[0] ?? "", /closed Parent Ticket/u);
+  assert.match(messages.at(-1)!, /^Run failed:$/mu);
+  assert.match(
+    messages.at(-1)!,
+    /^- closed Parent Ticket has no supported closure reason$/mu,
+  );
   assert.equal(childCalls, 0);
   assert.equal(pauseCalls, 0);
 });
@@ -421,9 +441,7 @@ test("startup validation errors return a failed summary without workflow or paus
         },
       },
       operator: {
-        write(message) {
-          messages.push(message);
-        },
+        write: (message) => void messages.push(message),
         async pause() {
           pauseCalls += 1;
           return "q";
@@ -468,9 +486,7 @@ test("malformed Recovery Snapshots fail startup with one readable error", async 
         },
       },
       operator: {
-        write(message) {
-          messages.push(message);
-        },
+        write: (message) => void messages.push(message),
         async pause() {
           pauseCalls += 1;
           return "q";

@@ -31,6 +31,7 @@ import {
   type VerifiedHandoff,
 } from "./agent-operation.ts";
 import { appendOperation, discardAgentLogs } from "./operation-audit.ts";
+import { createProgress } from "./progress.ts";
 
 function createReviewInput(
   input: AttemptInput,
@@ -100,6 +101,12 @@ async function runReviewRound(
   const reviewAgent = input.reviewAgent;
   const implementationHead = handoff.commits.at(-1)!.sha;
   let continuationPrompt = round.session.resumePrompt;
+  const progress = createProgress(
+    input.operator,
+    handoff.ticket,
+    { kind: "review", round: round.number },
+    false,
+  );
   let attemptNumber!: number;
   let attemptId = "";
   let logFile = "";
@@ -193,6 +200,7 @@ async function runReviewRound(
               : signal,
             advance: (action) => advance(input.operator, action),
             ...(resumePrompt === undefined ? {} : { resumePrompt }),
+            progress,
           }),
         );
         resultDiagnostics = {
@@ -357,6 +365,7 @@ export async function reviewHandoff(
       .replaceAll("{{BASE_SHA}}", reviewedHead);
     const fixed = await runAgentOperation(input, {
       phase: "implement",
+      progress: { kind: "fix_review", round },
       runName: `fix review findings for issue ${handoff.ticket}`,
       ticket: handoff.ticket,
       worktree: handoff.worktree,

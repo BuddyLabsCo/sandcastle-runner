@@ -30,8 +30,29 @@ export interface TicketReport {
   kind: "delivery" | "maintenance";
   status: TicketReportStatus;
   pullRequest: number | null;
+  pullRequestUrl: string | null;
   detail: string;
   retainedWorktrees: string[];
+}
+
+export interface ReportedSkip {
+  ticket: number;
+  reason: string;
+}
+
+export interface RunFailure {
+  message: string;
+  stack?: string;
+}
+
+export function describeFailure(error: unknown): RunFailure {
+  if (!(error instanceof Error)) return { message: String(error) };
+  return {
+    message: error.message,
+    ...(error.stack === undefined || error.stack.length === 0
+      ? {}
+      : { stack: error.stack }),
+  };
 }
 
 export interface RunSummary {
@@ -41,6 +62,9 @@ export interface RunSummary {
   issueTicket?: number;
   targetBranch: string;
   reasons: string[];
+  /** Unfinished tickets explicitly skipped through Operator Pause. */
+  skips?: ReportedSkip[];
+  failure?: RunFailure;
   batch?: number[];
   handoffs?: VerifiedHandoff[];
   pullRequests?: PullRequestObservation[];

@@ -36,6 +36,7 @@ import {
   workflowWrite,
 } from "./operations.ts";
 import { appendOperation, discardAgentLogs } from "./operation-audit.ts";
+import { createProgress, type ProgressPhase } from "./progress.ts";
 
 export { agentPauseMessage } from "./agent-pause.ts";
 
@@ -94,6 +95,7 @@ export interface TicketAttemptOutcome {
   outcome:
     "handoff" | "no_change" | "blocked" | "failed" | "cancelled" | "skipped";
   detail: string;
+  skipReason?: string;
   handoff?: VerifiedHandoff;
 }
 
@@ -104,7 +106,7 @@ type AgentStop =
 export type MaintenanceAttemptResult =
   | { outcome: "committed"; handoff: VerifiedHandoff }
   | AgentStop
-  | { outcome: "skipped"; reason: string }
+  | { outcome: "skipped"; reason: string; skipReason: string }
   | {
       outcome: "boundary";
       boundary: Exclude<DeliveryBoundaryResult, { outcome: "ready" }>;
@@ -166,6 +168,7 @@ export async function runAgentOperation(
   input: AgentOperationInput,
   operation: {
     phase: "implement" | "ci_repair" | "conflict_repair" | "maintenance";
+    progress: ProgressPhase;
     runName: string;
     ticket: number;
     worktree: string;
@@ -183,6 +186,12 @@ export async function runAgentOperation(
   },
 ): Promise<VerifiedHandoff | AgentStop> {
   let continuationPrompt = operation.session?.resumePrompt;
+  const progress = createProgress(
+    input.operator,
+    operation.ticket,
+    operation.progress,
+    operation.attemptCounter.value > 0,
+  );
   let attemptNumber!: number;
   let attemptId = "";
   let logFile = "";
@@ -269,6 +278,7 @@ export async function runAgentOperation(
               : operation.signal,
             advance: (action) => advance(input.operator, action),
             ...(resumePrompt === undefined ? {} : { resumePrompt }),
+            progress,
           }),
         );
         resultDiagnostics = {

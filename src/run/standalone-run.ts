@@ -34,7 +34,11 @@ export interface StandaloneRunContext {
   applyAttempts: (attempts: AttemptBatchResult) => Promise<void>;
   skippedTickets: ReadonlySet<number>;
   skippedMaintenance: ReadonlySet<number>;
-  recordSkip: (ticket: number, reason: string) => Promise<void>;
+  recordSkip: (
+    ticket: number,
+    reason: string,
+    pauseReason?: string,
+  ) => Promise<void>;
 }
 
 export async function runStandaloneIssue(

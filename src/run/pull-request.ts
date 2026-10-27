@@ -61,7 +61,7 @@ export async function integratePullRequest(
 ): Promise<
   | { outcome: "completed"; ticket: Ticket }
   | Exclude<DeliveryBoundaryResult, { outcome: "ready" }>
-  | { outcome: "skipped"; reason: string }
+  | { outcome: "skipped"; reason: string; skipReason: string }
 > {
   input = {
     ...input,
@@ -167,7 +167,11 @@ export async function integratePullRequest(
     }
   } catch (error) {
     if (!(error instanceof TicketSkipped)) throw error;
-    return { outcome: "skipped", reason: error.reason };
+    return {
+      outcome: "skipped",
+      reason: error.reason,
+      skipReason: error.pauseReason,
+    };
   }
 }
 
@@ -313,7 +317,9 @@ export async function publishVerifiedHandoffs(
               skipped: {
                 ticket: handoff.ticket,
                 pullRequest: pullRequest.number,
+                pullRequestUrl: pullRequest.url,
                 reason: readiness.reason,
+                skipReason: readiness.skipReason,
               },
               published: {
                 handoff,
@@ -365,8 +371,12 @@ export async function publishVerifiedHandoffs(
             ticket: handoff.ticket,
             ...(pullRequest === undefined
               ? {}
-              : { pullRequest: pullRequest.number }),
+              : {
+                  pullRequest: pullRequest.number,
+                  pullRequestUrl: pullRequest.url,
+                }),
             reason: `${error.reason}${residue ? `; ${residue}` : ""}`,
+            skipReason: error.pauseReason,
           },
         };
       }

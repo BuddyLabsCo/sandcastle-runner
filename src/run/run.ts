@@ -32,6 +32,8 @@ import { cleanupTicketWorktrees, type CleanupRecord } from "./cleanup.ts";
 import type { GitWorkspace, Ticket } from "./contracts.ts";
 import {
   createEvent,
+  describeFailure,
+  type RunFailure,
   type RunInput,
   type RunOutcome,
   type RunSummary,
@@ -131,6 +133,7 @@ async function runProjectInternal(
   ];
   const completedTickets = completedDeliveries.map(({ ticket }) => ticket);
   const reasons: string[] = [...(input.startupReasons ?? [])];
+  const skipReasons = new Map<number, string>();
   const ticketReports: PendingTicketReport[] = [];
   const recordTicket = (
     ticket: number,
@@ -143,6 +146,7 @@ async function runProjectInternal(
       kind,
       status: "pending",
       pullRequest: null,
+      pullRequestUrl: null,
       detail: "Selected for processing",
       retainedWorktrees: [],
     };
@@ -209,12 +213,16 @@ async function runProjectInternal(
         status: "completed",
         ...(intent?.pullRequest === undefined
           ? {}
-          : { pullRequest: intent.pullRequest.number }),
+          : {
+              pullRequest: intent.pullRequest.number,
+              pullRequestUrl: intent.pullRequest.url,
+            }),
         detail: "Completed Delivery Ticket",
       });
     } else if (intent?.pullRequest !== undefined) {
       updateTicket(ticket, {
         pullRequest: intent.pullRequest.number,
+        pullRequestUrl: intent.pullRequest.url,
         detail: "Recovered Pull Request",
       });
     }
@@ -224,6 +232,7 @@ async function runProjectInternal(
     if (maintenancePublication?.pullRequest !== undefined)
       updateTicket(maintenanceRecovery.ticket, {
         pullRequest: maintenancePublication.pullRequest.number,
+        pullRequestUrl: maintenancePublication.pullRequest.url,
       });
   }
   const sourceGitWorkspace = input.gitWorkspace;
@@ -280,10 +289,14 @@ async function runProjectInternal(
     },
     persistPublication: async (ticket, intent) => {
       if (intent?.pullRequest !== undefined)
-        updateTicket(ticket, { pullRequest: intent.pullRequest.number });
+        updateTicket(ticket, {
+          pullRequest: intent.pullRequest.number,
+          pullRequestUrl: intent.pullRequest.url,
+        });
       await sourcePersistPublication?.(ticket, intent);
     },
   };
+  let runFailure: RunFailure | undefined;
   const summary = (
     outcome: RunOutcome,
     finalReasons: string[] = reasons,
@@ -303,6 +316,12 @@ async function runProjectInternal(
       !finalReasons.includes("No pickable Delivery Tickets remain")
         ? [...finalReasons, "No pickable Delivery Tickets remain"]
         : finalReasons;
+    if (
+      outcome === "failed" &&
+      runFailure === undefined &&
+      resolvedReasons.length > 0
+    )
+      runFailure = { message: resolvedReasons.join("\n") };
     return {
       outcome,
       project: input.project,
@@ -312,6 +331,15 @@ async function runProjectInternal(
         : { issueTicket: input.issueTicket }),
       targetBranch,
       reasons: resolvedReasons,
+      ...(runFailure === undefined ? {} : { failure: runFailure }),
+      skips: [...skipReasons].flatMap(([ticket, reason]) => {
+        const report = ticketReports.find((entry) => entry.ticket === ticket);
+        return report === undefined ||
+          report.status === "completed" ||
+          report.status === "no_change"
+          ? []
+          : [{ ticket, reason }];
+      }),
       tickets: ticketReports.map((report) => ({
         ...report,
         status:
@@ -342,6 +370,7 @@ async function runProjectInternal(
           ? "operator cancelled"
           : "Run failed";
     reasons.push(reason);
+    if (outcome === "failed") runFailure = describeFailure(error);
     for (const report of ticketReports)
       if (report.status === "pending")
         updateTicket(report.ticket, { detail: reason });
@@ -351,7 +380,10 @@ async function runProjectInternal(
     attempts: Awaited<ReturnType<typeof implementBatch>>,
   ): Promise<void> => {
     for (const result of attempts.tickets) {
-      if (result.outcome === "skipped") skippedTickets.add(result.ticket);
+      if (result.outcome === "skipped") {
+        skippedTickets.add(result.ticket);
+        skipReasons.set(result.ticket, result.skipReason ?? result.detail);
+      }
       updateTicket(result.ticket, {
         status:
           result.outcome === "handoff"
@@ -372,10 +404,18 @@ async function runProjectInternal(
       );
   };
   const applyPublication = (publication: PublicationResult): void => {
-    for (const { ticket, pullRequest, reason } of publication.skipped ?? []) {
+    for (const {
+      ticket,
+      pullRequest,
+      pullRequestUrl,
+      reason,
+      skipReason,
+    } of publication.skipped ?? []) {
       skippedTickets.add(ticket);
+      skipReasons.set(ticket, skipReason ?? reason);
       updateTicket(ticket, {
         pullRequest: pullRequest ?? null,
+        pullRequestUrl: pullRequestUrl ?? null,
         status: "failed",
         detail: `skipped Delivery Ticket ${ticket}: ${reason}`,
       });
@@ -384,6 +424,7 @@ async function runProjectInternal(
       if (skippedTickets.has(observation.ticket)) continue;
       updateTicket(observation.ticket, {
         pullRequest: observation.number,
+        pullRequestUrl: observation.url,
         status:
           observation.readiness === "ready"
             ? "pending"
@@ -680,7 +721,10 @@ async function runProjectInternal(
                   : "blocked",
         ...(result.pullRequest === undefined
           ? {}
-          : { pullRequest: result.pullRequest.number }),
+          : {
+              pullRequest: result.pullRequest.number,
+              pullRequestUrl: result.pullRequest.url,
+            }),
         detail,
       });
     }
@@ -696,6 +740,7 @@ async function runProjectInternal(
       if (result.ticket !== undefined) {
         skippedMaintenance.add(result.ticket);
         publicationIntents.delete(result.ticket);
+        skipReasons.set(result.ticket, result.skipReason ?? result.reasons[0]!);
       }
       maintainedDeliveryTickets = new Set(recovery.deliveryTickets);
       maintenanceRecovery = undefined;
@@ -705,11 +750,16 @@ async function runProjectInternal(
     return result.outcome;
   };
 
-  const recordSkip = (ticket: number, reason: string): Promise<void> => {
+  const recordSkip = (
+    ticket: number,
+    reason: string,
+    pauseReason = reason,
+  ): Promise<void> => {
     skippedTickets.add(ticket);
     recordTicket(ticket, "delivery");
     updateTicket(ticket, { status: "failed", detail: reason });
     reasons.push(reason);
+    skipReasons.set(ticket, pauseReason);
     return Promise.resolve();
   };
 
@@ -767,6 +817,7 @@ async function runProjectInternal(
         updateTicket(observation.ticket, {
           status: "PR ready",
           pullRequest: observation.number,
+          pullRequestUrl: observation.url,
           detail: `Pull Request #${observation.number} is CI-ready; awaiting manual merge`,
         });
         await cleanupTerminal(observation.ticket, worktreeRoot, [
@@ -796,7 +847,11 @@ async function runProjectInternal(
             };
           } catch (error) {
             if (!(error instanceof TicketSkipped)) throw error;
-            await recordSkip(published.handoff.ticket, error.reason);
+            await recordSkip(
+              published.handoff.ticket,
+              error.reason,
+              error.pauseReason,
+            );
             return null;
           }
         }),
@@ -823,9 +878,14 @@ async function runProjectInternal(
       }
       if (integration.outcome === "skipped") {
         skippedTickets.add(handoff.ticket);
+        skipReasons.set(
+          handoff.ticket,
+          integration.skipReason ?? integration.reason,
+        );
         updateTicket(handoff.ticket, {
           status: "failed",
           pullRequest: pullRequest.number,
+          pullRequestUrl: pullRequest.url,
           detail: `skipped Delivery Ticket ${handoff.ticket}: ${integration.reason}`,
         });
         reasons.push(
@@ -864,6 +924,7 @@ async function runProjectInternal(
       updateTicket(handoff.ticket, {
         status: "completed",
         pullRequest: pullRequest.number,
+        pullRequestUrl: pullRequest.url,
         detail: `Pull Request #${pullRequest.number} merged and ticket closed`,
       });
       await input.persistBatch?.(batchTickets, completedDeliveries);

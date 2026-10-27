@@ -39,6 +39,7 @@ for (const phase of [
       { worktree: string; branch: string; repository: string }
     >();
     const pauses: string[] = [];
+    const messages: string[] = [];
     let reservationStarted = false;
     let skipped = false;
     const fail = (point: typeof phase, ticket: number) => {
@@ -123,6 +124,9 @@ for (const phase of [
           },
         },
         operator: {
+          write(message) {
+            messages.push(message);
+          },
           async pause(message) {
             pauses.push(message);
             assert.match(message, /s to skip/u);
@@ -149,6 +153,13 @@ for (const phase of [
       );
       assert.equal(snapshot?.terminalCleanup?.[9]?.status, "pending");
       assert.ok(snapshot?.completedDeliveries?.some((row) => row.ticket === 9));
+      assert.doesNotMatch(messages.at(-1)!, /^Reasons:$/mu);
+      assert.doesNotMatch(messages.at(-1)!, /^- issue-9:/mu);
+    } else {
+      assert.match(
+        messages.at(-1)!,
+        new RegExp(`^- issue-9: Operation failed: injected ${phase}$`, "mu"),
+      );
     }
   });
 }

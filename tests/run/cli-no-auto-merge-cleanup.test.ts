@@ -173,6 +173,7 @@ test("a CI-ready no-auto-merge Run removes local artifacts and preserves manual 
       kind: "delivery",
       status: "PR ready",
       pullRequest: 41,
+      pullRequestUrl: "https://example.test/pull/41",
       detail: "Pull Request #41 is CI-ready; awaiting manual merge",
       retainedWorktrees: [],
     },
