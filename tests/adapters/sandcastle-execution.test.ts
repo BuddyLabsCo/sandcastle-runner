@@ -60,6 +60,40 @@ test("Sandcastle startup chatter never reaches the terminal", async (t) => {
   assert.equal(log.mock.callCount(), 0);
 });
 
+test("startup hints with spaced log paths never reach the terminal", async (t) => {
+  const log = t.mock.method(console, "log", () => {});
+  let invocations = 0;
+  const executor = new SandcastleAgentExecutor(
+    async (options) => {
+      invocations += 1;
+      console.log("[codex] Started on branch sandcastle/ticket-9");
+      console.log(
+        "\u001b[2m  tail -f /home/user/My Projects/demo/logs/implement-9.log\u001b[22m",
+      );
+      if (options.prompt === "Reply with exactly: SESSION_READY")
+        return {
+          iterations: [{ sessionId: "probe-session" }],
+          stdout: "SESSION_READY",
+          commits: [],
+          branch: input().branch,
+          output: undefined,
+        };
+      return makeResult(
+        `<agent_attempt_result>${JSON.stringify(committed)}</agent_attempt_result>`,
+        committed,
+      );
+    },
+    async () => {},
+    async () => {},
+    async () => {},
+  );
+
+  await executor.execute(input());
+
+  assert.equal(invocations, 2);
+  assert.equal(log.mock.callCount(), 0);
+});
+
 test("unrelated console output survives Sandcastle startup suppression", async (t) => {
   const log = t.mock.method(console, "log", () => {});
   let release!: () => void;

@@ -75,9 +75,10 @@ function firstUsableSessionId(...values: unknown[]): string | undefined {
  * Sandcastle prints its own "[agent] Started on branch ..." banner and a
  * `tail -f` hint through `console.log` whenever file logging is selected. The
  * Runner owns terminal progress, so those two lines are filtered for the
- * duration of the invocation. Unrelated console output is forwarded unchanged,
- * and stored logs are unaffected. The counter keeps concurrent invocations
- * filtered until the last one settles.
+ * duration of the invocation. The hint's log path may contain whitespace, so
+ * the rest of the line is matched as-is. Unrelated console output is forwarded
+ * unchanged, and stored logs are unaffected. The counter keeps concurrent
+ * invocations filtered until the last one settles.
  */
 const startupStyleCodes = ["\u001b[1m", "\u001b[2m", "\u001b[22m"] as const;
 
@@ -93,7 +94,7 @@ function isSandcastleStartupLine(value: unknown): boolean {
   const plain = withoutStyle(value);
   return (
     /^\[[^\]]+\] Started(?: on branch .+)?$/u.test(plain) ||
-    /^\s*tail -f \S+$/u.test(plain)
+    /^\s*tail -f .+$/u.test(plain)
   );
 }
 
