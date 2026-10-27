@@ -10,8 +10,7 @@ reducing unnecessary token use for workflow coordination. Runner invokes agents
 through Sandcastle when a task needs code changes or review.
 
 Runner runs on Windows, macOS, and Linux and supports `codex`,
-`claude-code`, `pi`, and `codebuddy`. It uses Sandcastle's native factories
-and a local CodeBuddy provider; agents run locally on the host.
+`claude-code`, `pi`, and `codebuddy`. Agents run locally through Sandcastle.
 
 See the [Project guide](projects/README.md) for workflow details.
 
@@ -28,7 +27,6 @@ Install these on the host that runs Runner:
   interactive CLI approval prompts.
 - A GitHub repository checkout at an absolute path.
 
-Runner supports `codex`, `claude-code`, `pi`, and `codebuddy` profiles.
 Prepare each selected agent's own sign-in,
 skills, MCP servers, and native configuration. Runner does not install or
 normalize them.
@@ -112,65 +110,6 @@ export GH_TOKEN='your-github-token'
 
 Use a shell profile or another local secret mechanism when appropriate. Never
 commit a token.
-
-## CodeBuddy setup
-
-Install and authenticate the `codebuddy` CLI on `PATH`, using your selected
-backend and model. Verify `codebuddy --version` and a bounded print request
-before starting Runner. The provider was checked with CLI 2.177.0 and
-Sandcastle 0.12.0; account access and authentication renewal remain native CLI
-prerequisites. Keep credentials outside Project YAML.
-
-Select CodeBuddy independently for any role, for example:
-
-```yaml
-agent: codebuddy
-model: deepseek-v4.1-flash
-options:
-  effort: high
-  permissionMode: dontAsk
-  allowedTools: [Read, Write, Edit, "Bash(git:*)", "Bash(node:*)"]
-  env:
-    CODEBUDDY_CONFIG_DIR: /absolute/path/to/dedicated-codebuddy-state
-```
-
-The default `permissionMode` is `dontAsk`: unapproved operations are denied.
-Prepare trusted native allow rules for the Project's required edits, commands,
-Git operations, repairs, and Documentation Maintenance. The example rules are
-a starting point, not certified operation coverage. Explicit native policy can
-still refuse an operation. Runner preserves refusal evidence and requires the
-tagged result and independent Git verification, even when the CLI exits zero.
-`bypassPermissions` and `-y` do not guarantee unattended execution. Runner rejects
-all enabled `CODEBUDDY_IS_SANDBOX` values on the host: `1`, `true`, `yes`, and
-`on`, ignoring case and surrounding whitespace.
-
-Supported `options` are `effort` (minimal/low/medium/high/xhigh/max), positive
-integer `maxTurns`, `permissionMode` (acceptEdits/bypassPermissions/default/plan/
-dontAsk/auto), string `tools` (empty disables tools), string arrays
-`allowedTools` and `disallowedTools`, `systemPrompt`, `appendSystemPrompt`, and
-a string map `env`. Unsupported options fail visibly. Model support for effort
-depends on your backend. Runner disables native background tasks and launches
-foreground print/stream execution with its own worktree and Git configuration.
-
-CodeBuddy stores main transcripts under `<CLI-home>/projects/*/<id>.jsonl`.
-`options.env.CODEBUDDY_CONFIG_DIR` selects both the CLI store and lookup root;
-otherwise the inherited variable applies, then `.codebuddy` under the child's
-OS home. Home overrides use `options.env.HOME` on Unix and
-`options.env.USERPROFILE` on Windows. Use an absolute custom store or fallback
-home; empty or relative fallback homes fail visibly. The provider searches exact
-main-session IDs, rejects ambiguity, and excludes subagent transcripts. It never
-resumes the latest session, forks, or creates a missing continuation. Separate worktrees and
-role sessions remain independent. Sandbox transcript transfer is unsupported
-and throws rather than reporting a successful transfer.
-
-CodeBuddy loads `CODEBUDDY.md` before falling back to `AGENTS.md`, and discovers
-parent instructions. If both files exist, keep required Project instructions in
-the selected file or reference them explicitly from the Project prompt. Check
-this precedence before a Run; Runner does not rewrite native instruction files.
-
-The [provider evidence](docs/research/codebuddy-provider-evidence.md) records durable continuation.
-The [takeover evidence](docs/research/codebuddy-takeover-evidence.md) records the live native-session chain, operation checks, and permission limits.
-All providers share the [timeout intervention lifecycle](projects/README.md#agent-timeout-thresholds), including selected-only `k` and manual takeover after confirmed process settlement.
 
 ## Configuration
 

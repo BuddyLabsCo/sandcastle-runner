@@ -49,7 +49,7 @@ async function setup() {
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 let prompt=''; for await(const chunk of process.stdin) prompt+=chunk;
-await writeFile(process.env.ARGUMENTS_FILE,JSON.stringify({args:process.argv.slice(2),prompt,cwd:process.cwd(),gitConfig:process.env.GIT_CONFIG_GLOBAL}));
+await writeFile(process.env.ARGUMENTS_FILE,JSON.stringify({args:process.argv.slice(2),prompt,cwd:process.cwd(),gitConfig:process.env.GIT_CONFIG_GLOBAL,sandbox:process.env.CODEBUDDY_IS_SANDBOX}));
 const id='fixture-session';
 const init={type:'system',subtype:'init',session_id:id};
 if(prompt==='Reply with exactly: SESSION_READY') {
@@ -84,7 +84,6 @@ process.stderr.write(fixture.stderr??''); process.exitCode=fixture.exitCode??0;
     logFile: join(root, "agent.log"),
     options: {
       effort: "high",
-      permissionMode: "dontAsk",
       tools: "",
       env: {
         PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
@@ -153,6 +152,63 @@ test("CodeBuddy executes both tagged contracts through shell-free native continu
     logFile: join(profile.worktree, "review.log"),
   });
   assert.equal(review.outcome, "passed");
+});
+
+// Regression: unattended execution must work without per-Project permission configuration.
+test("CodeBuddy defaults to sandbox full pass and preserves environment overrides", async () => {
+  const original = process.env.CODEBUDDY_IS_SANDBOX;
+  try {
+    const { profile, fixture, argsFile } = await setup();
+    await fixture([
+      init,
+      final(
+        `<agent_attempt_result>${JSON.stringify(committed)}</agent_attempt_result>`,
+      ),
+    ]);
+    for (const { inherited, override, expected } of [
+      { inherited: undefined, override: undefined, expected: "1" },
+      { inherited: undefined, override: "1", expected: "1" },
+      { inherited: "1", override: undefined, expected: "1" },
+      { inherited: "0", override: undefined, expected: "0" },
+      { inherited: "1", override: "0", expected: "0" },
+    ]) {
+      if (inherited === undefined) delete process.env.CODEBUDDY_IS_SANDBOX;
+      else process.env.CODEBUDDY_IS_SANDBOX = inherited;
+      const result = await new SandcastleAgentExecutor().execute({
+        ...input(),
+        ...profile,
+        options: {
+          ...profile.options,
+          env:
+            override === undefined
+              ? profile.options.env
+              : { ...profile.options.env, CODEBUDDY_IS_SANDBOX: override },
+        },
+      });
+      assert.equal(result.outcome, "committed");
+      const transport = JSON.parse(await readFile(argsFile, "utf8")) as {
+        args: string[];
+        sandbox: string;
+      };
+      assert.equal(transport.sandbox, expected);
+      assert.equal(
+        transport.args.filter((arg) => arg === "--permission-mode").length,
+        1,
+      );
+      assert.equal(
+        transport.args[transport.args.indexOf("--permission-mode") + 1],
+        "bypassPermissions",
+      );
+      assert.ok(!transport.args.includes("dontAsk"));
+      assert.deepEqual(transport.args.slice(-2), [
+        "--resume",
+        "fixture-session",
+      ]);
+    }
+  } finally {
+    if (original === undefined) delete process.env.CODEBUDDY_IS_SANDBOX;
+    else process.env.CODEBUDDY_IS_SANDBOX = original;
+  }
 });
 
 test("CodeBuddy rejects malformed, duplicate, absent and misleading tagged results", async () => {

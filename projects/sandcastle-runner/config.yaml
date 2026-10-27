@@ -60,8 +60,6 @@ agents:
   # maintenance trigger or --document, which uses the same documentation profile.
   # If native session lookup differs from actual storage, set options.sessionStorage:
   # hostSessionsDir for Codex/Pi, or hostProjectsDir for Claude Code.
-  # CodeBuddy uses options.env.CODEBUDDY_CONFIG_DIR (absolute) for CLI and lookup.
-  # Prepare native authentication and unattended permissions; see README CodeBuddy setup.
   implement:
     # Initial Delivery Ticket implementation.
     agent: codex

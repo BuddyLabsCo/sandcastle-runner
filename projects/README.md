@@ -5,7 +5,6 @@ This directory is a project template for Sandcastle Runner. Copy it to `projects
 ## Configure a Project
 
 Edit the [example config.yaml](sandcastle-runner/config.yaml); its inline comments explain each field and native session lookup options.
-Select `codebuddy` through the same role profiles; see [CodeBuddy setup](../README.md#codebuddy-setup) for native options, authentication, permissions, and session storage.
 The implementation prompt must be nonempty. Review and documentation prompts are required when their workflow is enabled. CI and conflict repairs use fixed input templates under `src/prompts`; no Project repair prompt is required.
 
 ## Operator Pause actions
@@ -14,47 +13,32 @@ When automatic recovery stops or an Agent reaches a timeout threshold, the Runne
 
 ### Agent timeout thresholds
 
-`timeouts.agentIdleMinutes` defaults to 10 when omitted. It measures silence on the invocation's stdout and stderr, including partial lines. Runner status, prompt, and diagnostic messages do not reset it. Silence can have several causes; it does not establish that an Agent needs permission.
+Reaching `timeouts.agentIdleMinutes` (default: 10) or `timeouts.agentMinutes` opens a pause while the Agent keeps running. Press Enter to keep waiting:
 
-`timeouts.agentMinutes` remains the required, separately configured overall threshold. The sample's 120 minutes is an example, not a default. Both settings accept finite positive numbers, including fractional minutes. Required-check and merge-queue timeouts retain their existing meanings.
-
-Either Agent threshold opens Operator Pause without stopping the invocation. Its processes keep running and output keeps collecting. Enter keeps waiting on that same invocation and grants a fresh idle window. Overall elapsed time continues from the invocation's launch, and its overall threshold notifies once. A new probe, retry, or continuation starts a new invocation with fresh thresholds.
-
-If the Agent finishes during a pause, Runner retains its original success or failure and logs. After Enter and every pending pause in the Run resolves, normal validation, retry policy, and independent Git verification apply. Enter does not launch a duplicate Agent or consume a retry. Other attempts retain their outcomes while any intervention remains pending; they cannot start another Agent step, verify, publish, or integrate.
-
-These timeout actions apply to session probing, implementation, Review, review fixes, CI repair, conflict repair, and independent or automatic Documentation Maintenance. Timeout pauses support Enter, `k`, and `q`/EOF. `q`/EOF cancels the Run and settles its owned processes and descendants. Cleanup failure fails the Run and blocks retries, continuation, and Worktree cleanup.
-
-Retention lasts within the current Runner process. Recovery Snapshots preserve delivery evidence but do not adopt live Agent processes after a restart. Graceful shutdown closes owned handles; a timeout acknowledgement does not close them.
+```text
+Agent idle threshold reached for implement issue 247. Working directory: /runner/worktrees/ticket-247. Diagnostic log: /runner/logs/implement-247.log. Enter to keep waiting on the same invocation or accept its retained outcome; k to stop only this invocation and remain paused; q/EOF to cancel. Other input is unsupported.
+Invocation: implement issue 247. Provider: codex. Native session: session-123. State: running; elapsed 600000 ms; idle threshold 600000 ms; overall threshold 7200000 ms.
+> [Enter]
+```
 
 ### Stop one invocation for manual takeover
 
-Use `k` only at the selected invocation's timeout pause. Runner stops that invocation and waits for its CLI and owned descendants to settle. Other active invocations keep collecting output; every queued pause remains independent. Killing work never counts as delivery.
+Enter `k` at the selected invocation's timeout pause:
 
-The pause identifies the invocation, provider, native session when known, worktree, diagnostic log, elapsed time, and idle/overall thresholds. Queued entries refresh their state when displayed. A natural completion while queued retains its own outcome.
-
-After confirmed settlement, Runner locates the exact native transcript using the selected provider's configured storage. It displays that path and keeps the intervention pending. Missing or ambiguous lookup blocks takeover and Enter; correct your native storage configuration before a new Run. Failed process settlement fails the Run and blocks replacement execution, retry, continuation, and Worktree cleanup. Do not start a manual CLI when ownership is uncertain.
-
-To handle the settled invocation:
-
-1. Open another terminal in the displayed worktree. Keep the same native session ID, model, native storage/home overrides, and per-Attempt `GIT_CONFIG_GLOBAL` file. Use the selected Project agent profile's permissions and options.
-2. Resume the exact session with the native CLI. Do not select the latest session, fork it, or create a missing session. Keep only one writer for that session and worktree.
-3. Finish manual handling and **exit the manual CLI** before returning control to Runner, including cancellation.
-4. Press Enter in Runner to continue the original task in that exact session. Runner applies its ordinary tagged result validation and independent Git verification. Manual continuation starts a new invocation with fresh thresholds and consumes no Agent Retry budget.
-
-For CodeBuddy, this illustrative command uses dedicated storage and separate allow-rule arguments:
-
-```sh
-cd /runner/worktrees/ticket-264
-CODEBUDDY_CONFIG_DIR=/runner/native-state \
-GIT_CONFIG_GLOBAL=/runner/git-config \
-CODEBUDDY_CODE_DISABLE_BACKGROUND_TASKS=1 \
-codebuddy --resume session-123 --model deepseek-v4.1-flash \
-  --permission-mode dontAsk --allowedTools Read Write Edit Bash
+```text
+> k
+Selected CLI and owned descendants settled. Runner remains paused for manual native resume.
+Provider: codex
+Exact native session: session-123
+Working directory: /runner/worktrees/ticket-247
+Native transcript: /home/runner/.codex/sessions/2026/10/28/session-123.jsonl
+GIT_CONFIG_GLOBAL: /runner/git-config
+Diagnostic log: /runner/logs/implement-247.log
+Exit the manual CLI before pressing Enter to resume the exact session through Runner. q/EOF cancels the Run. Other input is unsupported.
+> [Enter]
 ```
 
-Use your displayed paths and native session ID, and preserve your own trusted allow rules. The broad Bash rule above is a tested policy assumption, not a permission default. Our tested CLI refused tools with comma-separated allow rules in manual mode; separate arguments passed. Read the [live evidence and limits](../docs/research/codebuddy-takeover-evidence.md) before relying on a different version or policy.
-
-Runner's pause prevents its own new writers; it cannot discover or control independently launched native CLIs. Pressing Enter acknowledges that you exited manual handling. Enter does not answer an approval request from the terminated process. Recovery Snapshots preserve delivery evidence, not live-process adoption or native-session restoration after restart. Skip and recovery-text actions remain available only in their existing contexts; audit failures still permit only retry or cancellation.
+In another terminal, resume the displayed native session from its working directory using the displayed Git configuration. Exit that CLI before pressing Enter in Runner to continue the same session. Other invocations keep running.
 
 ### Continue an Agent session
 

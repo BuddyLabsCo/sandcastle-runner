@@ -145,7 +145,7 @@ test("CodeBuddy preserves supported options and rejects unsafe or malformed prof
     disallowedTools: ["WebFetch"],
     systemPrompt: "system's text",
     appendSystemPrompt: "extra instructions",
-    env: { EXAMPLE_SETTING: "kept" },
+    env: { EXAMPLE_SETTING: "kept", CODEBUDDY_IS_SANDBOX: "0" },
   });
   const prompt = "large prompt\n".repeat(20000);
   const built = provider.buildPrintCommand({
@@ -168,13 +168,12 @@ test("CodeBuddy preserves supported options and rejects unsafe or malformed prof
   );
   assert.equal(provider.env.EXAMPLE_SETTING, "kept");
   assert.equal(provider.env.CODEBUDDY_CODE_DISABLE_BACKGROUND_TASKS, "1");
-  assert.equal(provider.env.CODEBUDDY_IS_SANDBOX, undefined);
+  assert.equal(provider.env.CODEBUDDY_IS_SANDBOX, "0");
   for (const options of [
     { background: true },
     { effort: "extreme" },
     { maxTurns: 0 },
     { maxTurns: 1.5 },
-    { env: { CODEBUDDY_IS_SANDBOX: "1" } },
     { env: { X: 1 } },
     { env: { CODEBUDDY_CONFIG_DIR: "relative-store" } },
     { tools: ["Read"] },
@@ -260,47 +259,6 @@ test("CodeBuddy keeps concurrent custom session stores isolated", async () => {
     found.map((session) => session.path),
     roots.map(({ file }) => file),
   );
-});
-
-// Regression: native truthy spellings must never enable sandbox bypass on the host.
-// Seam: provider profiles; existing coverage rejects only the literal "1".
-test("CodeBuddy rejects explicit and inherited native sandbox-bypass values", () => {
-  const original = process.env.CODEBUDDY_IS_SANDBOX;
-  const enabled = ["1", "true", "yes", "on", " TRUE ", "YeS", "oN", "\t1\n"];
-  try {
-    delete process.env.CODEBUDDY_IS_SANDBOX;
-    for (const value of enabled)
-      assert.throws(
-        () =>
-          nativeAgent("codebuddy", "model", {
-            permissionMode: "bypassPermissions",
-            env: { CODEBUDDY_IS_SANDBOX: value },
-          }),
-        /host execution cannot enable CODEBUDDY_IS_SANDBOX/u,
-        `explicit ${JSON.stringify(value)}`,
-      );
-    for (const value of enabled) {
-      process.env.CODEBUDDY_IS_SANDBOX = value;
-      assert.throws(
-        () =>
-          nativeAgent("codebuddy", "model", {
-            permissionMode: "bypassPermissions",
-          }),
-        /host execution cannot enable CODEBUDDY_IS_SANDBOX/u,
-        `inherited ${JSON.stringify(value)}`,
-      );
-    }
-    for (const value of ["", "0", "false", "no", "off"])
-      assert.equal(
-        nativeAgent("codebuddy", "model", {
-          env: { CODEBUDDY_IS_SANDBOX: value },
-        }).env.CODEBUDDY_IS_SANDBOX,
-        value,
-      );
-  } finally {
-    if (original === undefined) delete process.env.CODEBUDDY_IS_SANDBOX;
-    else process.env.CODEBUDDY_IS_SANDBOX = original;
-  }
 });
 
 // Regression: overriding the child home must not split probe persistence and lookup.
