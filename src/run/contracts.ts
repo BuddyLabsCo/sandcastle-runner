@@ -255,6 +255,11 @@ export interface AgentTimeoutIntervention {
   kill(): Promise<{ message: string; continuable: boolean }>;
 }
 
+/** Terminal progress signalled by an executor at each substantive invocation. */
+export interface AgentProgress {
+  start(): void;
+}
+
 export interface AgentAttemptInput {
   runName: string;
   ticket: number;
@@ -281,6 +286,8 @@ export interface AgentAttemptInput {
   advance?: <T>(action: () => Promise<T>) => Promise<T>;
   /** Optional same-session continuation prompt. */
   resumePrompt?: string;
+  /** Signalled immediately before each substantive invocation, never the probe. */
+  progress?: AgentProgress;
 }
 
 export type ReviewAttemptResult = (

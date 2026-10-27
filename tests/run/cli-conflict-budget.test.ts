@@ -41,6 +41,7 @@ test("cancelling an exhausted conflict budget stops before republishing or remer
       },
       agentExecutor: {
         async execute(input) {
+          input.progress?.start();
           runNames.push(input.runName);
           agentCalls += 1;
           if (agentCalls === 2) {

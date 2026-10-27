@@ -3,12 +3,14 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
+import { SandcastleAgentExecutor } from "../../src/adapters/sandcastle.ts";
 import { executeCli } from "../../src/cli.ts";
 import {
   createCliDependencies,
   createCommittedBatch,
   createCommittedDelivery,
 } from "../support/cli-dependencies.ts";
+import { committed } from "../support/sandcastle.ts";
 import {
   createProject,
   validConfig,
@@ -29,6 +31,7 @@ test("a retried implementation prints its issue and phase once per start", async
       ...delivery,
       agentExecutor: {
         async execute(input) {
+          input.progress?.start();
           calls += 1;
           if (calls === 1)
             return {
@@ -110,6 +113,7 @@ test("numbered review rounds and their fixes print distinct phase lines", async 
       },
       agentExecutor: {
         async execute(input) {
+          input.progress?.start();
           if (input.resumePrompt === undefined) {
             await writeFile(input.logFile, "implementation");
             return delivery.agentExecutor.execute!(input);
@@ -124,6 +128,7 @@ test("numbered review rounds and their fixes print distinct phase lines", async 
           };
         },
         async executeReview(input) {
+          input.progress?.start();
           round += 1;
           if (round === 1) {
             const review = JSON.parse(
@@ -196,6 +201,7 @@ test("a retried CI repair prints its phase once per start", async () => {
       },
       agentExecutor: {
         async execute(input) {
+          input.progress?.start();
           if (input.promptArgs.FAILED_CHECKS === undefined)
             return delivery.agentExecutor.execute!(input);
           repairAttempts += 1;
@@ -268,9 +274,44 @@ test("a retried CI repair prints its phase once per start", async () => {
 test("Documentation Maintenance prints its issue and phase", async () => {
   const root = await createProject();
   const progress: string[] = [];
+  let branch = "";
   const result = await executeCli(
     ["run", "--project", "demo", "--document"],
     createCliDependencies(root, {
+      tracker: {
+        async createMaintenanceTicket() {
+          return {
+            number: 1000,
+            state: "open",
+            stateReason: null,
+            assignees: [],
+            labels: ["doc-maintain"],
+          };
+        },
+      },
+      gitWorkspace: {
+        async fetchTargetBranch() {
+          return "a".repeat(40);
+        },
+        async createWorktree(input) {
+          branch = input.branch;
+        },
+        async inspect({ worktree, base }) {
+          return { worktree, branch, base, commits: [], clean: true };
+        },
+      },
+      agentExecutor: {
+        async execute(input) {
+          input.progress?.start();
+          return {
+            outcome: "no_change",
+            summary: "documentation is current",
+            commits: [],
+            checks: [],
+            blocker: null,
+          };
+        },
+      },
       operator: {
         write(message) {
           progress.push(message);
@@ -281,6 +322,59 @@ test("Documentation Maintenance prints its issue and phase", async () => {
 
   assert.equal(result.summary.outcome, "succeeded");
   assert.deepEqual(progress.slice(0, -1), ["issue-1000: doc maintain"]);
+});
+
+test("automatic Agent Retry prints each substantive start without probe progress", async () => {
+  const root = await createProject();
+  const progress: string[] = [];
+  let probes = 0;
+  let substantive = 0;
+  const executor = new SandcastleAgentExecutor(
+    async (options) => {
+      if (options.prompt === "Reply with exactly: SESSION_READY") {
+        probes += 1;
+        return {
+          iterations: [{ sessionId: "probe-session" }],
+          stdout: "SESSION_READY",
+          commits: [],
+          branch: "unused",
+          output: undefined,
+        };
+      }
+      substantive += 1;
+      if (substantive === 1) throw new Error("transient invocation failure");
+      return {
+        iterations: [{ sessionId: "session-id" }],
+        stdout: `<agent_attempt_result>${JSON.stringify(committed)}</agent_attempt_result>`,
+        commits: committed.commits,
+        branch: "unused",
+        output: committed,
+      };
+    },
+    async () => {},
+    async () => {},
+    async () => {},
+  );
+  const result = await executeCli(
+    ["run", "--project", "demo", "--parent", "8"],
+    createCliDependencies(root, {
+      ...createCommittedDelivery(9),
+      agentExecutor: executor,
+      operator: {
+        write(message) {
+          progress.push(message);
+        },
+      },
+    }),
+  );
+
+  assert.equal(result.summary.outcome, "succeeded");
+  assert.equal(probes, 1);
+  assert.equal(substantive, 2);
+  assert.deepEqual(progress.slice(0, -1), [
+    "issue-9: implement",
+    "issue-9: implement retry",
+  ]);
 });
 
 test("concurrent progress stays associated with its issue", async () => {
@@ -299,6 +393,7 @@ test("concurrent progress stays associated with its issue", async () => {
       ...delivery,
       agentExecutor: {
         async execute(input) {
+          input.progress?.start();
           executed.push(input.ticket);
           started += 1;
           if (started === 2) release();

@@ -316,6 +316,12 @@ async function runProjectInternal(
       !finalReasons.includes("No pickable Delivery Tickets remain")
         ? [...finalReasons, "No pickable Delivery Tickets remain"]
         : finalReasons;
+    if (
+      outcome === "failed" &&
+      runFailure === undefined &&
+      resolvedReasons.length > 0
+    )
+      runFailure = { message: resolvedReasons.join("\n") };
     return {
       outcome,
       project: input.project,

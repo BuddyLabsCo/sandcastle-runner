@@ -36,7 +36,7 @@ import {
   workflowWrite,
 } from "./operations.ts";
 import { appendOperation, discardAgentLogs } from "./operation-audit.ts";
-import { showProgress, type ProgressPhase } from "./progress.ts";
+import { createProgress, type ProgressPhase } from "./progress.ts";
 
 export { agentPauseMessage } from "./agent-pause.ts";
 
@@ -186,7 +186,12 @@ export async function runAgentOperation(
   },
 ): Promise<VerifiedHandoff | AgentStop> {
   let continuationPrompt = operation.session?.resumePrompt;
-  let executions = 0;
+  const progress = createProgress(
+    input.operator,
+    operation.ticket,
+    operation.progress,
+    operation.attemptCounter.value > 0,
+  );
   let attemptNumber!: number;
   let attemptId = "";
   let logFile = "";
@@ -234,15 +239,8 @@ export async function runAgentOperation(
       try {
         const gitConfigGlobal = path.join(gitDirectory, "config");
         await writeFile(gitConfigGlobal, "");
-        result = await advance(input.operator, () => {
-          executions += 1;
-          showProgress(
-            input.operator,
-            operation.ticket,
-            operation.progress,
-            attemptNumber > 1 || executions > 1,
-          );
-          return input.agentExecutor.execute({
+        result = await advance(input.operator, () =>
+          input.agentExecutor.execute({
             ticket: operation.ticket,
             runName: operation.runName,
             worktree: operation.worktree,
@@ -280,8 +278,9 @@ export async function runAgentOperation(
               : operation.signal,
             advance: (action) => advance(input.operator, action),
             ...(resumePrompt === undefined ? {} : { resumePrompt }),
-          });
-        });
+            progress,
+          }),
+        );
         resultDiagnostics = {
           provider: operation.agent.agent,
           workingDirectory: operation.worktree,

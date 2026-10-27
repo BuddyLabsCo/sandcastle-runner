@@ -1,4 +1,4 @@
-import type { OperatorIO } from "./contracts.ts";
+import type { AgentProgress, OperatorIO } from "./contracts.ts";
 
 export type ProgressPhase =
   | { kind: "implement" }
@@ -28,15 +28,24 @@ function phaseLabel(phase: ProgressPhase): string {
 /**
  * Print one terminal line when substantive execution starts. Session probes and
  * completion are deliberately silent; a later start of the same phase is a
- * retry.
+ * retry, including automatic Agent Retry continuations signalled by the
+ * executor.
  */
-export function showProgress(
+export function createProgress(
   operator: OperatorIO,
   ticket: number,
   phase: ProgressPhase,
-  retry: boolean,
-): void {
-  operator.write(
-    `issue-${ticket}: ${phaseLabel(phase)}${retry ? " retry" : ""}`,
-  );
+  alreadyRetried: boolean,
+): AgentProgress {
+  let invocations = 0;
+  return {
+    start() {
+      invocations += 1;
+      operator.write(
+        `issue-${ticket}: ${phaseLabel(phase)}${
+          alreadyRetried || invocations > 1 ? " retry" : ""
+        }`,
+      );
+    },
+  };
 }

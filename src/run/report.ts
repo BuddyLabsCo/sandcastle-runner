@@ -26,6 +26,14 @@ function pullRequestCell(ticket: TicketReport): {
   };
 }
 
+function failureBlock(failure: { message: string; stack?: string }): string {
+  if (failure.stack !== undefined) return failure.stack;
+  const reasons = failure.message
+    .split("\n")
+    .filter((reason) => reason.trim().length > 0);
+  return ["Run failed:", ...reasons.map((reason) => `- ${reason}`)].join("\n");
+}
+
 function table(tickets: TicketReport[]): string[] {
   const rows = tickets.map((ticket) => {
     const pullRequest = pullRequestCell(ticket);
@@ -68,7 +76,7 @@ export function renderRunReport(summary: RunSummary): string {
     ...(tickets.length === 0 ? ["No issues processed."] : table(tickets)),
   ];
   if (summary.failure !== undefined) {
-    lines.push("", summary.failure.stack ?? summary.failure.message);
+    lines.push("", failureBlock(summary.failure));
   }
   const skips = summary.skips ?? [];
   if (skips.length > 0) {

@@ -74,11 +74,29 @@ function firstUsableSessionId(...values: unknown[]): string | undefined {
 /**
  * Sandcastle prints its own "[agent] Started on branch ..." banner and a
  * `tail -f` hint through `console.log` whenever file logging is selected. The
- * Runner owns terminal progress, so those lines are swallowed for the duration
- * of the invocation. Stored logs and the Runner's own operator output are
- * unaffected because operator output does not use `console.log`. The counter
- * keeps concurrent invocations quiet until the last one settles.
+ * Runner owns terminal progress, so those two lines are filtered for the
+ * duration of the invocation. Unrelated console output is forwarded unchanged,
+ * and stored logs are unaffected. The counter keeps concurrent invocations
+ * filtered until the last one settles.
  */
+const startupStyleCodes = ["\u001b[1m", "\u001b[2m", "\u001b[22m"] as const;
+
+function withoutStyle(value: string): string {
+  return startupStyleCodes.reduce(
+    (text, code) => text.replaceAll(code, ""),
+    value,
+  );
+}
+
+function isSandcastleStartupLine(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const plain = withoutStyle(value);
+  return (
+    /^\[[^\]]+\] Started(?: on branch .+)?$/u.test(plain) ||
+    /^\s*tail -f \S+$/u.test(plain)
+  );
+}
+
 let quietInvocations = 0;
 let savedConsoleLog: typeof console.log | undefined;
 
@@ -87,7 +105,11 @@ async function withoutSandcastleTerminal<T>(
 ): Promise<T> {
   if (quietInvocations === 0) {
     savedConsoleLog = console.log;
-    console.log = () => undefined;
+    const forward = console.log.bind(console);
+    console.log = (...args: Parameters<typeof console.log>) => {
+      if (args.length === 1 && isSandcastleStartupLine(args[0])) return;
+      forward(...args);
+    };
   }
   quietInvocations += 1;
   try {
@@ -396,6 +418,7 @@ export class SandcastleAgentExecutor implements AgentExecutor {
         const invoke = () => {
           const stopped = this.stopFailure(input, provider.name, resumeSession);
           if (stopped !== undefined) throw stopped;
+          input.progress?.start();
           return withoutSandcastleTerminal(() =>
             superviseInvocation(this.run, input, {
               agent: provider,
