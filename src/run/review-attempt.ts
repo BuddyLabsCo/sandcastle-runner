@@ -15,6 +15,7 @@ import {
   ticketAgentRetryActions,
 } from "./agent-pause.ts";
 import {
+  advance,
   externalRead,
   OperatorCancelled,
   pauseTicketAgentForOperator,
@@ -52,11 +53,13 @@ async function acceptReview(
 ): Promise<VerifiedHandoff> {
   const evidence = await externalRead({
     action: () =>
-      input.gitWorkspace.inspectReview({
-        worktree: handoff.worktree,
-        base: handoff.base,
-        implementationHead,
-      }),
+      advance(input.operator, () =>
+        input.gitWorkspace.inspectReview({
+          worktree: handoff.worktree,
+          base: handoff.base,
+          implementationHead,
+        }),
+      ),
     audit: input.audit,
     event: input.event("review", "inspect_review", `ticket:${handoff.ticket}`),
     clock: input.clock,
@@ -92,6 +95,7 @@ async function runReviewRound(
       "Review requires a committed implementation Verified Handoff",
     );
   if (!input.reviewAgent) throw new Error("Review agent is not configured");
+  const reviewAgent = input.reviewAgent;
   const implementationHead = handoff.commits.at(-1)!.sha;
   let continuationPrompt = round.session.resumePrompt;
   let attemptNumber!: number;
@@ -130,6 +134,7 @@ async function runReviewRound(
       resumePrompt === undefined ? undefined : "resumed",
     );
     let resultDiagnostics: AgentDiagnostics | undefined;
+    let releaseIntervention: (() => void) | undefined;
     try {
       const gitDirectory = await mkdtemp(
         path.join(tmpdir(), "sandcastle-runner-git-"),
@@ -148,54 +153,63 @@ async function runReviewRound(
       try {
         const gitConfigGlobal = path.join(gitDirectory, "config");
         await writeFile(gitConfigGlobal, "");
-        result = await input.agentExecutor.executeReview({
-          ticket: handoff.ticket,
-          runName: `review issue ${handoff.ticket}`,
-          worktree: handoff.worktree,
-          branch: handoff.branch,
-          base: handoff.base,
-          targetBranch: input.targetBranch,
-          promptFile: input.reviewPrompt,
-          promptArgs: {
-            REVIEW_INPUT: reviewInput,
-          },
-          agent: input.reviewAgent.agent,
-          model: input.reviewAgent.model,
-          ...(input.reviewAgent.options === undefined
-            ? {}
-            : { options: input.reviewAgent.options }),
-          gitConfigGlobal,
-          logFile,
-          timeoutMs: input.timeoutMs,
-          retryPolicy: input.retryPolicy,
-          signal,
-          ...(resumePrompt === undefined ? {} : { resumePrompt }),
-        });
-        resultDiagnostics = result.diagnostics;
+        result = await advance(input.operator, () =>
+          input.agentExecutor.executeReview({
+            ticket: handoff.ticket,
+            runName: `review issue ${handoff.ticket}`,
+            worktree: handoff.worktree,
+            branch: handoff.branch,
+            base: handoff.base,
+            targetBranch: input.targetBranch,
+            promptFile: input.reviewPrompt,
+            promptArgs: {
+              REVIEW_INPUT: reviewInput,
+            },
+            agent: reviewAgent.agent,
+            model: reviewAgent.model,
+            ...(reviewAgent.options === undefined
+              ? {}
+              : { options: reviewAgent.options }),
+            gitConfigGlobal,
+            logFile,
+            timeoutMs: input.timeoutMs,
+            retryPolicy: input.retryPolicy,
+            signal: input.operator.coordination
+              ? AbortSignal.any([
+                  signal,
+                  input.operator.coordination.controller.signal,
+                ])
+              : signal,
+            advance: (action) => advance(input.operator, action),
+            ...(resumePrompt === undefined ? {} : { resumePrompt }),
+          }),
+        );
+        resultDiagnostics = {
+          provider: reviewAgent.agent,
+          workingDirectory: handoff.worktree,
+          diagnosticLogPath: logFile,
+          ...result.diagnostics,
+          agentAttemptId: attemptId,
+          attemptOrdinal: attemptNumber,
+        };
+        if (result.outcome === "blocked")
+          releaseIntervention = input.operator.coordination?.intervene();
+      } catch (error) {
+        releaseIntervention ??= input.operator.coordination?.intervene();
+        throw error;
       } finally {
         await rm(gitDirectory, { recursive: true, force: true });
       }
-      await boundary(input, handoff.ticket);
-      if (result.diagnostics) {
-        result.diagnostics.agentAttemptId = attemptId;
-        result.diagnostics.attemptOrdinal = attemptNumber;
-      }
       if (result.outcome === "blocked") {
-        await appendOperation(
-          input,
-          event,
-          "blocked",
-          null,
-          result.diagnostics,
-        );
-        const continuable = result.diagnostics?.retryable !== false;
+        await appendOperation(input, event, "blocked", null, resultDiagnostics);
+        const continuable = resultDiagnostics?.retryable !== false;
         const decision = await pauseTicketAgentForOperator(
           input.audit,
           event,
           input.operator,
           agentPauseMessage(
             "blocked",
-            result.diagnostics,
+            resultDiagnostics,
             handoff.worktree,
             {
               summary: "Review could not complete.",
@@ -205,6 +219,8 @@ async function runReviewRound(
           ),
           continuable,
         );
+        releaseIntervention?.();
+        releaseIntervention = undefined;
         if (decision.decision === "skip")
           return await skipTicketAgentAttempt(
             input,
@@ -219,6 +235,7 @@ async function runReviewRound(
             decision.decision === "retry" ? "continue" : decision.response;
         continue;
       }
+      await boundary(input, handoff.ticket);
       if (result.outcome === "findings") {
         if (result.findings_file !== findingsFile)
           throw new Error(
@@ -229,13 +246,7 @@ async function runReviewRound(
           throw new Error("Review findings must be a nonempty Markdown file");
       }
       const reviewed = await acceptReview(input, handoff, implementationHead);
-      await appendOperation(
-        input,
-        event,
-        "succeeded",
-        null,
-        result.diagnostics,
-      );
+      await appendOperation(input, event, "succeeded", null, resultDiagnostics);
       return { handoff: reviewed, result };
     } catch (error) {
       if (error instanceof OperatorCancelled || error instanceof TicketSkipped)
@@ -244,7 +255,9 @@ async function runReviewRound(
         await appendOperation(input, event, error.result.outcome, null);
         throw error;
       }
+      releaseIntervention ??= input.operator.coordination?.intervene();
       const diagnostics: AgentDiagnostics = {
+        provider: reviewAgent.agent,
         ...resultDiagnostics,
         error:
           error instanceof Error
@@ -283,6 +296,8 @@ async function runReviewRound(
         ),
         continuable,
       );
+      releaseIntervention?.();
+      releaseIntervention = undefined;
       if (decision.decision === "skip")
         return await skipTicketAgentAttempt(
           input,
@@ -295,6 +310,8 @@ async function runReviewRound(
       if (continuable)
         continuationPrompt =
           decision.decision === "retry" ? "continue" : decision.response;
+    } finally {
+      releaseIntervention?.();
     }
   }
 }

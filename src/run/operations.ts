@@ -1,5 +1,6 @@
 import type { AuditEvent, AuditLog } from "../audit.ts";
 import type { Clock, OperatorIO, RetryPolicy } from "./contracts.ts";
+import { RunCoordination } from "./run-coordination.ts";
 
 export class OperatorCancelled extends Error {}
 
@@ -14,6 +15,7 @@ export class TicketSkipped extends Error {
 
 export function scopeOperator(operator: OperatorIO, scope: string): OperatorIO {
   return {
+    ...operator,
     skipScope: scope,
     write: (message) => operator.write(message),
     pause: (message) => operator.pause(message),
@@ -24,8 +26,10 @@ export function serializeOperator(
   operator: OperatorIO,
   controller: AbortController,
 ): OperatorIO {
+  const coordination = new RunCoordination(controller);
   let tail = Promise.resolve();
   return {
+    coordination,
     ...(operator.skipScope === undefined
       ? {}
       : { skipScope: operator.skipScope }),
@@ -33,6 +37,7 @@ export function serializeOperator(
       operator.write(message);
     },
     async pause(message) {
+      const releaseIntervention = coordination.intervene();
       const previous = tail;
       let release!: () => void;
       tail = new Promise<void>((resolve) => {
@@ -47,29 +52,45 @@ export function serializeOperator(
         return response;
       } finally {
         release();
+        releaseIntervention();
       }
     },
   };
+}
+
+export function advance<T>(
+  operator: OperatorIO,
+  action: () => Promise<T>,
+): Promise<T> {
+  return operator.coordination
+    ? operator.coordination.advance(action)
+    : action();
 }
 
 export async function supervisedAuditWrite(
   action: () => Promise<void>,
   operator: OperatorIO,
 ): Promise<void> {
-  for (;;) {
-    try {
-      await action();
-      return;
-    } catch {
-      for (;;) {
-        const response = await operator.pause(
-          "Audit write failed. Enter to retry the same log action, q/EOF to cancel. Other input is unsupported.",
-        );
-        if (response === null || response === "q")
-          throw new OperatorCancelled("operator cancelled");
-        if (response === "") break;
+  let release: (() => void) | undefined;
+  try {
+    for (;;) {
+      try {
+        await action();
+        return;
+      } catch {
+        release ??= operator.coordination?.intervene();
+        for (;;) {
+          const response = await operator.pause(
+            "Audit write failed. Enter to retry the same log action, q/EOF to cancel. Other input is unsupported.",
+          );
+          if (response === null || response === "q")
+            throw new OperatorCancelled("operator cancelled");
+          if (response === "") break;
+        }
       }
     }
+  } finally {
+    release?.();
   }
 }
 
@@ -161,43 +182,48 @@ async function waitForOperator(
   allowsSkip: boolean,
   allowsInstructions: boolean,
 ): Promise<string> {
-  const record = (result: string, transition = result) =>
-    supervisedAuditWrite(
-      () =>
-        audit.append({
-          ...event,
-          operation: "operator_pause",
-          result,
-          error: null,
-          transition,
-        }),
-      operator,
-    );
-  for (;;) {
-    await record("started", "pause_started");
-    const response = await operator.pause(message);
-    if (response === null || response === "q") {
-      await record("cancelled");
-      throw new OperatorCancelled("operator cancelled");
+  const release = operator.coordination?.intervene();
+  try {
+    const record = (result: string, transition = result) =>
+      supervisedAuditWrite(
+        () =>
+          audit.append({
+            ...event,
+            operation: "operator_pause",
+            result,
+            error: null,
+            transition,
+          }),
+        operator,
+      );
+    for (;;) {
+      await record("started", "pause_started");
+      const response = await operator.pause(message);
+      if (response === null || response === "q") {
+        await record("cancelled");
+        throw new OperatorCancelled("operator cancelled");
+      }
+      const result =
+        response === ""
+          ? "retry"
+          : allowsSkip && response === "s"
+            ? "skipped"
+            : allowsInstructions
+              ? "continue"
+              : "unsupported_input";
+      await record(
+        result,
+        result === "continue"
+          ? "operator_prompt"
+          : result === "unsupported_input"
+            ? "pause_started"
+            : result,
+      );
+      if (result !== "unsupported_input") return response;
+      operator.write("Unsupported input. " + message);
     }
-    const result =
-      response === ""
-        ? "retry"
-        : allowsSkip && response === "s"
-          ? "skipped"
-          : allowsInstructions
-            ? "continue"
-            : "unsupported_input";
-    await record(
-      result,
-      result === "continue"
-        ? "operator_prompt"
-        : result === "unsupported_input"
-          ? "pause_started"
-          : result,
-    );
-    if (result !== "unsupported_input") return response;
-    operator.write("Unsupported input. " + message);
+  } finally {
+    release?.();
   }
 }
 
@@ -218,8 +244,11 @@ export async function externalRead<T>(operation: ReadOperation<T>): Promise<T> {
       );
       let result: T;
       try {
-        result = await operation.action();
+        result = await (attempt === 1
+          ? operation.action()
+          : advance(operation.operator, operation.action));
       } catch (error) {
+        operation.operator.coordination?.controller.signal.throwIfAborted();
         await supervisedAuditWrite(
           () =>
             operation.audit.append({
@@ -290,8 +319,9 @@ export async function workflowWrite<T>(
     }
     let result: T | void;
     try {
-      result = await operation.action();
+      result = await advance<T | void>(operation.operator, operation.action);
     } catch (error) {
+      operation.operator.coordination?.controller.signal.throwIfAborted();
       await supervisedAuditWrite(
         () =>
           operation.audit.append({

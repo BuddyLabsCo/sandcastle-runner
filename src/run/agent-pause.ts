@@ -32,6 +32,7 @@ export function agentPauseMessage(
   const session = availableValue(d.sessionId);
   return [
     `Outcome: ${outcome}`,
+    `Invocation: ${availableValue(d.agentAttemptId)}`,
     `Reason: ${firstLine(result?.blocker, result?.summary, d.error)}`,
     `Agent: ${availableValue(d.provider)}`,
     `Provider session: ${session}`,

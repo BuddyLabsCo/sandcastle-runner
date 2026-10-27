@@ -174,7 +174,8 @@ export async function integratePullRequest(
 export async function publishVerifiedHandoffs(
   input: PublicationInput,
 ): Promise<PublicationResult> {
-  const controller = new AbortController();
+  const controller =
+    input.operator.coordination?.controller ?? new AbortController();
   input.replacedWorkspaceCleanup ??= {
     removedWorktrees: new Set<string>(),
     deletedBranches: new Set<string>(),
@@ -183,7 +184,9 @@ export async function publishVerifiedHandoffs(
   const concurrentInput = {
     ...input,
     replacedWorkspaceCleanup: input.replacedWorkspaceCleanup,
-    operator: serializeOperator(input.operator, controller),
+    operator: input.operator.coordination
+      ? input.operator
+      : serializeOperator(input.operator, controller),
   };
   interface PublicationAttempt {
     published?: PublishedHandoff;

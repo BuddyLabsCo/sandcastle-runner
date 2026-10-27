@@ -204,19 +204,23 @@ export class SandcastleAgentExecutor implements AgentExecutor {
         const sandbox = noShellSandbox({
           env: { GIT_CONFIG_GLOBAL: input.gitConfigGlobal },
         });
-        const invocation = await invokeSandbox(this.run, {
-          agent: provider,
-          sandbox,
-          cwd: input.worktree,
-          name: input.runName,
-          prompt: "Reply with exactly: SESSION_READY",
-          maxIterations: 1,
-          completionSignal: ["SESSION_READY"],
-          idleTimeoutSeconds: input.timeoutMs / 1000,
-          branchStrategy: { type: "head" },
-          logging: { type: "file", path: input.logFile },
-          signal: input.signal,
-        });
+        const invoke = () => {
+          input.signal.throwIfAborted();
+          return invokeSandbox(this.run, {
+            agent: provider,
+            sandbox,
+            cwd: input.worktree,
+            name: input.runName,
+            prompt: "Reply with exactly: SESSION_READY",
+            maxIterations: 1,
+            completionSignal: ["SESSION_READY"],
+            idleTimeoutSeconds: input.timeoutMs / 1000,
+            branchStrategy: { type: "head" },
+            logging: { type: "file", path: input.logFile },
+            signal: input.signal,
+          });
+        };
+        const invocation = await (input.advance?.(invoke) ?? invoke());
         const resultSessionId = invocation.result?.iterations.at(-1)?.sessionId;
         if (invocation.settlement.outcome === "failed")
           throw cleanupFailure(
@@ -388,25 +392,35 @@ export class SandcastleAgentExecutor implements AgentExecutor {
           const sandbox = noShellSandbox({
             env: { GIT_CONFIG_GLOBAL: input.gitConfigGlobal },
           });
-          const invocation = await invokeSandbox(this.run, {
-            agent: provider,
-            sandbox,
-            cwd: input.worktree,
-            name: input.runName,
-            prompt: runPrompt,
-            maxIterations: 1,
-            completionSignal: [],
-            idleTimeoutSeconds: input.timeoutMs / 1000,
-            branchStrategy: { type: "head" },
-            logging: { type: "file", path: input.logFile },
-            output: Output.object({
-              tag,
-              schema,
-              maxRetries: 0,
-            }),
-            ...(isUsableSessionId(resumeSession) ? { resumeSession } : {}),
-            signal: controller.signal,
-          });
+          const invoke = () => {
+            const stopped = this.stopFailure(
+              input,
+              provider.name,
+              controller.signal,
+              resumeSession,
+            );
+            if (stopped !== undefined) throw stopped;
+            return invokeSandbox(this.run, {
+              agent: provider,
+              sandbox,
+              cwd: input.worktree,
+              name: input.runName,
+              prompt: runPrompt,
+              maxIterations: 1,
+              completionSignal: [],
+              idleTimeoutSeconds: input.timeoutMs / 1000,
+              branchStrategy: { type: "head" },
+              logging: { type: "file", path: input.logFile },
+              output: Output.object({
+                tag,
+                schema,
+                maxRetries: 0,
+              }),
+              ...(isUsableSessionId(resumeSession) ? { resumeSession } : {}),
+              signal: controller.signal,
+            });
+          };
+          const invocation = await (input.advance?.(invoke) ?? invoke());
           if (invocation.settlement.outcome === "failed")
             throw cleanupFailure(
               input,

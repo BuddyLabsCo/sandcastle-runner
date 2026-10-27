@@ -351,7 +351,8 @@ export async function implementReservedBatch(
 ): Promise<AttemptBatchResult> {
   const candidates: number[] = [];
   const tickets: TicketAttemptOutcome[] = [];
-  const controller = new AbortController();
+  const controller =
+    input.operator.coordination?.controller ?? new AbortController();
   let attempts: Promise<TicketAttemptOutcome>[] = [];
   try {
     for (const ticket of input.batch) {
@@ -433,7 +434,9 @@ export async function implementReservedBatch(
     });
     const concurrentInput = {
       ...input,
-      operator: serializeOperator(input.operator, controller),
+      operator: input.operator.coordination
+        ? input.operator
+        : serializeOperator(input.operator, controller),
     };
     attempts = candidates.map((ticket) =>
       implementTicket(concurrentInput, ticket, base, controller).then(
