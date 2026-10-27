@@ -252,12 +252,13 @@ export async function runAgentOperation(
             logFile,
             timeoutMs: input.timeoutMs,
             idleTimeoutMs: input.idleTimeoutMs,
-            pauseForTimeout: (cause) =>
+            pauseForTimeout: (cause, intervention) =>
               pauseForAgentTimeout(
                 input.audit,
                 event,
                 input.operator,
                 `Agent ${cause} threshold reached for ${operation.runName}. Working directory: ${operation.worktree}. Diagnostic log: ${logFile}.`,
+                intervention,
               ),
             retryPolicy: input.retryPolicy,
             signal: input.operator.coordination

@@ -50,7 +50,7 @@ Place these modules under `src/run/`. Each owns a cohesive workflow responsibili
 | `maintenance.ts` | One maintenance occurrence: ticket creation, documentation attempt, ordinary PR lifecycle reuse, or direct no-change closure. Label-trigger scheduling stays in `run.ts`. |
 | `cleanup.ts` | Terminal Worktree enumeration, exact ownership matching, removal, and retry evidence. |
 | `run-coordination.ts` | Run-scoped intervention ownership, advancement gates, and cancellation wake-up. Shared through scoped OperatorIO and passed to Agent Executor launches. |
-| `operations.ts` | Shared Operation Retry for external reads and workflow writes, plus serialized Operator Pause actions, explicit issue scope, cancellation, and operation audit events. It shares one Run-scoped coordination boundary across workflow writes, Agent results, and execution launches. Operator input never substitutes for observed results. |
+| `operations.ts` | Shared Operation Retry for external reads and workflow writes, plus serialized Operator Pause actions, explicit issue scope, cancellation, takeover acknowledgement, and operation audit events. It shares one Run-scoped coordination boundary across workflow writes, Agent results, and execution launches. Operator input never substitutes for observed results. |
 | `standalone-discovery.ts` | Direct issue eligibility, Reservation, and terminal handling without Parent or child discovery. |
 | `standalone-run.ts` | Standalone issue orchestration through implementation, Review, publication, integration, and cleanup. |
 | `publication-input.ts` | Shared construction of publication inputs for Parent and standalone runs. |
@@ -75,7 +75,7 @@ Under `src/adapters/`, implement only operations the current implementation need
 | `codebuddy.ts` | Local Sandcastle-compatible CodeBuddy provider: foreground print commands, supported native options, stream translation, terminal failure evidence, and exact main-session lookup using the CLI storage configuration. It owns no workflow decisions or permission approval transport. |
 | `no-shell-sandbox.ts` | Generic host command parsing and launch, plus per-invocation owned-handle settlement of host processes started by the Runner's no-sandbox provider. It does not inspect agent names or provider output. |
 | `process-settlement.ts` | Invocation settlement capture and nonretryable cleanup-failure diagnostics that block the next automatic process launch. |
-| `agent-supervision.ts` | Per-invocation idle and overall thresholds, raw process activity, retained outcomes through timeout acknowledgement, and cancellation settlement. Uses the Run-provided timeout pause and advancement gate; disables Sandcastle's native idle-kill timer. |
+| `agent-supervision.ts` | Per-invocation idle and overall thresholds, raw process activity, retained outcomes through timeout acknowledgement, selected-only kill, exact native transcript lookup for manual takeover, and cancellation settlement. Uses the Run-provided timeout pause and advancement gate; disables Sandcastle's native idle-kill timer. |
 | `process-errors.ts` | External command startup diagnostics and Agent Attempt output errors. It does not classify failures by agent name or message text. |
 | `process-tree.ts` | OS-bound termination of a Runner-owned child process and its descendants. |
 | `sandcastle-output.ts` | Agent and Review Attempt output schemas, strict validation, structured-output diagnostics, and prompt placeholder replacement. |

@@ -215,6 +215,10 @@ export class SandcastleAgentExecutor implements AgentExecutor {
           );
         if (input.signal.aborted)
           throw abortReason(input.signal, "Agent Attempt cancelled");
+        if (invocation.takeoverSession) {
+          this.sessions.set(input.logFile, invocation.takeoverSession);
+          return invocation.takeoverSession;
+        }
         if (invocation.runError !== undefined) throw invocation.runError;
         const result = invocation.result;
         if (result === undefined)
@@ -392,6 +396,13 @@ export class SandcastleAgentExecutor implements AgentExecutor {
           );
         const stopped = this.stopFailure(input, provider.name, resumeSession);
         if (stopped !== undefined) throw stopped;
+        if (invocation.takeoverSession) {
+          resumeSession = invocation.takeoverSession;
+          this.sessions.set(input.logFile, resumeSession);
+          prompt =
+            "The operator has exited manual native-session handling. Continue the original task in this exact session and worktree, and return the required result. Do not treat this as approval for a terminated process's in-memory request.";
+          continue;
+        }
         if (invocation.runError !== undefined) throw invocation.runError;
         if (invocation.result === undefined)
           throw new Error("Sandcastle returned no invocation result");

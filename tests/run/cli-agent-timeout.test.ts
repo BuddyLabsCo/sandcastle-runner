@@ -247,9 +247,9 @@ test("competing idle pauses retain a late failure and success until every acknow
           inputs.set(input.ticket, input);
           return executor.execute({
             ...input,
-            pauseForTimeout(cause) {
+            pauseForTimeout(cause, intervention) {
               timeouts += 1;
-              const pause = input.pauseForTimeout(cause);
+              const pause = input.pauseForTimeout(cause, intervention);
               if (timeouts === 2) bothPaused();
               return pause;
             },
@@ -278,70 +278,74 @@ test("competing idle pauses retain a late failure and success until every acknow
   assert.deepEqual(waits, [10_000]);
 });
 
-test("failed settlement after timeout acknowledgement blocks fresh attempts and Worktree cleanup", async () => {
-  const root = await createProject();
-  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
-    ...validConfig,
-    timeouts: { ...validConfig.timeouts, agentMinutes: 0.0005 },
-  });
-  const delivery = createCommittedBatch(9);
-  let finish!: () => void;
-  const complete = new Promise<void>((resolve) => {
-    finish = resolve;
-  });
-  let calls = 0;
-  let prompts = 0;
-  let removals = 0;
-  const executor = new SandcastleAgentExecutor(
-    async (options) => {
-      if (options.prompt === "Reply with exactly: SESSION_READY")
-        return {
-          iterations: [{ sessionId: "session" }],
-          stdout: "SESSION_READY",
-          commits: [],
-          branch: "unused",
-          output: undefined,
-        };
-      calls += 1;
-      (options.sandbox as NoShellSandboxProvider).settle = async () => ({
-        outcome: "failed",
-        error: "owned process settlement unknown",
-      });
-      await complete;
-      return agentResult(
-        `<agent_attempt_result>${JSON.stringify(committed)}</agent_attempt_result>`,
-        committed,
-      );
-    },
-    async () => {},
-    async () => {},
-    async () => {},
-  );
-  const result = await executeCli(
-    ["run", "--project", "demo", "--parent", "8"],
-    createCliDependencies(root, {
-      tracker: delivery.tracker,
-      gitWorkspace: {
-        ...delivery.gitWorkspace,
-        async removeWorktree() {
-          removals += 1;
-        },
+for (const action of ["", "k"]) {
+  test(`failed settlement after timeout ${action === "k" ? "kill" : "acknowledgement"} blocks fresh attempts and Worktree cleanup`, async () => {
+    const root = await createProject();
+    await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+      ...validConfig,
+      timeouts: { ...validConfig.timeouts, agentMinutes: 0.0005 },
+    });
+    const delivery = createCommittedBatch(9);
+    let finish!: () => void;
+    const complete = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    let calls = 0;
+    let prompts = 0;
+    let removals = 0;
+    const executor = new SandcastleAgentExecutor(
+      async (options) => {
+        if (options.prompt === "Reply with exactly: SESSION_READY")
+          return {
+            iterations: [{ sessionId: "session" }],
+            stdout: "SESSION_READY",
+            commits: [],
+            branch: "unused",
+            output: undefined,
+          };
+        calls += 1;
+        (options.sandbox as NoShellSandboxProvider).settle = async () => ({
+          outcome: "failed",
+          error: "owned process settlement unknown",
+        });
+        await complete;
+        return agentResult(
+          `<agent_attempt_result>${JSON.stringify(committed)}</agent_attempt_result>`,
+          committed,
+        );
       },
-      agentExecutor: executor,
-      operator: {
-        async pause() {
-          prompts += 1;
-          finish();
-          return prompts < 3 ? "" : "q";
+      async () => {},
+      async () => {},
+      async () => {},
+    );
+    const result = await executeCli(
+      ["run", "--project", "demo", "--parent", "8"],
+      createCliDependencies(root, {
+        tracker: delivery.tracker,
+        gitWorkspace: {
+          ...delivery.gitWorkspace,
+          async removeWorktree() {
+            removals += 1;
+          },
         },
-      },
-    }),
-  );
-  assert.equal(result.summary.outcome, "failed");
-  assert.equal(prompts, 1);
-  assert.equal(calls, 1);
-  assert.equal(removals, 0);
-  assert.ok(
-    result.summary.reasons.some((reason) => reason.includes("cleanup failed")),
-  );
-});
+        agentExecutor: executor,
+        operator: {
+          async pause() {
+            prompts += 1;
+            finish();
+            return prompts === 1 ? action : "q";
+          },
+        },
+      }),
+    );
+    assert.equal(result.summary.outcome, "failed");
+    assert.equal(prompts, 1);
+    assert.equal(calls, 1);
+    assert.equal(removals, 0);
+    assert.ok(
+      result.summary.reasons.some((reason) =>
+        reason.includes("cleanup failed"),
+      ),
+    );
+  });
+}

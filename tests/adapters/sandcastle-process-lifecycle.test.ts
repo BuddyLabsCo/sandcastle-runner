@@ -119,6 +119,7 @@ async function supervisedFixture(directory: string, mode: "complete" | "hang") {
   const script = path.join(directory, "agent.cjs");
   const pidFile = path.join(directory, "pid");
   const childFile = path.join(directory, "child");
+  const writesFile = path.join(directory, "writes");
   const releaseFile = path.join(directory, "release");
   const logFile = path.join(directory, "agent.log");
   const gitConfigGlobal = path.join(directory, "gitconfig");
@@ -130,8 +131,12 @@ const fs = require("node:fs");
 const {spawn} = require("node:child_process");
 if (process.argv[2] === "probe") { console.log("SESSION_READY"); }
 else {
+  if (fs.existsSync(${JSON.stringify(releaseFile)})) {
+    console.log(${JSON.stringify(`<agent_attempt_result>${JSON.stringify(committed)}</agent_attempt_result>`)});
+    process.exit(0);
+  }
   fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
-  ${mode === "hang" ? `spawn(process.execPath, ["-e", 'require("node:fs").writeFileSync(process.argv[1], String(process.pid)); setInterval(() => {}, 1000)', ${JSON.stringify(childFile)}], {stdio:"ignore"});` : ""}
+  ${mode === "hang" ? `spawn(process.execPath, ["-e", 'const fs = require("node:fs"); fs.writeFileSync(process.argv[1], String(process.pid)); setInterval(() => fs.appendFileSync(process.argv[2], "tick"), 10)', ${JSON.stringify(childFile)}, ${JSON.stringify(writesFile)}], {stdio:"ignore"});` : ""}
   const timer = setInterval(() => {
     if (!fs.existsSync(${JSON.stringify(releaseFile)})) return;
     clearInterval(timer);
@@ -150,6 +155,10 @@ else {
   const executor = new SandcastleAgentExecutor(
     async (options) => {
       calls += 1;
+      options.agent.sessionStorage!.findByIdOnHost = async () => ({
+        path: logFile,
+        searchedRoot: directory,
+      });
       const probe = options.prompt === "Reply with exactly: SESSION_READY";
       const provider: AgentProvider = {
         name: "harmless-agent",
@@ -191,6 +200,7 @@ else {
     executor,
     pidFile,
     childFile,
+    writesFile,
     releaseFile,
     logFile,
     finished,
@@ -209,6 +219,41 @@ else {
     },
   };
 }
+
+test("selected kill confirms real descendant settlement before manual handling and same-session continuation", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "supervised-kill-"));
+  const pids: number[] = [];
+  try {
+    const fixture = await supervisedFixture(directory, "hang");
+    let pauses = 0;
+    const result = await fixture.executor.execute({
+      ...fixture.attempt,
+      pauseForTimeout: async (_cause, intervention) => {
+        pauses += 1;
+        assert.ok(intervention);
+        pids.push(
+          await waitForPid(fixture.pidFile),
+          await waitForPid(fixture.childFile),
+        );
+        const stopped = await intervention.kill();
+        assert.equal(stopped.continuable, true);
+        assert.match(stopped.message, /harmless-session/u);
+        for (const pid of pids) assert.equal(processExists(pid), false);
+        const writes = await readFile(fixture.writesFile, "utf8");
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        assert.equal(await readFile(fixture.writesFile, "utf8"), writes);
+        assert.equal(fixture.calls(), 2);
+        await writeFile(fixture.releaseFile, "manual CLI exited");
+      },
+    });
+    assert.equal(result.outcome, "committed");
+    assert.equal(pauses, 1);
+    assert.equal(fixture.calls(), 3);
+  } finally {
+    for (const pid of pids) stopProcess(pid);
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test("integrated supervision disables native idle kill and retains natural completion and late output through pause", async () => {
   const directory = await mkdtemp(join(tmpdir(), "supervised-agent-"));

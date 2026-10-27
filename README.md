@@ -168,10 +168,9 @@ parent instructions. If both files exist, keep required Project instructions in
 the selected file or reference them explicitly from the Project prompt. Check
 this precedence before a Run; Runner does not rewrite native instruction files.
 
-The [provider evidence](docs/research/codebuddy-provider-evidence.md) separates
-measured durable continuation from remaining live operation and takeover checks.
-All providers share the [timeout intervention lifecycle](projects/README.md#agent-timeout-thresholds).
-Selected-only termination and manual takeover remain separate work.
+The [provider evidence](docs/research/codebuddy-provider-evidence.md) records durable continuation.
+The [takeover evidence](docs/research/codebuddy-takeover-evidence.md) records the live native-session chain, operation checks, and permission limits.
+All providers share the [timeout intervention lifecycle](projects/README.md#agent-timeout-thresholds), including selected-only `k` and manual takeover after confirmed process settlement.
 
 ## Configuration
 
