@@ -24,12 +24,18 @@ Install these on the host that runs Runner:
 - GitHub CLI (`gh`), with `gh` on `PATH`.
 - An installed and authenticated coding-agent CLI for every configured agent,
   directly runnable on `PATH`.
+- Native agent permission settings that allow required operations without
+  interactive CLI approval prompts.
 - A GitHub repository checkout at an absolute path.
 
 Runner uses Sandcastle's native agent factories and supports `codex`,
 `claude-code`, and `pi` profiles. Prepare each selected agent's own sign-in,
 skills, MCP servers, and native configuration. Runner does not install or
 normalize them.
+
+Complete permission setup before starting Runner. Operator Pause accepts recovery
+instructions after an Agent Attempt stops; it does not answer native CLI approval
+prompts.
 
 Keep the Runner checkout, project checkout, worktrees, state, logs, temporary
 files, and agent session state on paths without Chinese characters.
