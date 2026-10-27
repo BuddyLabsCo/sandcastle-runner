@@ -15,6 +15,7 @@ test("a cross-repository child fails explicitly without Operator Pause", async (
   const root = await createProject();
   let closeCalls = 0;
   let pauseCalls = 0;
+  const messages: string[] = [];
   const result = await executeCli(
     ["run", "--project", "demo", "--parent", "8"],
     createCliDependencies(root, {
@@ -37,6 +38,7 @@ test("a cross-repository child fails explicitly without Operator Pause", async (
         },
       },
       operator: {
+        write: (message) => void messages.push(message),
         async pause() {
           pauseCalls += 1;
           return "q";
@@ -50,6 +52,7 @@ test("a cross-repository child fails explicitly without Operator Pause", async (
   assert.equal(result.exitCode, 1);
   assert.equal(closeCalls, 0);
   assert.equal(pauseCalls, 0);
+  assert.match(messages.at(-1)!, /^Error: .*cross-repository[\s\S]*\n\s+at /mu);
 });
 
 test("a completed Parent with an open child fails as contradictory", async () => {
@@ -421,9 +424,7 @@ test("startup validation errors return a failed summary without workflow or paus
         },
       },
       operator: {
-        write(message) {
-          messages.push(message);
-        },
+        write: (message) => void messages.push(message),
         async pause() {
           pauseCalls += 1;
           return "q";
@@ -468,9 +469,7 @@ test("malformed Recovery Snapshots fail startup with one readable error", async 
         },
       },
       operator: {
-        write(message) {
-          messages.push(message);
-        },
+        write: (message) => void messages.push(message),
         async pause() {
           pauseCalls += 1;
           return "q";

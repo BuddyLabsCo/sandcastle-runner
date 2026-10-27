@@ -15,6 +15,7 @@ test.afterEach(cleanupTempRoots);
 
 test("cancelling an exhausted conflict budget stops before republishing or remerge", async () => {
   const runNames: string[] = [];
+  const progress: string[] = [];
   const root = await createProject();
   const delivery = createCommittedDelivery();
   let agentCalls = 0;
@@ -82,6 +83,9 @@ test("cancelling an exhausted conflict budget stops before republishing or remer
         },
       },
       operator: {
+        write(message) {
+          progress.push(message);
+        },
         async pause(message) {
           assert.match(message, /Conflict repair failed after two attempts/u);
           return "q";
@@ -95,6 +99,7 @@ test("cancelling an exhausted conflict budget stops before republishing or remer
   assert.equal(pushes, 1);
   assert.equal(mergeRequests, 1);
   assert.equal(runNames[1], "resolve conflict for pr 1");
+  assert.ok(progress.includes("issue-9: resolve merge conflict"));
 });
 
 test("Parent cancellation after conflict repair verification prevents its first push", async () => {

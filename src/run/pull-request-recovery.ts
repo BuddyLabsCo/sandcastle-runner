@@ -354,8 +354,12 @@ export async function recoverPublishedHandoffs(
         ticket: current.ticket,
         ...(current.pullRequest === undefined
           ? {}
-          : { pullRequest: current.pullRequest.number }),
+          : {
+              pullRequest: current.pullRequest.number,
+              pullRequestUrl: current.pullRequest.url,
+            }),
         reason: `${error.reason}${residue ? `; ${residue}` : ""}`,
+        skipReason: error.pauseReason,
       });
     }
   }

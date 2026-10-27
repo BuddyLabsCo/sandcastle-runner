@@ -40,6 +40,7 @@ export interface MaintenanceResult {
   outcome: "succeeded" | "incomplete" | "cancelled" | "failed" | "skipped";
   reasons: string[];
   ticket?: number;
+  skipReason?: string;
   handoff?: VerifiedHandoff;
   pullRequest?: PullRequestObservation;
 }
@@ -69,12 +70,14 @@ async function skipMaintenance(
   reason: string,
   handoff?: VerifiedHandoff,
   pullRequest?: PullRequestObservation,
+  skipReason = reason,
 ): Promise<MaintenanceResult> {
   await input.persistMaintenance?.(null);
   return {
     outcome: "skipped",
     reasons: [`skipped Maintenance Ticket ${ticket}: ${reason}`],
     ticket,
+    skipReason,
     ...(handoff === undefined ? {} : { handoff }),
     ...(pullRequest === undefined ? {} : { pullRequest }),
   };
@@ -231,6 +234,7 @@ export async function runDocumentationMaintenance(
     return {
       outcome: "skipped",
       reasons: [error.reason],
+      skipReason: error.pauseReason,
       ...(ticket === undefined ? {} : { ticket }),
     };
   }
@@ -328,7 +332,15 @@ async function runMaintenanceOccurrence(
     ]);
     const published = recovered.published[0];
     const skipped = recovered.skipped?.[0];
-    if (skipped) return skipMaintenance(input, ticket.number, skipped.reason);
+    if (skipped)
+      return skipMaintenance(
+        input,
+        ticket.number,
+        skipped.reason,
+        undefined,
+        undefined,
+        skipped.skipReason,
+      );
     if (recovered.outcome === "succeeded" && published === undefined) {
       await input.persistPublication?.(ticket.number, null);
       await persist({
@@ -389,6 +401,7 @@ async function runMaintenanceOccurrence(
         integration.reason,
         published.handoff,
         published.observation,
+        integration.skipReason,
       );
     await persist({
       phase: "blocked",
@@ -419,7 +432,14 @@ async function runMaintenanceOccurrence(
   if (attempt.outcome === "boundary")
     return stopped(attempt.boundary, ticket.number);
   if (attempt.outcome === "skipped")
-    return skipMaintenance(input, ticket.number, attempt.reason);
+    return skipMaintenance(
+      input,
+      ticket.number,
+      attempt.reason,
+      undefined,
+      undefined,
+      attempt.skipReason,
+    );
   if (attempt.outcome === "blocked") {
     await persist({
       phase: "blocked",
@@ -458,6 +478,7 @@ async function runMaintenanceOccurrence(
       skipped.reason,
       attempt.handoff,
       published?.observation,
+      skipped.skipReason,
     );
   if (
     publication.outcome !== "succeeded" ||
@@ -509,6 +530,7 @@ async function runMaintenanceOccurrence(
       integration.reason,
       attempt.handoff,
       published.observation,
+      integration.skipReason,
     );
   await persist({
     phase: "blocked",

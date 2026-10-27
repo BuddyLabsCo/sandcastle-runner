@@ -11,7 +11,11 @@ import type {
 import { externalRead, workflowWrite, TicketSkipped } from "./operations.ts";
 
 export interface DiscoveryInput {
-  onSkip?: (ticket: number, reason: string) => Promise<void>;
+  onSkip?: (
+    ticket: number,
+    reason: string,
+    pauseReason: string,
+  ) => Promise<void>;
   repository: string;
   parentTicket: number;
   standaloneIssue?: number;

@@ -393,7 +393,7 @@ test("a final report exception still removes an empty current Run parent", async
         },
         operator: {
           write(message) {
-            if (message.includes("Audit Log:"))
+            if (/^Issue\s+Status\s+PR\s+Detail$/mu.test(message))
               throw new Error("final report unavailable");
           },
           async pause() {

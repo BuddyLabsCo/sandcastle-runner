@@ -166,7 +166,7 @@ export async function observeRequiredChecks(
 export type RequiredChecksResult =
   | Pick<PullRequestObservation, "readiness" | "failedChecks">
   | Exclude<DeliveryBoundaryResult, { outcome: "ready" }>
-  | { outcome: "skipped"; reason: string };
+  | { outcome: "skipped"; reason: string; skipReason: string };
 
 export async function repairRequiredChecks(
   input: PublicationInput,
@@ -347,7 +347,7 @@ export async function repairMergeConflict(
 ): Promise<
   | { state: PullRequestState }
   | Exclude<DeliveryBoundaryResult, { outcome: "ready" }>
-  | { outcome: "skipped"; reason: string }
+  | { outcome: "skipped"; reason: string; skipReason: string }
 > {
   const controller = new AbortController();
   let currentHandoff = currentRepairHandoff(input, handoff);

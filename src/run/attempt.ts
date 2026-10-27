@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Attempt entry points and their skip/boundary transitions stay together. */
 import path from "node:path";
 
 import type { AgentConfig } from "../config.ts";
@@ -77,6 +78,7 @@ async function implementTicket(
     const session = {};
     const result = await runAgentOperation(ticketInput, {
       phase: "implement",
+      progress: { kind: "implement" },
       ...(input.review ? { session: session } : {}),
       runName: `implement issue ${ticket}`,
       ticket,
@@ -116,6 +118,7 @@ async function implementTicket(
         ticket,
         outcome: "skipped",
         detail: `skipped Delivery Ticket ${ticket}: ${error.reason}${reason ? `; ${reason}` : ""}`,
+        skipReason: error.pauseReason,
       };
     }
     if (error instanceof BoundaryStop && error.result.outcome === "stopped")
@@ -141,11 +144,12 @@ export async function runCiRepairAttempt(
       outcome: "boundary";
       boundary: Exclude<DeliveryBoundaryResult, { outcome: "ready" }>;
     }
-  | { outcome: "skipped"; reason: string }
+  | { outcome: "skipped"; reason: string; skipReason: string }
 > {
   try {
     const result = await runAgentOperation(input, {
       phase: "ci_repair",
+      progress: { kind: "ci_repair" },
       runName: `fix ci for pr ${input.pullRequest.number}`,
       ticket: input.handoff.ticket,
       worktree: input.handoff.worktree,
@@ -186,7 +190,11 @@ export async function runCiRepairAttempt(
         };
   } catch (error) {
     if (error instanceof TicketSkipped)
-      return { outcome: "skipped", reason: error.reason };
+      return {
+        outcome: "skipped",
+        reason: error.reason,
+        skipReason: error.pauseReason,
+      };
     if (error instanceof BoundaryStop) {
       return { outcome: "boundary", boundary: error.result };
     }
@@ -212,11 +220,12 @@ export async function runConflictRepairAttempt(
       outcome: "boundary";
       boundary: Exclude<DeliveryBoundaryResult, { outcome: "ready" }>;
     }
-  | { outcome: "skipped"; reason: string }
+  | { outcome: "skipped"; reason: string; skipReason: string }
 > {
   try {
     const result = await runAgentOperation(input, {
       phase: "conflict_repair",
+      progress: { kind: "conflict_repair" },
       runName: `resolve conflict for pr ${input.pullRequest.number}`,
       ticket: input.handoff.ticket,
       worktree: input.handoff.worktree,
@@ -253,7 +262,11 @@ export async function runConflictRepairAttempt(
         };
   } catch (error) {
     if (error instanceof TicketSkipped)
-      return { outcome: "skipped", reason: error.reason };
+      return {
+        outcome: "skipped",
+        reason: error.reason,
+        skipReason: error.pauseReason,
+      };
     if (error instanceof BoundaryStop) {
       return { outcome: "boundary", boundary: error.result };
     }
@@ -315,6 +328,7 @@ export async function runMaintenanceAttempt(
     });
     const result = await runAgentOperation(input, {
       phase: "maintenance",
+      progress: { kind: "maintenance" },
       runName: `document maintain issue ${input.ticket}`,
       ticket: input.ticket,
       worktree,
@@ -338,7 +352,11 @@ export async function runMaintenanceAttempt(
       : { outcome: "committed", handoff: result };
   } catch (error) {
     if (error instanceof TicketSkipped)
-      return { outcome: "skipped", reason: error.reason };
+      return {
+        outcome: "skipped",
+        reason: error.reason,
+        skipReason: error.pauseReason,
+      };
     if (error instanceof BoundaryStop) {
       return { outcome: "boundary", boundary: error.result };
     }
@@ -385,6 +403,7 @@ export async function implementReservedBatch(
             ticket,
             outcome: "skipped",
             detail: `${error.reason}${residue ? `; ${residue}` : ""}`,
+            skipReason: error.pauseReason,
           });
           continue;
         }

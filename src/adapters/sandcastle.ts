@@ -71,6 +71,36 @@ function firstUsableSessionId(...values: unknown[]): string | undefined {
   return values.find(isUsableSessionId);
 }
 
+/**
+ * Sandcastle prints its own "[agent] Started on branch ..." banner and a
+ * `tail -f` hint through `console.log` whenever file logging is selected. The
+ * Runner owns terminal progress, so those lines are swallowed for the duration
+ * of the invocation. Stored logs and the Runner's own operator output are
+ * unaffected because operator output does not use `console.log`. The counter
+ * keeps concurrent invocations quiet until the last one settles.
+ */
+let quietInvocations = 0;
+let savedConsoleLog: typeof console.log | undefined;
+
+async function withoutSandcastleTerminal<T>(
+  action: () => Promise<T>,
+): Promise<T> {
+  if (quietInvocations === 0) {
+    savedConsoleLog = console.log;
+    console.log = () => undefined;
+  }
+  quietInvocations += 1;
+  try {
+    return await action();
+  } finally {
+    quietInvocations -= 1;
+    if (quietInvocations === 0 && savedConsoleLog !== undefined) {
+      console.log = savedConsoleLog;
+      savedConsoleLog = undefined;
+    }
+  }
+}
+
 export class SandcastleAgentExecutor implements AgentExecutor {
   private readonly run: SandcastleRun;
   private readonly wait: Delay;
@@ -188,16 +218,18 @@ export class SandcastleAgentExecutor implements AgentExecutor {
           throw abortReason(input.signal, "Agent Attempt cancelled");
         const invoke = () => {
           input.signal.throwIfAborted();
-          return superviseInvocation(this.run, input, {
-            agent: provider,
-            cwd: input.worktree,
-            name: input.runName,
-            prompt: "Reply with exactly: SESSION_READY",
-            maxIterations: 1,
-            completionSignal: ["SESSION_READY"],
-            branchStrategy: { type: "head" },
-            logging: { type: "file", path: input.logFile },
-          });
+          return withoutSandcastleTerminal(() =>
+            superviseInvocation(this.run, input, {
+              agent: provider,
+              cwd: input.worktree,
+              name: input.runName,
+              prompt: "Reply with exactly: SESSION_READY",
+              maxIterations: 1,
+              completionSignal: ["SESSION_READY"],
+              branchStrategy: { type: "head" },
+              logging: { type: "file", path: input.logFile },
+            }),
+          );
         };
         const invocation = await (input.advance?.(invoke) ?? invoke());
         const resultSessionId = invocation.result?.iterations.at(-1)?.sessionId;
@@ -364,22 +396,24 @@ export class SandcastleAgentExecutor implements AgentExecutor {
         const invoke = () => {
           const stopped = this.stopFailure(input, provider.name, resumeSession);
           if (stopped !== undefined) throw stopped;
-          return superviseInvocation(this.run, input, {
-            agent: provider,
-            cwd: input.worktree,
-            name: input.runName,
-            prompt: runPrompt,
-            maxIterations: 1,
-            completionSignal: [],
-            branchStrategy: { type: "head" },
-            logging: { type: "file", path: input.logFile },
-            output: Output.object({
-              tag,
-              schema,
-              maxRetries: 0,
+          return withoutSandcastleTerminal(() =>
+            superviseInvocation(this.run, input, {
+              agent: provider,
+              cwd: input.worktree,
+              name: input.runName,
+              prompt: runPrompt,
+              maxIterations: 1,
+              completionSignal: [],
+              branchStrategy: { type: "head" },
+              logging: { type: "file", path: input.logFile },
+              output: Output.object({
+                tag,
+                schema,
+                maxRetries: 0,
+              }),
+              ...(isUsableSessionId(resumeSession) ? { resumeSession } : {}),
             }),
-            ...(isUsableSessionId(resumeSession) ? { resumeSession } : {}),
-          });
+          );
         };
         const invocation = await (input.advance?.(invoke) ?? invoke());
         if (invocation.settlement.outcome === "failed")

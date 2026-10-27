@@ -145,7 +145,10 @@ export interface PublicationResult {
 export interface SkippedPublication {
   ticket: number;
   pullRequest?: number;
+  pullRequestUrl?: string;
   reason: string;
+  /** The Operator Pause reason shown when the operator skipped the ticket. */
+  skipReason?: string;
 }
 export interface RecoveredPublicationResult extends PublicationResult {
   restarted: number[];

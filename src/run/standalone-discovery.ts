@@ -164,7 +164,7 @@ export async function discoverAndReserveStandalone(
       input.standaloneIssue,
     );
     const reason = `${error.reason}${residue ? `; ${residue}` : ""}`;
-    await input.onSkip?.(input.standaloneIssue, reason);
+    await input.onSkip?.(input.standaloneIssue, reason, error.pauseReason);
     return { outcome: "incomplete", batch: [], reasons: [reason] };
   }
 }
@@ -220,9 +220,9 @@ export async function discoverAndReserveStandaloneBatch(
     if (reserved.length >= input.maxBatchSize) break;
     const result = await discoverAndReserveStandalone({
       ...input,
-      onSkip: async (ticket, reason) => {
+      onSkip: async (ticket, reason, pauseReason) => {
         skipped.add(ticket);
-        await input.onSkip?.(ticket, reason);
+        await input.onSkip?.(ticket, reason, pauseReason);
       },
       standaloneIssue: issue,
       standaloneIssues: [issue],

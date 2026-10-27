@@ -31,6 +31,7 @@ import {
   type VerifiedHandoff,
 } from "./agent-operation.ts";
 import { appendOperation, discardAgentLogs } from "./operation-audit.ts";
+import { showProgress } from "./progress.ts";
 
 function createReviewInput(
   input: AttemptInput,
@@ -100,6 +101,7 @@ async function runReviewRound(
   const reviewAgent = input.reviewAgent;
   const implementationHead = handoff.commits.at(-1)!.sha;
   let continuationPrompt = round.session.resumePrompt;
+  let executions = 0;
   let attemptNumber!: number;
   let attemptId = "";
   let logFile = "";
@@ -155,8 +157,15 @@ async function runReviewRound(
       try {
         const gitConfigGlobal = path.join(gitDirectory, "config");
         await writeFile(gitConfigGlobal, "");
-        result = await advance(input.operator, () =>
-          input.agentExecutor.executeReview({
+        result = await advance(input.operator, () => {
+          executions += 1;
+          showProgress(
+            input.operator,
+            handoff.ticket,
+            { kind: "review", round: round.number },
+            attemptNumber > 1 || executions > 1,
+          );
+          return input.agentExecutor.executeReview({
             ticket: handoff.ticket,
             runName: `review issue ${handoff.ticket}`,
             worktree: handoff.worktree,
@@ -193,8 +202,8 @@ async function runReviewRound(
               : signal,
             advance: (action) => advance(input.operator, action),
             ...(resumePrompt === undefined ? {} : { resumePrompt }),
-          }),
-        );
+          });
+        });
         resultDiagnostics = {
           provider: reviewAgent.agent,
           workingDirectory: handoff.worktree,
@@ -357,6 +366,7 @@ export async function reviewHandoff(
       .replaceAll("{{BASE_SHA}}", reviewedHead);
     const fixed = await runAgentOperation(input, {
       phase: "implement",
+      progress: { kind: "fix_review", round },
       runName: `fix review findings for issue ${handoff.ticket}`,
       ticket: handoff.ticket,
       worktree: handoff.worktree,

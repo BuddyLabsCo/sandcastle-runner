@@ -22,6 +22,13 @@ import { cleanupTempRoots } from "../support/temp-cleanup.ts";
 
 test.afterEach(cleanupTempRoots);
 
+// eslint-disable-next-line no-control-regex -- OSC 8 hyperlinks are the behavior under test.
+const hyperlinkPattern = /\u001b\]8;;[^\u001b]*\u001b\\|\u001b\]8;;\u001b\\/gu;
+
+function withoutHyperlinks(text: string): string {
+  return text.replace(hyperlinkPattern, "");
+}
+
 for (const completed of [false, true]) {
   test(`recovered Maintenance PR evidence survives ${completed ? "completed closure" : "early cancellation"}`, async () => {
     const root = await createProject();
@@ -91,7 +98,7 @@ for (const completed of [false, true]) {
     assert.equal(report?.pullRequest, 4);
     assert.equal(report?.status, completed ? "completed" : "cancelled");
     assert.match(
-      messages.at(-1)!,
+      withoutHyperlinks(messages.at(-1)!),
       completed
         ? /^1000\s+completed\s+#4\s+Documentation:/mu
         : /^1000\s+cancelled\s+#4\s+Documentation:/mu,
@@ -168,7 +175,7 @@ for (const documentOnly of [false, true]) {
     assert.equal(result.summary.tickets?.[0]?.status, "cancelled");
     assert.equal(result.summary.tickets?.[0]?.pullRequest, 1);
     assert.match(
-      messages.at(-1)!,
+      withoutHyperlinks(messages.at(-1)!),
       documentOnly
         ? /^1000\s+cancelled\s+#1\s+Documentation:/mu
         : /^9\s+cancelled\s+#1\s+/mu,

@@ -33,6 +33,7 @@ import type {
 } from "./run/contracts.ts";
 import { OperatorCancelled, supervisedAuditWrite } from "./run/operations.ts";
 import { renderRunReport } from "./run/report.ts";
+import { describeFailure } from "./run/run-input.ts";
 import { runProject, type RunSummary } from "./run/run.ts";
 import type { CleanupRecord } from "./run/cleanup.ts";
 
@@ -616,6 +617,9 @@ export async function executeCli(
             ? error.message
             : "Run failed",
       ],
+      ...(error instanceof OperatorCancelled
+        ? {}
+        : { failure: describeFailure(error) }),
     };
   }
   try {
@@ -628,7 +632,7 @@ export async function executeCli(
       targetBranch: summary.targetBranch,
       updatedAt: dependencies.clock.now().toISOString(),
     });
-    dependencies.operator.write(renderRunReport(summary, audit.path));
+    dependencies.operator.write(renderRunReport(summary));
   } finally {
     await removeEmptyRunWorktreeParent(
       path.join(loaded.directory, "worktrees", runId),

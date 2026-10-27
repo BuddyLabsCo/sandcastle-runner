@@ -76,6 +76,7 @@ for (const selector of ["parent", "issue"] as const)
       const deletedBranches: string[] = [];
       const comments: Ticket["number"][] = [];
       const pauses: string[] = [];
+      const messages: string[] = [];
       const agentCalls: { ticket: number; prompt: string | undefined }[] = [];
       const logs = new Map<number, string[]>();
       let nextMaintenanceTicket = 100;
@@ -318,6 +319,9 @@ for (const selector of ["parent", "issue"] as const)
           },
         },
         operator: {
+          write(message) {
+            messages.push(message);
+          },
           async pause(message) {
             pauses.push(message);
             return "s";
@@ -364,6 +368,7 @@ for (const selector of ["parent", "issue"] as const)
         skippedRow?.detail ?? "",
         /^skipped Maintenance Ticket 100/u,
       );
+      assert.match(messages.at(-1)!, /^- issue-100: \S/mu);
       if (maintenancePullRequest !== undefined)
         assert.equal(pullRequests.get(maintenancePullRequest)?.merged, false);
 

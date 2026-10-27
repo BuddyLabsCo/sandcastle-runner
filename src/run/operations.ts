@@ -11,10 +11,13 @@ export class OperatorCancelled extends Error {}
 
 export class TicketSkipped extends Error {
   readonly reason: string;
+  /** The reason the Operator Pause displayed when the operator chose to skip. */
+  readonly pauseReason: string;
 
-  constructor(reason: string) {
+  constructor(reason: string, pauseReason: string = reason) {
     super(reason);
     this.reason = reason;
+    this.pauseReason = pauseReason;
   }
 }
 
@@ -151,6 +154,7 @@ export async function pauseForOperator(
   if (response === "s")
     throw new TicketSkipped(
       `skipped ${operator.skipScope}; side effects may remain, including unknown resources from unobserved writes`,
+      message,
     );
 }
 
@@ -291,6 +295,15 @@ async function waitForOperator(
   }
 }
 
+function operationFailureMessage(error: unknown): string {
+  const detail = (error instanceof Error ? error.message : String(error))
+    .replace(/\s+/gu, " ")
+    .trim();
+  return detail.length === 0
+    ? "Operation failed."
+    : `Operation failed: ${detail}`;
+}
+
 export async function externalRead<T>(operation: ReadOperation<T>): Promise<T> {
   const policy = operation.retryPolicy;
   const maxAttempts = policy.operationRetry + 1;
@@ -299,6 +312,7 @@ export async function externalRead<T>(operation: ReadOperation<T>): Promise<T> {
       Math.min(retryIndex, policy.operationRetryDelay.length - 1)
     ]! * 1000;
   for (;;) {
+    let lastError: unknown;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       const event = operation.event(attempt);
       await supervisedAuditWrite(
@@ -312,6 +326,7 @@ export async function externalRead<T>(operation: ReadOperation<T>): Promise<T> {
         result = await operation.action();
       } catch (error) {
         operation.operator.coordination?.controller.signal.throwIfAborted();
+        lastError = error;
         await supervisedAuditWrite(
           () =>
             operation.audit.append({
@@ -342,7 +357,7 @@ export async function externalRead<T>(operation: ReadOperation<T>): Promise<T> {
       operation.audit,
       operation.event(maxAttempts),
       operation.operator,
-      "Operation failed.",
+      operationFailureMessage(lastError),
     );
   }
 }
@@ -357,6 +372,7 @@ export async function workflowWrite<T>(
   const policy = operation.retryPolicy;
   const maxAutomaticRetries = policy.operationRetry;
   let attempt = 1;
+  let lastError: unknown;
   for (;;) {
     const event = operation.event(attempt);
     await supervisedAuditWrite(
@@ -385,6 +401,7 @@ export async function workflowWrite<T>(
       result = await advance<T | void>(operation.operator, operation.action);
     } catch (error) {
       operation.operator.coordination?.controller.signal.throwIfAborted();
+      lastError = error;
       await supervisedAuditWrite(
         () =>
           operation.audit.append({
@@ -425,7 +442,7 @@ export async function workflowWrite<T>(
         operation.audit,
         event,
         operation.operator,
-        "Operation failed.",
+        operationFailureMessage(lastError),
       );
       await operation.beforeRetry?.();
       attempt = 1;

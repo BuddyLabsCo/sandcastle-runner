@@ -401,6 +401,7 @@ async function reserve(
       await input.onSkip?.(
         candidate.number,
         `${error.reason}${residue ? `; ${residue}` : ""}`,
+        error.pauseReason,
       );
     }
   }

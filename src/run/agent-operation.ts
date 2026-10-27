@@ -36,6 +36,7 @@ import {
   workflowWrite,
 } from "./operations.ts";
 import { appendOperation, discardAgentLogs } from "./operation-audit.ts";
+import { showProgress, type ProgressPhase } from "./progress.ts";
 
 export { agentPauseMessage } from "./agent-pause.ts";
 
@@ -94,6 +95,7 @@ export interface TicketAttemptOutcome {
   outcome:
     "handoff" | "no_change" | "blocked" | "failed" | "cancelled" | "skipped";
   detail: string;
+  skipReason?: string;
   handoff?: VerifiedHandoff;
 }
 
@@ -104,7 +106,7 @@ type AgentStop =
 export type MaintenanceAttemptResult =
   | { outcome: "committed"; handoff: VerifiedHandoff }
   | AgentStop
-  | { outcome: "skipped"; reason: string }
+  | { outcome: "skipped"; reason: string; skipReason: string }
   | {
       outcome: "boundary";
       boundary: Exclude<DeliveryBoundaryResult, { outcome: "ready" }>;
@@ -166,6 +168,7 @@ export async function runAgentOperation(
   input: AgentOperationInput,
   operation: {
     phase: "implement" | "ci_repair" | "conflict_repair" | "maintenance";
+    progress: ProgressPhase;
     runName: string;
     ticket: number;
     worktree: string;
@@ -183,6 +186,7 @@ export async function runAgentOperation(
   },
 ): Promise<VerifiedHandoff | AgentStop> {
   let continuationPrompt = operation.session?.resumePrompt;
+  let executions = 0;
   let attemptNumber!: number;
   let attemptId = "";
   let logFile = "";
@@ -230,8 +234,15 @@ export async function runAgentOperation(
       try {
         const gitConfigGlobal = path.join(gitDirectory, "config");
         await writeFile(gitConfigGlobal, "");
-        result = await advance(input.operator, () =>
-          input.agentExecutor.execute({
+        result = await advance(input.operator, () => {
+          executions += 1;
+          showProgress(
+            input.operator,
+            operation.ticket,
+            operation.progress,
+            attemptNumber > 1 || executions > 1,
+          );
+          return input.agentExecutor.execute({
             ticket: operation.ticket,
             runName: operation.runName,
             worktree: operation.worktree,
@@ -269,8 +280,8 @@ export async function runAgentOperation(
               : operation.signal,
             advance: (action) => advance(input.operator, action),
             ...(resumePrompt === undefined ? {} : { resumePrompt }),
-          }),
-        );
+          });
+        });
         resultDiagnostics = {
           provider: operation.agent.agent,
           workingDirectory: operation.worktree,

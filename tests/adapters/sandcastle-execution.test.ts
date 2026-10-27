@@ -26,6 +26,35 @@ test("replacePromptPlaceholders replaces repeated known values and ignores unuse
   );
 });
 
+test("Sandcastle startup chatter never reaches the terminal", async (t) => {
+  const log = t.mock.method(console, "log", () => {});
+  const executor = new SandcastleAgentExecutor(
+    async (options) => {
+      console.log("[codex] Started on branch sandcastle/ticket-9");
+      console.log("  tail -f /runner/projects/demo/logs/implement-9.log");
+      if (options.prompt === "Reply with exactly: SESSION_READY")
+        return {
+          iterations: [{ sessionId: "probe-session" }],
+          stdout: "SESSION_READY",
+          commits: [],
+          branch: input().branch,
+          output: undefined,
+        };
+      return makeResult(
+        `<agent_attempt_result>${JSON.stringify(committed)}</agent_attempt_result>`,
+        committed,
+      );
+    },
+    async () => {},
+    async () => {},
+    async () => {},
+  );
+
+  await executor.execute(input());
+
+  assert.equal(log.mock.callCount(), 0);
+});
+
 test("SandcastleAgentExecutor retries session probe with exponential backoff", async () => {
   const calls: RunOptions[] = [];
   const waits: number[] = [];
