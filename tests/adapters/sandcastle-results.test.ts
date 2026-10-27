@@ -120,11 +120,6 @@ test("structured output retry explains validation and repeats the complete proto
 test("review structured output retry repeats the review protocol", async () => {
   const review = {
     outcome: "passed",
-    summary: "Both axes pass.",
-    standards: { verdict: "passed", unresolved_findings: [] },
-    spec: { verdict: "passed", unresolved_findings: [] },
-    checks: [{ command: "npm test", status: "passed", details: "ok" }],
-    blocker: null,
   };
   const prompts: RunOptions[] = [];
   let attempts = 0;
@@ -157,8 +152,8 @@ test("review structured output retry repeats the review protocol", async () => {
   const retryPrompt = prompts.at(-1)?.prompt;
   assert.match(String(retryPrompt), /unexpected fields: extra/u);
   assert.match(String(retryPrompt), /<review_attempt_result>/u);
-  assert.match(String(retryPrompt), /"standards"/u);
-  assert.match(String(retryPrompt), /"spec"/u);
+  assert.match(String(retryPrompt), /"findings_file"/u);
+  assert.match(String(retryPrompt), /"blocker"/u);
   const protocol = (
     await readFile(path.resolve("src/prompts/review-attempt-output.md"), "utf8")
   ).trim();
@@ -169,11 +164,6 @@ test("review structured output retry repeats the review protocol", async () => {
 test("SandcastleAgentExecutor runs a fresh strict review result with one correction opportunity", async () => {
   const review = {
     outcome: "passed" as const,
-    summary: "Both axes pass.",
-    standards: { verdict: "passed" as const, unresolved_findings: [] },
-    spec: { verdict: "passed" as const, unresolved_findings: [] },
-    checks: [{ command: "npm test", status: "passed" as const, details: "ok" }],
-    blocker: null,
   };
   let options: RunOptions | undefined;
   const executor = createExecutor(async (received) => {
@@ -207,8 +197,8 @@ test("SandcastleAgentExecutor runs a fresh strict review result with one correct
   assert.equal(options?.promptArgs, undefined);
   assert.match(String(options?.prompt), /Review/u);
   assert.match(String(options?.prompt), /<review_attempt_result>/u);
-  assert.match(String(options?.prompt), /"standards"/u);
-  assert.match(String(options?.prompt), /"spec"/u);
+  assert.match(String(options?.prompt), /Standards and Spec/u);
+  assert.match(String(options?.prompt), /"findings_file"/u);
   assert.ok(
     String(options?.prompt).indexOf("<review_attempt_result>") >
       String(options?.prompt).indexOf("Use the `/code-review` skill"),
@@ -421,11 +411,6 @@ test("SandcastleAgentExecutor resumes the captured session for continuation", as
 test("SandcastleAgentExecutor appends the review output protocol to human continuation prompts", async () => {
   const review = {
     outcome: "passed" as const,
-    summary: "Both axes pass.",
-    standards: { verdict: "passed" as const, unresolved_findings: [] },
-    spec: { verdict: "passed" as const, unresolved_findings: [] },
-    checks: [{ command: "npm test", status: "passed" as const, details: "ok" }],
-    blocker: null,
   };
   const prompts: RunOptions[] = [];
   const executor = createExecutor(async (options) => {
@@ -461,63 +446,37 @@ test("SandcastleAgentExecutor reports an unavailable continuation session", asyn
   );
 });
 
-test("review results distinguish actionable findings from clean reviews and execution blockers", async () => {
+test("review results contain only the outcome and its required detail", async () => {
   const { reviewResultSchema } =
     await import("../../src/adapters/sandcastle-output.ts");
   const schema = reviewResultSchema();
   const validate = (value: unknown) => schema["~standard"].validate(value);
   const findings = {
     outcome: "findings",
-    summary: "One standards finding.",
-    standards: {
-      verdict: "findings",
-      unresolved_findings: ["P1 missing validation"],
-    },
-    spec: { verdict: "passed", unresolved_findings: [] },
-    checks: [],
-    blocker: null,
     findings_file: "/project/logs/review-9-run-round-1.md",
   };
-  assert.deepEqual(validate(findings), { value: findings });
+  const clean = { outcome: "passed" };
+  const blocked = {
+    outcome: "blocked",
+    blocker: "Cannot access specification",
+  };
+  for (const valid of [clean, findings, blocked])
+    assert.deepEqual(validate(valid), { value: valid });
   for (const invalid of [
-    { ...findings, findings_file: "" },
-    { ...findings, findings_file: undefined },
+    { outcome: "unknown" },
+    { outcome: "findings" },
+    { ...findings, findings_file: " " },
+    { ...findings, findings_file: 1 },
+    { outcome: "blocked" },
+    { ...blocked, blocker: " " },
+    { ...blocked, blocker: null },
+    { ...clean, findings_file: findings.findings_file },
+    { ...clean, summary: "obsolete" },
+    { ...clean, checks: [] },
     { ...findings, blocker: "execution failed" },
-    { ...findings, standards: { verdict: "passed", unresolved_findings: [] } },
-    {
-      ...findings,
-      standards: {
-        verdict: "blocked",
-        unresolved_findings: ["cannot read spec"],
-      },
-    },
-    { ...findings, outcome: "passed" },
+    { ...blocked, findings_file: findings.findings_file },
+    { ...clean, pr_title: "not owned" },
   ]) {
     assert.ok("issues" in validate(invalid));
   }
-  const clean = {
-    outcome: "passed",
-    summary: "Clean",
-    standards: { verdict: "passed", unresolved_findings: [] },
-    spec: findings.spec,
-    checks: [],
-    blocker: null,
-  };
-  assert.ok(
-    "value" in
-      validate({
-        ...clean,
-        outcome: "passed",
-        standards: { verdict: "passed", unresolved_findings: [] },
-      }),
-  );
-  assert.ok(
-    "value" in
-      validate({
-        ...clean,
-        outcome: "blocked",
-        blocker: "Cannot access specification",
-        standards: { verdict: "blocked", unresolved_findings: [] },
-      }),
-  );
 });

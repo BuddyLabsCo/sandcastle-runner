@@ -146,11 +146,6 @@ test("review rounds reuse both sessions, fix every findings round, and review on
             if (round === 3)
               return {
                 outcome: "passed",
-                summary: "Clean",
-                standards: { verdict: "passed", unresolved_findings: [] },
-                spec: { verdict: "passed", unresolved_findings: [] },
-                checks: [],
-                blocker: null,
               };
             const filename = String(handoff.findingsFile);
             assert.equal(
@@ -162,15 +157,7 @@ test("review rounds reuse both sessions, fix every findings round, and review on
             await writeFile(filename, "# P1 finding\nFix missing validation.");
             return {
               outcome: "findings",
-              summary: "Actionable findings",
               findings_file: filename,
-              standards: {
-                verdict: "findings",
-                unresolved_findings: ["P1 finding"],
-              },
-              spec: { verdict: "passed", unresolved_findings: [] },
-              checks: [],
-              blocker: null,
             };
           },
         },
@@ -315,10 +302,6 @@ test("findings pauses stay in the relevant session and retain files until succes
               await writeFile(input.logFile, "review");
               return {
                 outcome: "blocked",
-                summary: "Cannot read specification",
-                standards: { verdict: "blocked", unresolved_findings: [] },
-                spec: { verdict: "blocked", unresolved_findings: [] },
-                checks: [],
                 blocker: "Specification unavailable",
                 diagnostics: {
                   sessionId: "review-session",
@@ -333,14 +316,6 @@ test("findings pauses stay in the relevant session and retain files until succes
             await writeFile(findingsFile, "# P1 actionable finding");
             return {
               outcome: "findings",
-              summary: "One finding",
-              standards: {
-                verdict: "findings",
-                unresolved_findings: ["P1 actionable finding"],
-              },
-              spec: { verdict: "passed", unresolved_findings: [] },
-              checks: [],
-              blocker: null,
               findings_file: findingsFile,
             };
           },

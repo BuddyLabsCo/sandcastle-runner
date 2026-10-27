@@ -1,12 +1,20 @@
-# Replace repository, checkout, runnerAccount, and targetBranch for your Project. checkout must be absolute. ticketClosure is runner or code_host.
+# Copy this Project and replace repository, checkout, runnerAccount, and targetBranch.
 
+# GitHub repository in owner/name form.
 repository: BuddyLabsCo/sandcastle-runner
+# Absolute path to the repository checkout.
 checkout: /home/xiakeng/Desktop/workspace/sandcastle-runner-checkout/
+# Unique positive issue numbers; limits Parent Runs or drives value-less --issue Runs.
 issueList: []
+# Required positive safe integer; caps newly discovered Parent and Standalone Batches.
 maxBatchSize: 2
+# Branch to integrate into; omit to use the repository default branch.
 targetBranch: main
+# Additional automatic attempts after the initial attempt (non-negative integers).
+# See docs/adr/0001-configurable-retry-policy.md.
 operationRetry: 4
 agentRetry: 2
+# Positive delays in seconds; the final delay repeats when the retry budget is longer.
 operationRetryDelay:
   - 10
   - 20
@@ -15,15 +23,23 @@ operationRetryDelay:
 agentRetryDelay:
   - 300
   - 300
+# runner closes tickets after merge; code_host waits for GitHub-linked closure.
 ticketClosure: runner
+# Title, body, and label for Documentation Maintenance tickets.
 maintenanceTicket:
   title: Maintain project documentation
   body: n/a
   label: doc-maintain
 workflow:
-  # Review defaults to true; an empty documentation trigger label disables automatic maintenance.
+  # Defaults to true; false bypasses the entire review/fix loop.
   review: true
+  # Optional positive integer, with no default cap. Omit to repeat until a clean review.
+  # Initial review is round 1; retries and Operator Pause continuations do not add rounds.
+  # 1 permits review + fix; 2 permits review + fix + review + fix.
+  # The final findings still receive a fix, then delivery proceeds without another review.
   maxReviewRounds: 2
+  # Exact case-sensitive label on a completed issue triggers one maintenance per Batch.
+  # Omitted, empty, or whitespace-only values disable automatic maintenance.
   docMaintainTriggerLabel: ""
 tracker:
   # GitHub tracker settings. tokenEnv names an environment variable; reservationLabel marks Runner-owned Delivery Tickets.
@@ -37,7 +53,12 @@ codeHost:
   tokenEnv: GH_TOKEN
   adminMerge: true
 agents:
-  # Each Agent Attempt selects a supported native agent, model, and optional native options. Review and documentation profiles are required only while their workflow nodes are enabled.
+  # Each purpose independently selects agent, model, and optional native options.
+  # Options are forwarded unchanged; switching agents does not translate them.
+  # Review requires a profile when enabled. Documentation requires one for a nonempty
+  # maintenance trigger or --document, which uses the same documentation profile.
+  # If native session lookup differs from actual storage, set options.sessionStorage:
+  # hostSessionsDir for Codex/Pi, or hostProjectsDir for Claude Code.
   implement:
     # Initial Delivery Ticket implementation.
     agent: codex
@@ -45,7 +66,7 @@ agents:
     options:
       effort: max
   review:
-    # Fresh-context Standards and Spec review.
+    # Independent Standards and Spec review session, reused across review rounds.
     agent: codex
     model: codex/gpt-6.1-sol
     options:

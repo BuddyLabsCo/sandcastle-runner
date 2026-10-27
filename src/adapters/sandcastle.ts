@@ -310,7 +310,25 @@ export class SandcastleAgentExecutor implements AgentExecutor {
           TARGET_BRANCH: String(input.targetBranch),
         },
       );
-      prompt = `${template.trimEnd()}\n\n${outputPrompt}`;
+      const context = replacePromptPlaceholders(
+        await readFile(
+          join(runnerPromptDirectory, "agent-attempt-input.md"),
+          "utf8",
+        ),
+        {
+          RUNNER_INPUT:
+            input.promptArgs.REVIEW_HANDOFF ??
+            JSON.stringify({
+              ...input.promptArgs,
+              TICKET_NUMBER: input.ticket,
+              WORKTREE_PATH: input.worktree,
+              SOURCE_BRANCH: input.branch,
+              BASE_SHA: input.base,
+              PROJECT_TARGET_BRANCH: input.targetBranch,
+            }),
+        },
+      );
+      prompt = `${context.trimEnd()}\n\n${template.trimEnd()}\n\n${outputPrompt}`;
     }
     if (prompt !== undefined && !isUsableSessionId(resumeSession)) {
       throw new AgentOutputError(

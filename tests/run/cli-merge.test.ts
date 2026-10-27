@@ -246,11 +246,6 @@ test("an explicit merge conflict is repaired on the original branch and Pull Req
           reviewCalls += 1;
           return {
             outcome: "passed",
-            summary: "Initial implementation review passed.",
-            standards: { verdict: "passed", unresolved_findings: [] },
-            spec: { verdict: "passed", unresolved_findings: [] },
-            checks: [],
-            blocker: null,
           };
         },
       },

@@ -153,13 +153,6 @@ test("a clean fresh-context review gates publication and preserves implementatio
           reviewInput = input;
           return {
             outcome: "passed",
-            summary: "Both review axes pass.",
-            standards: { verdict: "passed", unresolved_findings: [] },
-            spec: { verdict: "passed", unresolved_findings: [] },
-            checks: [
-              { command: "npm test", status: "passed", details: "all passed" },
-            ],
-            blocker: null,
           };
         },
       },
@@ -270,37 +263,20 @@ test("blocked, dirty, or invalid review pauses before publication", async () => 
               ) as { findingsFile: string };
               return {
                 outcome: "findings",
-                summary: "Findings",
                 findings_file:
                   failure === "wrong_path"
                     ? "/unrelated/findings.md"
                     : handoff.findingsFile,
-                standards: { verdict: "findings", unresolved_findings: ["P1"] },
-                spec: { verdict: "passed", unresolved_findings: [] },
-                checks: [],
-                blocker: null,
               };
             }
             return failure === "blocked"
               ? {
                   outcome: "blocked",
-                  summary: "Review cannot pass.",
-                  standards: {
-                    verdict: "blocked",
-                    unresolved_findings: ["P1 unresolved"],
-                  },
-                  spec: { verdict: "passed", unresolved_findings: [] },
-                  checks: [],
                   blocker: "P1 unresolved",
                 }
               : {
                   outcome: "passed",
-                  summary: "Axes pass but files are dirty.",
                   diagnostics: { sessionId: "review-session" },
-                  standards: { verdict: "passed", unresolved_findings: [] },
-                  spec: { verdict: "passed", unresolved_findings: [] },
-                  checks: [],
-                  blocker: null,
                 };
           },
         },
@@ -367,11 +343,6 @@ test("review continuation verifies the Worktree without consuming a review round
           if (reviews === 2) {
             return {
               outcome: "passed",
-              summary: "review passed",
-              standards: { verdict: "passed", unresolved_findings: [] },
-              spec: { verdict: "passed", unresolved_findings: [] },
-              checks: [],
-              blocker: null,
             };
           }
           throw new Error("review could not finish");

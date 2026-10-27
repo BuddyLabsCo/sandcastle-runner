@@ -8,7 +8,6 @@ import type {
   CommitEvidence,
   ReviewAttemptInput,
   ReviewAttemptResult,
-  ReviewVerdict,
 } from "../run/contracts.ts";
 
 export interface StandardSchema<T> {
@@ -194,90 +193,23 @@ export function resultSchema(
   } satisfies StandardSchema<AgentAttemptResult>;
 }
 
-function parseVerdict(value: unknown, name: string): ReviewVerdict {
-  const input = object(value, name);
-  assertExactFields(input, ["verdict", "unresolved_findings"], name);
-  if (
-    input.verdict !== "passed" &&
-    input.verdict !== "findings" &&
-    input.verdict !== "blocked"
-  )
-    throw new Error(`${name}.verdict is unsupported`);
-  if (
-    !Array.isArray(input.unresolved_findings) ||
-    input.unresolved_findings.some(
-      (finding) => typeof finding !== "string" || finding.trim() === "",
-    )
-  ) {
-    throw new Error(`${name}.unresolved_findings must be strings`);
-  }
-  if (
-    (input.verdict === "passed" && input.unresolved_findings.length !== 0) ||
-    (input.verdict === "findings" && input.unresolved_findings.length === 0)
-  )
-    throw new Error(`${name}.verdict does not match findings`);
-  return {
-    verdict: input.verdict,
-    unresolved_findings: input.unresolved_findings as string[],
-  };
-}
-
 function parseReviewResult(value: unknown): ReviewAttemptResult {
   const input = object(value, "Review Attempt Result");
   const expected = [
-    "blocker",
-    "checks",
     "outcome",
-    "spec",
-    "standards",
-    "summary",
     ...(input.outcome === "findings" ? ["findings_file"] : []),
+    ...(input.outcome === "blocked" ? ["blocker"] : []),
   ];
   assertExactFields(input, expected, "Review Attempt Result");
-  if (
-    input.outcome !== "passed" &&
-    input.outcome !== "findings" &&
-    input.outcome !== "blocked"
-  )
-    throw new Error("review outcome is unsupported");
-  if (!Array.isArray(input.checks)) throw new Error("checks must be an array");
-  const standards = parseVerdict(input.standards, "standards");
-  const spec = parseVerdict(input.spec, "spec");
-  if (
-    input.outcome === "passed" &&
-    (standards.verdict !== "passed" ||
-      spec.verdict !== "passed" ||
-      standards.unresolved_findings.length !== 0 ||
-      spec.unresolved_findings.length !== 0)
-  ) {
-    throw new Error("passed review requires both axes to pass cleanly");
-  }
-  if (
-    input.outcome === "findings" &&
-    (standards.verdict === "blocked" ||
-      spec.verdict === "blocked" ||
-      (standards.verdict !== "findings" && spec.verdict !== "findings"))
-  )
-    throw new Error(
-      "findings review requires an actionable axis and no execution blocker",
-    );
-  const blocker =
-    input.outcome === "blocked"
-      ? nonempty(input.blocker, "blocker")
-      : input.blocker;
-  if (input.outcome !== "blocked" && blocker !== null)
-    throw new Error("blocker must be null unless review is blocked");
-  return {
-    outcome: input.outcome,
-    summary: nonempty(input.summary, "summary"),
-    ...(input.outcome === "findings"
-      ? { findings_file: nonempty(input.findings_file, "findings_file") }
-      : {}),
-    standards,
-    spec,
-    checks: input.checks.map(parseCheck),
-    blocker: blocker as string | null,
-  };
+  if (input.outcome === "passed") return { outcome: "passed" };
+  if (input.outcome === "findings")
+    return {
+      outcome: "findings",
+      findings_file: nonempty(input.findings_file, "findings_file"),
+    };
+  if (input.outcome === "blocked")
+    return { outcome: "blocked", blocker: nonempty(input.blocker, "blocker") };
+  throw new Error("review outcome is unsupported");
 }
 
 export function reviewResultSchema(): StandardSchema<ReviewAttemptResult> {

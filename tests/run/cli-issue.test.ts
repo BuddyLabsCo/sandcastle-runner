@@ -195,11 +195,6 @@ test("standalone issue uses the selected issue as the Review specification", asy
               : "";
           return {
             outcome: "passed",
-            summary: "review passed",
-            standards: { verdict: "passed", unresolved_findings: [] },
-            spec: { verdict: "passed", unresolved_findings: [] },
-            checks: [],
-            blocker: null,
           };
         },
       },

@@ -69,11 +69,6 @@ test("implementation and review logs are stage-named and removed on success", as
           await writeFile(input.logFile, "review attempt");
           return {
             outcome: "passed",
-            summary: "review passed",
-            standards: { verdict: "passed", unresolved_findings: [] },
-            spec: { verdict: "passed", unresolved_findings: [] },
-            checks: [],
-            blocker: null,
           };
         },
       },

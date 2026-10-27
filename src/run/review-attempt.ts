@@ -6,7 +6,6 @@ import { fileURLToPath } from "node:url";
 
 import type { AuditEvent } from "../audit.ts";
 import type {
-  AgentAttemptResult,
   AgentDiagnostics,
   ReviewAttemptResult,
   Ticket,
@@ -72,7 +71,6 @@ async function acceptReview(
   input: AttemptInput,
   handoff: VerifiedHandoff,
   implementationHead: string,
-  checks: AgentAttemptResult["checks"],
 ): Promise<VerifiedHandoff> {
   const evidence = await externalRead({
     action: () =>
@@ -97,7 +95,7 @@ async function acceptReview(
     commits: evidence.deliveryCommits,
     implementationCommits: evidence.deliveryCommits,
     reviewCommits: [],
-    reviewChecks: checks,
+    reviewChecks: [],
     reviewVerification: "verified",
   };
 }
@@ -107,7 +105,10 @@ async function runReviewRound(
   handoff: VerifiedHandoff,
   signal: AbortSignal,
   round: { number: number; base: string; session: AgentSession },
-): Promise<{ handoff: VerifiedHandoff; result: ReviewAttemptResult }> {
+): Promise<{
+  handoff: VerifiedHandoff;
+  result: Exclude<ReviewAttemptResult, { outcome: "blocked" }>;
+}> {
   if (handoff.verification !== "verified" || handoff.commits.length === 0)
     throw new Error(
       "Review requires a committed implementation Verified Handoff",
@@ -256,7 +257,7 @@ async function runReviewRound(
             result.diagnostics,
             handoff.worktree,
             {
-              summary: result.summary,
+              summary: "Review could not complete.",
               blocker: result.blocker,
             },
             continuable ? ticketAgentContinueActions : ticketAgentRetryActions,
@@ -270,7 +271,7 @@ async function runReviewRound(
             event,
             handoff.ticket,
             attemptNumber,
-            result.blocker ?? result.summary,
+            result.blocker,
           );
         if (continuable)
           continuationPrompt =
@@ -286,12 +287,7 @@ async function runReviewRound(
         if (!file.isFile() || file.size === 0)
           throw new Error("Review findings must be a nonempty Markdown file");
       }
-      const reviewed = await acceptReview(
-        input,
-        handoff,
-        implementationHead,
-        result.checks,
-      );
+      const reviewed = await acceptReview(input, handoff, implementationHead);
       await appendOperation(
         input,
         event,
@@ -371,7 +367,6 @@ export async function reviewHandoff(
   let handoff = initialHandoff;
   let reviewBase = handoff.base;
   const reviewSession: AgentSession = {};
-  const checks: AgentAttemptResult["checks"] = [];
   for (let round = 1; ; round += 1) {
     const reviewedHead = handoff.commits.at(-1)!.sha;
     const reviewed = await runReviewRound(input, handoff, signal, {
@@ -380,8 +375,6 @@ export async function reviewHandoff(
       session: reviewSession,
     });
     handoff = reviewed.handoff;
-    checks.push(...reviewed.result.checks);
-    handoff.reviewChecks = [...checks];
     if (reviewed.result.outcome === "passed") break;
     implementationSession.resumePrompt = (
       await readFile(
@@ -389,7 +382,7 @@ export async function reviewHandoff(
         "utf8",
       )
     )
-      .replaceAll("{{FINDINGS_FILE}}", reviewed.result.findings_file!)
+      .replaceAll("{{FINDINGS_FILE}}", reviewed.result.findings_file)
       .replaceAll("{{BASE_SHA}}", reviewedHead);
     const fixed = await runAgentOperation(input, {
       phase: "implement",
@@ -402,7 +395,7 @@ export async function reviewHandoff(
         new URL("../prompts/implementation-review-fix.md", import.meta.url),
       ),
       promptArgs: {
-        FINDINGS_FILE: reviewed.result.findings_file!,
+        FINDINGS_FILE: reviewed.result.findings_file,
         BASE_SHA: reviewedHead,
       },
       pullRequestMetadata: "ignored",

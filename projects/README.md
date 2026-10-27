@@ -2,27 +2,10 @@
 
 This directory is a project template for Sandcastle Runner. Copy it to `projects/<project-key>` and adapt `config.yaml` and the prompts.
 
-## `config.yaml`
+## Configure a Project
 
-- `repository`: GitHub repository in `owner/name` form.
-- `checkout`: absolute path to that repository.
-- `issueList`: unique positive issue numbers used to limit Parent Runs or drive value-less Standalone Runs.
-- `maxBatchSize`: required positive safe integer limiting newly discovered Parent and Standalone Batches.
-- `targetBranch`: branch to update.
-- `tracker`: GitHub settings: `tokenEnv` names the credential variable; `runnerAccount` is the bot/user; `reservationLabel` marks reserved tickets.
-- `codeHost`: GitHub settings; `tokenEnv` names the credential variable and `adminMerge` controls administrative merge requests.
-- `workflow.review`: enable or disable the review attempt.
-- `workflow.docMaintainTriggerLabel`: exact, case-sensitive label that triggers automatic Documentation Maintenance after a successful Batch. Omitted, empty, or whitespace-only values disable automatic maintenance.
-- `agents`: an `agent`, `model`, and optional native `options` for `implement`, `review`, `ciRepair`, `conflictRepair`, and `documentation` purposes. Each purpose is independent, and the same agent may be reused. `review` is needed when enabled; `documentation` is needed for a nonempty trigger label or `--document`, and both automatic and standalone Documentation Maintenance use it.
-- `timeouts`: required positive minute limits for agent attempts, required checks, and merge queue confirmation.
-- `operationRetry` and `agentRetry`: non-negative automatic retry counts; the corresponding `*Delay` arrays are positive delays in seconds. Follow [ADR-0001](../docs/adr/0001-configurable-retry-policy.md): counts are additional attempts after the initial one, and the final delay is reused.
-- `ticketClosure`: `runner` or `code_host`.
-- `maintenanceTicket`: title, body, and `doc-maintain` label for maintenance tickets.
-
-If Sandcastle's default session lookup does not
-match the agent's actual storage, set the native lookup root:
-`sessionStorage.hostSessionsDir` for Codex or Pi, or
-`sessionStorage.hostProjectsDir` for Claude Code.
+Edit the [example config.yaml](sandcastle-runner/config.yaml); its inline comments explain each field and native session lookup options.
+Implementation, CI repair, and conflict repair prompts must be nonempty. Review and documentation prompts are required when their workflow is enabled.
 
 ## Operator Pause actions
 
@@ -135,24 +118,45 @@ Delivery-time labels are stored in the Recovery Snapshot. On restart, the curren
 
 `--document` runs one fresh, complete occurrence without a Parent or issue scope. It ignores `issueList`, does not require a trigger label, never resumes prior maintenance, and preserves the ordinary no-change behavior without creating an empty Pull Request.
 
-## Review enabled versus disabled
+## Review and implementation loop
+
+Runner uses two independent sessions: implementation I writes code and commits; review R inspects Standards and Spec.
 
 ```mermaid
 flowchart TD
-    A[Implementation attempt] --> B{workflow.review}
-    B -- true --> C[Fresh-context review]
-    C --> D{Review passes?}
-    D -- No --> E[Fix, commit, and review again]
-    E --> C
-    D -- Yes --> F[Publish pull request]
-    B -- false --> F
+    A[Implementation I: implement and commit] --> B{Review enabled?}
+    B -- Yes --> C[Review R: review current diff]
+    B -- No --> F[Publish pull request]
+    C --> D{Review outcome}
+    D -- passed --> F
+    D -- findings --> E[Review R: write findings Markdown]
+    E --> H[Implementation I: read findings, fix, and commit]
+    H --> J{More review rounds allowed?}
+    J -- Yes --> K[Resume R for diff since previous review HEAD]
+    K --> C
+    J -- No --> F
+    D -- blocked --> P[Review Operator Pause]
+    P -- Continue --> C
+    H -- Disputed or unfixable finding --> Q[Implementation Operator Pause]
+    Q -- Continue --> H
     F --> G[Checks, repair if needed, merge, and close ticket]
 ```
 
-## Prompt placeholders
+The reviewer writes actionable findings under the Project logs directory and returns the assigned path. A clean review needs no findings document.
+Both sessions are reused within one Runner process. Subsequent reviews inspect only the latest fix and verify earlier findings were resolved.
+At the configured limit, implementation still fixes the final findings before publication, without another review. See `workflow.maxReviewRounds` in [config.yaml](sandcastle-runner/config.yaml) for counting and limits.
 
-- `implement.md`: `TICKET_NUMBER` (issue number), `TICKET_REFERENCE` (authoritative issue reference), `WORKTREE_PATH` (isolated worktree), `SOURCE_BRANCH` (delivery branch), `BASE_SHA` (worktree base commit), `PROJECT_TARGET_BRANCH` (configured target branch).
-- `ci-repair.md`: the implementation fields above, plus `PULL_REQUEST_NUMBER` and `PULL_REQUEST_URL` (existing pull request), and `FAILED_CHECKS` (failed required checks and links).
-- `conflict-repair.md`: the same ticket, worktree, branch, and base fields, plus `PULL_REQUEST_NUMBER`, `PULL_REQUEST_URL`, `TARGET_BRANCH_SHA` (fresh target branch commit), and `MERGE_CONFLICT` (reported conflict details).
-- `documentation.md`: `TICKET_NUMBER`, `TICKET_REFERENCE`, `WORKTREE_PATH`, `SOURCE_BRANCH`, and `PROJECT_TARGET_BRANCH`.
-- `review.md`: `REVIEW_HANDOFF`, a JSON review context containing repository, branches, worktree, fixed point, ticket/spec snapshots, instructions, and reported checks.
+Findings and session logs remain available throughout the loop. Completion or skip cleans owned files; pause and cancellation retain them.
+
+## Project prompts
+
+Keep only repository-specific instructions in these files:
+
+- `implement.md`: implementation practices and checks
+- `review.md`: review skills and criteria
+- `ci-repair.md`: diagnosis and repair guidance
+- `conflict-repair.md`: conflict resolution guidance
+- `documentation.md`: documentation scope and conventions
+
+Runner templates under `src/prompts` supply task context, Worktree and branch restrictions, review diff boundaries, findings paths, and output protocols.
+Project prompts do not need placeholders for these inputs.

@@ -14,7 +14,7 @@ src/
   recovery.ts     Durable recovery snapshot I/O
   run/            Workflow decisions and in-memory Run state
   adapters/       GitHub, Git, Sandcastle, clock, and terminal operations
-  prompts/        Runner-owned output-protocol prompts, not Project prompts
+  prompts/        Runner-owned task-context, continuation, and output prompts
 tests/
   recovery.test.ts Recovery snapshot behavior
   run/            Behavioral scenarios through the real Run
@@ -27,8 +27,9 @@ importable without starting a process so tests can exercise command handling.
 `config.ts` reads and validates Project files and resolves credential references;
 it does not select tickets or start agents. Project YAML and Markdown prompts,
 logs, and Recovery Snapshots remain external files in their configured
-locations. Runner-owned output-protocol prompts under `src/prompts/` are code
-contracts, not Project prompt content.
+locations. Runner-owned templates under `src/prompts/` supply task context, execution restrictions,
+continuation instructions, and output contracts. Project prompts contain only
+repository-specific instructions.
 
 ## Workflow modules
 

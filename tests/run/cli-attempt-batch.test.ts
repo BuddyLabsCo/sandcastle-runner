@@ -425,11 +425,6 @@ test("multiple matching Delivery Tickets trigger one committed Documentation Mai
           reviewCalls += 1;
           return {
             outcome: "passed",
-            summary: "Initial implementation review passed.",
-            standards: { verdict: "passed", unresolved_findings: [] },
-            spec: { verdict: "passed", unresolved_findings: [] },
-            checks: [],
-            blocker: null,
           };
         },
       },

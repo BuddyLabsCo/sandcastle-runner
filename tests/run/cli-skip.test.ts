@@ -441,10 +441,6 @@ test("a blocked Review can also skip its pre-PR ticket", async () => {
           await writeFile(input.logFile, "review");
           return {
             outcome: "blocked",
-            summary: "review needs a decision",
-            standards: { verdict: "blocked", unresolved_findings: [] },
-            spec: { verdict: "blocked", unresolved_findings: [] },
-            checks: [],
             blocker: "review needs a decision",
           };
         },

@@ -280,21 +280,11 @@ export interface AgentAttemptInput {
   resumePrompt?: string;
 }
 
-export interface ReviewVerdict {
-  verdict: "passed" | "findings" | "blocked";
-  unresolved_findings: string[];
-}
-
-export interface ReviewAttemptResult {
-  outcome: "passed" | "findings" | "blocked";
-  findings_file?: string;
-  summary: string;
-  standards: ReviewVerdict;
-  spec: ReviewVerdict;
-  checks: CheckEvidence[];
-  blocker: string | null;
-  diagnostics?: AgentDiagnostics;
-}
+export type ReviewAttemptResult = (
+  | { outcome: "passed" }
+  | { outcome: "findings"; findings_file: string }
+  | { outcome: "blocked"; blocker: string }
+) & { diagnostics?: AgentDiagnostics };
 
 export type ReviewAttemptInput = Omit<AgentAttemptInput, "pullRequestMetadata">;
 

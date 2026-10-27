@@ -54,11 +54,6 @@ test("a failed Review probe rejects text and Enter starts a fresh verified attem
             });
           return {
             outcome: "passed",
-            summary: "review passed",
-            standards: { verdict: "passed", unresolved_findings: [] },
-            spec: { verdict: "passed", unresolved_findings: [] },
-            checks: [],
-            blocker: null,
           };
         },
       },
