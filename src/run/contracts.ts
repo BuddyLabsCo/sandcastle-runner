@@ -1,3 +1,4 @@
+import type { RunCoordination } from "./run-coordination.ts";
 export type TicketState = "open" | "closed";
 export type ClosureReason = "completed" | "not_planned" | null;
 export type TicketClosurePolicy = "runner" | "code_host";
@@ -267,6 +268,7 @@ export interface AgentAttemptInput {
   timeoutMs: number;
   retryPolicy: RetryPolicy;
   signal: AbortSignal;
+  advance?: <T>(action: () => Promise<T>) => Promise<T>;
   /** Optional same-session continuation prompt. */
   resumePrompt?: string;
 }
@@ -290,6 +292,7 @@ export interface Clock {
 }
 
 export interface OperatorIO {
+  coordination?: RunCoordination;
   skipScope?: string;
   write(message: string): void;
   pause(message: string): Promise<string | null>;

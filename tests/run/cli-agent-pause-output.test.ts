@@ -83,7 +83,7 @@ test("blocked Agent Pause shows the decision without diagnostic metadata", async
   assert.match(message, /^Outcome: blocked$/mu);
   assert.match(message, /^Reason: API contract is unresolved Second line$/mu);
   assert.match(message, /^Provider session: session-123$/mu);
-  assert.match(message, /^Agent: unavailable$/mu);
+  assert.match(message, /^Agent: codex$/mu);
   assert.match(message, /^Working directory: .+/mu);
   assert.match(message, /^Diagnostic log: \/forbidden\/diagnostic\.log$/mu);
   assert.ok(message.includes(path.basename(worktree)));
@@ -284,7 +284,7 @@ test("failed Agent Pause labels the failure and falls back to its diagnostic log
   assert.match(message, /^Outcome: failed$/mu);
   assert.match(message, /^Reason: Sandcastle failed with process detail$/mu);
   assert.match(message, /^Provider session: unavailable$/mu);
-  assert.match(message, /^Agent: unavailable$/mu);
+  assert.match(message, /^Agent: codex$/mu);
   assert.match(message, /^Working directory: .+/mu);
   assert.match(message, /^Diagnostic log: .+implement-9-.+\.log$/mu);
   assert.match(

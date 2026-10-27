@@ -7,6 +7,7 @@ import {
   OperatorCancelled,
   pauseForOperator,
   scopeOperator,
+  serializeOperator,
   TicketSkipped,
   workflowWrite,
 } from "./operations.ts";
@@ -84,6 +85,10 @@ function batchMatchesTrigger(
 }
 
 export async function runProject(input: RunInput): Promise<RunSummary> {
+  input = {
+    ...input,
+    operator: serializeOperator(input.operator, new AbortController()),
+  };
   const failure: FailureSummary = {};
   try {
     return await runProjectInternal(input, failure);

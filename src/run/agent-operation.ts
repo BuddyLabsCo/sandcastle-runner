@@ -25,8 +25,11 @@ import {
   type DeliveryBoundaryResult,
   type DiscoveryInput,
   revalidateActiveTicket,
+  revalidateMergedTicket,
+  releaseTerminalTicket,
 } from "./discovery.ts";
 import {
+  advance,
   externalRead,
   OperatorCancelled,
   workflowWrite,
@@ -118,8 +121,29 @@ export async function boundary(
   input: AgentOperationInput,
   ticket: number,
 ): Promise<void> {
-  const result = await revalidateActiveTicket(input, ticket);
+  const result = await advance(input.operator, () =>
+    revalidateActiveTicket(input, ticket),
+  );
   if (result.outcome !== "ready") throw new BoundaryStop(result);
+}
+
+export async function observePausedAttempt(
+  input: AgentOperationInput,
+  ticket: number,
+  releaseIntervention?: () => void,
+): Promise<void> {
+  // Observe without terminal cleanup, which must wait until this pause is released.
+  const result = await revalidateMergedTicket(input, ticket);
+  if (result.outcome === "ready") return;
+  releaseIntervention?.();
+  if (result.outcome === "terminal") {
+    await releaseTerminalTicket(input, result.ticket);
+    throw new BoundaryStop({
+      outcome: "stopped",
+      reason: `${input.ticketKind ?? "Delivery Ticket"} ${ticket} became terminal`,
+    });
+  }
+  throw new BoundaryStop(result);
 }
 
 function sameCommits(
@@ -195,6 +219,7 @@ export async function runAgentOperation(
       resumePrompt === undefined ? undefined : "resumed",
     );
     let resultDiagnostics: AgentDiagnostics | undefined;
+    let releaseIntervention: (() => void) | undefined;
     try {
       const gitDirectory = await mkdtemp(
         path.join(tmpdir(), "sandcastle-runner-git-"),
@@ -203,59 +228,75 @@ export async function runAgentOperation(
       try {
         const gitConfigGlobal = path.join(gitDirectory, "config");
         await writeFile(gitConfigGlobal, "");
-        result = await input.agentExecutor.execute({
-          ticket: operation.ticket,
-          runName: operation.runName,
-          worktree: operation.worktree,
-          branch: operation.branch,
-          base: operation.base,
-          targetBranch: input.targetBranch,
-          ...(operation.promptFile === undefined
-            ? {}
-            : { promptFile: operation.promptFile }),
-          promptArgs: operation.promptArgs,
-          pullRequestMetadata: operation.pullRequestMetadata,
-          agent: operation.agent.agent,
-          model: operation.agent.model,
-          ...(operation.agent.options === undefined
-            ? {}
-            : { options: operation.agent.options }),
-          gitConfigGlobal,
-          logFile,
-          timeoutMs: input.timeoutMs,
-          retryPolicy: input.retryPolicy,
-          signal: operation.signal,
-          ...(resumePrompt === undefined ? {} : { resumePrompt }),
-        });
-        resultDiagnostics = result.diagnostics;
+        result = await advance(input.operator, () =>
+          input.agentExecutor.execute({
+            ticket: operation.ticket,
+            runName: operation.runName,
+            worktree: operation.worktree,
+            branch: operation.branch,
+            base: operation.base,
+            targetBranch: input.targetBranch,
+            ...(operation.promptFile === undefined
+              ? {}
+              : { promptFile: operation.promptFile }),
+            promptArgs: operation.promptArgs,
+            pullRequestMetadata: operation.pullRequestMetadata,
+            agent: operation.agent.agent,
+            model: operation.agent.model,
+            ...(operation.agent.options === undefined
+              ? {}
+              : { options: operation.agent.options }),
+            gitConfigGlobal,
+            logFile,
+            timeoutMs: input.timeoutMs,
+            retryPolicy: input.retryPolicy,
+            signal: input.operator.coordination
+              ? AbortSignal.any([
+                  operation.signal,
+                  input.operator.coordination.controller.signal,
+                ])
+              : operation.signal,
+            advance: (action) => advance(input.operator, action),
+            ...(resumePrompt === undefined ? {} : { resumePrompt }),
+          }),
+        );
+        resultDiagnostics = {
+          provider: operation.agent.agent,
+          workingDirectory: operation.worktree,
+          diagnosticLogPath: logFile,
+          ...result.diagnostics,
+          agentAttemptId: attemptId,
+          attemptOrdinal: attemptNumber,
+        };
+        if (result.outcome === "blocked")
+          releaseIntervention = input.operator.coordination?.intervene();
+      } catch (error) {
+        releaseIntervention ??= input.operator.coordination?.intervene();
+        throw error;
       } finally {
         await rm(gitDirectory, { recursive: true, force: true });
       }
 
-      await boundary(input, operation.ticket);
-      if (result.diagnostics) {
-        result.diagnostics.agentAttemptId = attemptId;
-        result.diagnostics.attemptOrdinal = attemptNumber;
-      }
       if (result.outcome === "blocked") {
-        await appendOperation(
+        await observePausedAttempt(
           input,
-          event,
-          "blocked",
-          null,
-          result.diagnostics,
+          operation.ticket,
+          releaseIntervention,
         );
-        const continuable = result.diagnostics?.retryable !== false;
+        await appendOperation(input, event, "blocked", null, resultDiagnostics);
+        const continuable = resultDiagnostics?.retryable !== false;
         const decision = await pause(
           agentPauseMessage(
             "blocked",
-            result.diagnostics,
+            resultDiagnostics,
             operation.worktree,
             result,
             continuable ? ticketAgentContinueActions : ticketAgentRetryActions,
           ),
           continuable,
         );
+        releaseIntervention?.();
+        releaseIntervention = undefined;
         if (decision.decision === "skip")
           return await skipTicketAgentAttempt(
             input,
@@ -270,15 +311,18 @@ export async function runAgentOperation(
             decision.decision === "retry" ? "continue" : decision.response;
         continue;
       }
+      await boundary(input, operation.ticket);
       const observed = await externalRead({
         action: () =>
-          input.gitWorkspace.inspect({
-            worktree: operation.worktree,
-            base: operation.base,
-            ...(operation.requiredAncestor === undefined
-              ? {}
-              : { requiredAncestor: operation.requiredAncestor }),
-          }),
+          advance(input.operator, () =>
+            input.gitWorkspace.inspect({
+              worktree: operation.worktree,
+              base: operation.base,
+              ...(operation.requiredAncestor === undefined
+                ? {}
+                : { requiredAncestor: operation.requiredAncestor }),
+            }),
+          ),
         audit: input.audit,
         event: input.event(
           operation.phase,
@@ -358,13 +402,7 @@ export async function runAgentOperation(
         prBody,
         verification: "verified",
       };
-      await appendOperation(
-        input,
-        event,
-        "succeeded",
-        null,
-        result.diagnostics,
-      );
+      await appendOperation(input, event, "succeeded", null, resultDiagnostics);
       if (operation.session === undefined)
         await discardAgentLogs(
           input,
@@ -381,7 +419,9 @@ export async function runAgentOperation(
         await appendOperation(input, event, error.result.outcome, null);
         throw error;
       }
+      releaseIntervention ??= input.operator.coordination?.intervene();
       const diagnostics: AgentDiagnostics = {
+        provider: operation.agent.agent,
         ...resultDiagnostics,
         error: error instanceof Error ? error.message : "Agent Attempt failed",
         errorCategory: "agent_attempt",
@@ -417,6 +457,8 @@ export async function runAgentOperation(
         ),
         continuable,
       );
+      releaseIntervention?.();
+      releaseIntervention = undefined;
       if (decision.decision === "skip")
         return await skipTicketAgentAttempt(
           input,
@@ -429,6 +471,8 @@ export async function runAgentOperation(
       if (continuable)
         continuationPrompt =
           decision.decision === "retry" ? "continue" : decision.response;
+    } finally {
+      releaseIntervention?.();
     }
   }
 }

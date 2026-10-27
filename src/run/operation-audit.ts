@@ -6,7 +6,7 @@ import {
 } from "./agent-logs.ts";
 import type { AgentOperationInput } from "./agent-operation.ts";
 import type { AgentDiagnostics } from "./contracts.ts";
-import { supervisedAuditWrite } from "./operations.ts";
+import { advance, supervisedAuditWrite } from "./operations.ts";
 
 export async function appendOperation(
   input: AgentOperationInput,
@@ -42,10 +42,8 @@ export async function discardAgentLogs(
   stage: AgentLogStage,
   attempt: number,
 ): Promise<void> {
-  for (const failure of await deleteAgentLogs(
-    input.projectDirectory,
-    ticket,
-    stage,
+  for (const failure of await advance(input.operator, () =>
+    deleteAgentLogs(input.projectDirectory, ticket, stage),
   )) {
     await appendOperation(
       input,

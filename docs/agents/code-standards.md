@@ -49,7 +49,8 @@ Place these modules under `src/run/`. Each owns a cohesive workflow responsibili
 | `pull-request-recovery.ts` / `pull-request-repair.ts` | Durable publication recovery, required-check polling, and CI/conflict repair budgets. |
 | `maintenance.ts` | One maintenance occurrence: ticket creation, documentation attempt, ordinary PR lifecycle reuse, or direct no-change closure. Label-trigger scheduling stays in `run.ts`. |
 | `cleanup.ts` | Terminal Worktree enumeration, exact ownership matching, removal, and retry evidence. |
-| `operations.ts` | Shared Operation Retry for external reads and workflow writes, plus Operator Pause actions, explicit issue scope, cancellation, and operation audit events. Operator input never substitutes for observed results. |
+| `run-coordination.ts` | Run-scoped intervention ownership, advancement gates, and cancellation wake-up. Shared through scoped OperatorIO and passed to Agent Executor launches. |
+| `operations.ts` | Shared Operation Retry for external reads and workflow writes, plus serialized Operator Pause actions, explicit issue scope, cancellation, and operation audit events. It shares one Run-scoped coordination boundary across workflow writes, Agent results, and execution launches. Operator input never substitutes for observed results. |
 | `standalone-discovery.ts` | Direct issue eligibility, Reservation, and terminal handling without Parent or child discovery. |
 | `standalone-run.ts` | Standalone issue orchestration through implementation, Review, publication, integration, and cleanup. |
 | `publication-input.ts` | Shared construction of publication inputs for Parent and standalone runs. |

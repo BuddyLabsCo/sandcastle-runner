@@ -209,6 +209,13 @@ Standalone runs request a merge after their pull request is CI-ready. Use
 `--no-auto-merge` with a value-bearing `--issue` to leave the pull request open
 after validation and cleanup.
 
+An Operator Pause gates new Agent steps and delivery advancement across the Run.
+Already-started invocations keep collecting output; Runner retains their results
+and logs until every pending pause is resolved. Prompts appear one at a time,
+and each response applies only to its displayed invocation. Enter, recovery
+instructions, and skip keep their context-specific meanings. `q` or EOF cancels
+the Run and settles its owned processes. Other Runs continue independently.
+
 Runner prints the outcome of each Delivery and Maintenance Ticket, remaining
 discovery reasons, retained worktrees, and the Audit Log path. `succeeded` and
 `no_work` exit successfully; `incomplete`, `cancelled`, and `failed` do not.
