@@ -139,8 +139,9 @@ Git operations, repairs, and Documentation Maintenance. The example rules are
 a starting point, not certified operation coverage. Explicit native policy can
 still refuse an operation. Runner preserves refusal evidence and requires the
 tagged result and independent Git verification, even when the CLI exits zero.
-`bypassPermissions` and `-y` do not guarantee unattended execution. Runner never
-sets `CODEBUDDY_IS_SANDBOX=1` on the host and rejects that setting.
+`bypassPermissions` and `-y` do not guarantee unattended execution. Runner rejects
+all enabled `CODEBUDDY_IS_SANDBOX` values on the host: `1`, `true`, `yes`, and
+`on`, ignoring case and surrounding whitespace.
 
 Supported `options` are `effort` (minimal/low/medium/high/xhigh/max), positive
 integer `maxTurns`, `permissionMode` (acceptEdits/bypassPermissions/default/plan/
@@ -152,10 +153,12 @@ foreground print/stream execution with its own worktree and Git configuration.
 
 CodeBuddy stores main transcripts under `<CLI-home>/projects/*/<id>.jsonl`.
 `options.env.CODEBUDDY_CONFIG_DIR` selects both the CLI store and lookup root;
-otherwise the inherited variable applies, then the OS home's `.codebuddy`
-directory. Use an absolute custom path. The provider searches exact main-session
-IDs, rejects ambiguity, and excludes subagent transcripts. It never resumes the
-latest session, forks, or creates a missing continuation. Separate worktrees and
+otherwise the inherited variable applies, then `.codebuddy` under the child's
+OS home. Home overrides use `options.env.HOME` on Unix and
+`options.env.USERPROFILE` on Windows. Use an absolute custom store or fallback
+home; empty or relative fallback homes fail visibly. The provider searches exact
+main-session IDs, rejects ambiguity, and excludes subagent transcripts. It never
+resumes the latest session, forks, or creates a missing continuation. Separate worktrees and
 role sessions remain independent. Sandbox transcript transfer is unsupported
 and throws rather than reporting a successful transfer.
 

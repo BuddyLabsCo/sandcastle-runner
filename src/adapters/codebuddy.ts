@@ -205,7 +205,8 @@ function nativeOptions(options: Record<string, unknown>) {
       env[key] = value;
     }
   }
-  if ((env.CODEBUDDY_IS_SANDBOX ?? process.env.CODEBUDDY_IS_SANDBOX) === "1")
+  const sandbox = env.CODEBUDDY_IS_SANDBOX ?? process.env.CODEBUDDY_IS_SANDBOX;
+  if (["1", "true", "yes", "on"].includes(sandbox?.trim().toLowerCase() ?? ""))
     throw new Error(
       "CodeBuddy host execution cannot enable CODEBUDDY_IS_SANDBOX",
     );
@@ -219,8 +220,14 @@ function nativeOptions(options: Record<string, unknown>) {
 function sessionStorage(env: Record<string, string>): AgentSessionStorage {
   const configured =
     env.CODEBUDDY_CONFIG_DIR ?? process.env.CODEBUDDY_CONFIG_DIR;
+  const childHome =
+    env[process.platform === "win32" ? "USERPROFILE" : "HOME"] ?? homedir();
+  if (!configured?.trim() && !isAbsolute(childHome))
+    throw new Error(
+      "CodeBuddy effective home must be absolute for session lookup",
+    );
   const root = join(
-    resolve(configured?.trim() ? configured : join(homedir(), ".codebuddy")),
+    resolve(configured?.trim() ? configured : join(childHome, ".codebuddy")),
     "projects",
   );
   const findByIdOnHost: AgentSessionStorage["findByIdOnHost"] = async (id) => {

@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 
 import { nativeAgent } from "../../src/adapters/agent-provider.ts";
 import { cleanupTempRoots, registerTempRoot } from "../support/temp-cleanup.ts";
@@ -258,4 +260,87 @@ test("CodeBuddy keeps concurrent custom session stores isolated", async () => {
     found.map((session) => session.path),
     roots.map(({ file }) => file),
   );
+});
+
+// Regression: native truthy spellings must never enable sandbox bypass on the host.
+// Seam: provider profiles; existing coverage rejects only the literal "1".
+test("CodeBuddy rejects explicit and inherited native sandbox-bypass values", () => {
+  const original = process.env.CODEBUDDY_IS_SANDBOX;
+  const enabled = ["1", "true", "yes", "on", " TRUE ", "YeS", "oN", "\t1\n"];
+  try {
+    delete process.env.CODEBUDDY_IS_SANDBOX;
+    for (const value of enabled)
+      assert.throws(
+        () =>
+          nativeAgent("codebuddy", "model", {
+            permissionMode: "bypassPermissions",
+            env: { CODEBUDDY_IS_SANDBOX: value },
+          }),
+        /host execution cannot enable CODEBUDDY_IS_SANDBOX/u,
+        `explicit ${JSON.stringify(value)}`,
+      );
+    for (const value of enabled) {
+      process.env.CODEBUDDY_IS_SANDBOX = value;
+      assert.throws(
+        () =>
+          nativeAgent("codebuddy", "model", {
+            permissionMode: "bypassPermissions",
+          }),
+        /host execution cannot enable CODEBUDDY_IS_SANDBOX/u,
+        `inherited ${JSON.stringify(value)}`,
+      );
+    }
+    for (const value of ["", "0", "false", "no", "off"])
+      assert.equal(
+        nativeAgent("codebuddy", "model", {
+          env: { CODEBUDDY_IS_SANDBOX: value },
+        }).env.CODEBUDDY_IS_SANDBOX,
+        value,
+      );
+  } finally {
+    if (original === undefined) delete process.env.CODEBUDDY_IS_SANDBOX;
+    else process.env.CODEBUDDY_IS_SANDBOX = original;
+  }
+});
+
+// Regression: overriding the child home must not split probe persistence and lookup.
+// Seam: provider storage; a harmless Node child supplies the native home-path oracle.
+test("CodeBuddy locates sessions under the effective child home", async () => {
+  const root = registerTempRoot(
+    await mkdtemp(path.join(tmpdir(), "codebuddy-home-")),
+  );
+  const env = {
+    HOME: path.join(root, "unix-home"),
+    USERPROFILE: path.join(root, "windows-home"),
+    CODEBUDDY_CONFIG_DIR: "",
+  };
+  const { stdout: childHome } = await promisify(execFile)(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      'import { homedir } from "node:os"; process.stdout.write(homedir());',
+    ],
+    { env: { ...process.env, ...env } },
+  );
+  const projects = path.join(childHome, ".codebuddy", "projects");
+  const file = path.join(projects, "worktree", "home-session.jsonl");
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, "{}\n");
+  const storage = nativeAgent("codebuddy", "model", { env }).sessionStorage!;
+  assert.deepEqual(await storage.findByIdOnHost("home-session"), {
+    path: file,
+    searchedRoot: projects,
+  });
+  for (const value of ["", "relative-home"])
+    assert.throws(
+      () =>
+        nativeAgent("codebuddy", "model", {
+          env: {
+            ...env,
+            [process.platform === "win32" ? "USERPROFILE" : "HOME"]: value,
+          },
+        }),
+      /CodeBuddy effective home must be absolute/u,
+    );
 });

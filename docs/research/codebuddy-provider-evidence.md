@@ -49,11 +49,13 @@ Existing resolver identities and shell-free command-shim tests also include Code
 
 Final repository verification passed:
 
-- `npm test`: 396 passed, 4 platform skips, zero failures; full suite run once at completion
+- `npm test`: 398 passed, 4 platform skips, zero failures; full suite run once after the review fixes
 - `npm run check`: formatting, ESLint, and TypeScript checks passed
-- Focused provider/resolver/launcher selection: 32 passed, 3 platform skips
+- Focused provider/resolver/launcher selections: 34 passed, 3 platform skips
 - Selected executor/recovery/output/cleanup/process and workflow regressions: 79 passed, 1 platform skip
 - `git diff --check`: passed
+
+Review regressions also verify rejection of every native truthy sandbox-bypass spelling in explicit and inherited environments. No bypass-enabled CLI was launched. Session lookup now follows the child home environment, checked against a harmless Node child's `os.homedir()` result. Empty or relative fallback homes fail visibly. These configuration checks required no additional live backend calls.
 
 ## Remaining live acceptance work
 
