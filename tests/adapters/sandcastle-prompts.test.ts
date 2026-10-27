@@ -91,7 +91,13 @@ test("Runner supplies task context even when project prompts contain only user i
       assert.ok(prompt.includes(value), `${purpose}: missing ${value}`);
     assert.match(prompt, /Follow this project's instructions/u);
     assert.match(prompt, /Work only in the supplied Worktree/u);
-    assert.match(prompt, /Do not fetch or pull/u);
+    if (purpose === "conflictRepair") {
+      assert.doesNotMatch(prompt, /Do not fetch or pull/u);
+      assert.match(prompt, /Merge the supplied TARGET_BRANCH_SHA/u);
+      assert.match(prompt, /Fetch if needed/u);
+    } else {
+      assert.match(prompt, /Do not fetch or pull/u);
+    }
     assert.doesNotMatch(prompt, /\bRunner\b/u);
     assert.doesNotMatch(prompt, /For conflict repair/u);
     assert.ok(prompt.includes(`<${tag}>`));

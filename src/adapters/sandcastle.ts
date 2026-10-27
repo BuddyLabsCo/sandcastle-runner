@@ -308,7 +308,12 @@ export class SandcastleAgentExecutor implements AgentExecutor {
       );
       const context = replacePromptPlaceholders(
         await readFile(
-          join(runnerPromptDirectory, `${promptKind}-attempt-input.md`),
+          join(
+            runnerPromptDirectory,
+            input.promptArgs.TARGET_BRANCH_SHA === undefined
+              ? `${promptKind}-attempt-input.md`
+              : "conflict-repair-input.md",
+          ),
           "utf8",
         ),
         {
