@@ -145,7 +145,7 @@ test("CodeBuddy preserves supported options and rejects unsafe or malformed prof
     disallowedTools: ["WebFetch"],
     systemPrompt: "system's text",
     appendSystemPrompt: "extra instructions",
-    env: { EXAMPLE_SETTING: "kept" },
+    env: { EXAMPLE_SETTING: "kept", CODEBUDDY_IS_SANDBOX: "0" },
   });
   const prompt = "large prompt\n".repeat(20000);
   const built = provider.buildPrintCommand({
@@ -168,7 +168,7 @@ test("CodeBuddy preserves supported options and rejects unsafe or malformed prof
   );
   assert.equal(provider.env.EXAMPLE_SETTING, "kept");
   assert.equal(provider.env.CODEBUDDY_CODE_DISABLE_BACKGROUND_TASKS, "1");
-  assert.equal(provider.env.CODEBUDDY_IS_SANDBOX, undefined);
+  assert.equal(provider.env.CODEBUDDY_IS_SANDBOX, "0");
   for (const options of [
     { background: true },
     { effort: "extreme" },
@@ -259,16 +259,6 @@ test("CodeBuddy keeps concurrent custom session stores isolated", async () => {
     found.map((session) => session.path),
     roots.map(({ file }) => file),
   );
-});
-
-test("CodeBuddy defaults to dontAsk without enabling sandbox full pass", () => {
-  const provider = nativeAgent("codebuddy", "model");
-  const built = provider.buildPrintCommand({
-    prompt: "task",
-    dangerouslySkipPermissions: true,
-  });
-  assert.match(built.command, /--permission-mode 'dontAsk'/u);
-  assert.equal(provider.env.CODEBUDDY_IS_SANDBOX, undefined);
 });
 
 // Regression: overriding the child home must not split probe persistence and lookup.

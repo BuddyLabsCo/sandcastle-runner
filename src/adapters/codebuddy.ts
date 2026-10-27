@@ -190,7 +190,7 @@ function nativeOptions(options: Record<string, unknown>) {
     } else throw new Error(`unsupported or invalid CodeBuddy option ${key}`);
   }
   if (options.permissionMode === undefined)
-    flags.push("--permission-mode 'dontAsk'");
+    flags.push("--permission-mode 'bypassPermissions'");
   const env: Record<string, string> = {};
   if (options.env !== undefined) {
     if (
@@ -208,6 +208,7 @@ function nativeOptions(options: Record<string, unknown>) {
   const store = env.CODEBUDDY_CONFIG_DIR ?? process.env.CODEBUDDY_CONFIG_DIR;
   if (store?.trim() && !isAbsolute(store))
     throw new Error("CodeBuddy CODEBUDDY_CONFIG_DIR must be absolute");
+  env.CODEBUDDY_IS_SANDBOX ??= process.env.CODEBUDDY_IS_SANDBOX ?? "1";
   env.CODEBUDDY_CODE_DISABLE_BACKGROUND_TASKS = "1";
   return { flags: flags.join(" "), env };
 }

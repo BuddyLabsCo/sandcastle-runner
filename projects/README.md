@@ -41,18 +41,18 @@ To handle the settled invocation:
 3. Finish manual handling and **exit the manual CLI** before returning control to Runner, including cancellation.
 4. Press Enter in Runner to continue the original task in that exact session. Runner applies its ordinary tagged result validation and independent Git verification. Manual continuation starts a new invocation with fresh thresholds and consumes no Agent Retry budget.
 
-For CodeBuddy, this illustrative command uses dedicated storage and separate allow-rule arguments:
+For CodeBuddy, this illustrative command matches Runner's default unattended permissions:
 
 ```sh
 cd /runner/worktrees/ticket-264
-CODEBUDDY_CONFIG_DIR=/runner/native-state \
 GIT_CONFIG_GLOBAL=/runner/git-config \
+CODEBUDDY_IS_SANDBOX=1 \
 CODEBUDDY_CODE_DISABLE_BACKGROUND_TASKS=1 \
 codebuddy --resume session-123 --model deepseek-v4.1-flash \
-  --permission-mode dontAsk --allowedTools Read Write Edit Bash
+  --permission-mode bypassPermissions
 ```
 
-Use your displayed paths and native session ID, and preserve your own trusted allow rules. The broad Bash rule above is a tested policy assumption, not a permission default. Our tested CLI refused tools with comma-separated allow rules in manual mode; separate arguments passed. Read the [live evidence and limits](../docs/research/codebuddy-takeover-evidence.md) before relying on a different version or policy.
+Use your displayed paths and native session ID. Preserve any storage overrides and explicit permission settings from your Project profile. The [live takeover evidence](../docs/research/codebuddy-takeover-evidence.md) used an explicit `dontAsk` allow list; it does not establish native full-pass behavior.
 
 Runner's pause prevents its own new writers; it cannot discover or control independently launched native CLIs. Pressing Enter acknowledges that you exited manual handling. Enter does not answer an approval request from the terminated process. Recovery Snapshots preserve delivery evidence, not live-process adoption or native-session restoration after restart. Skip and recovery-text actions remain available only in their existing contexts; audit failures still permit only retry or cancellation.
 

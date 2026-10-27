@@ -128,28 +128,12 @@ agent: codebuddy
 model: deepseek-v4.1-flash
 ```
 
-Runner defaults `permissionMode` to `dontAsk`, overriding the CLI's configured
-default mode: unapproved operations are denied without prompting.
-Prepare trusted native allow rules for the Project's required edits, commands,
-Git operations, repairs, and Documentation Maintenance, or supply them through
-`options.allowedTools`.
-
-To request CodeBuddy's native sandbox full-pass mode, configure the role as follows:
-
-```yaml
-agent: codebuddy
-model: deepseek-v4.1-flash
-options:
-  permissionMode: bypassPermissions
-  env:
-    CODEBUDDY_IS_SANDBOX: "1"
-```
-
-If Runner already inherits `CODEBUDDY_IS_SANDBOX=1`, omit the `env` block.
-Explicit `options.env` values override inherited environment values. Select
-`permissionMode: bypassPermissions` even when it is the CLI's configured default;
-otherwise Runner uses `dontAsk`. This setup requires neither `allowedTools` nor
-a dedicated `CODEBUDDY_CONFIG_DIR`.
+Runner defaults to `--permission-mode bypassPermissions` and
+`CODEBUDDY_IS_SANDBOX=1` for unattended execution. You do not need to configure
+permissions, an allow list, or a dedicated state directory for this default.
+Use `options.permissionMode` only to override the default mode. For
+`CODEBUDDY_IS_SANDBOX`, `options.env` overrides the inherited environment;
+Runner supplies `1` when neither sets the variable.
 
 The [native full-pass mode](https://www.codebuddy.cn/docs/cli/permission-modes)
 permits dangerous commands without confirmation; the environment flag creates

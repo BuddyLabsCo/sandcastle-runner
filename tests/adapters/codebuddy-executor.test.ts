@@ -84,7 +84,6 @@ process.stderr.write(fixture.stderr??''); process.exitCode=fixture.exitCode??0;
     logFile: join(root, "agent.log"),
     options: {
       effort: "high",
-      permissionMode: "dontAsk",
       tools: "",
       env: {
         PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
@@ -155,8 +154,8 @@ test("CodeBuddy executes both tagged contracts through shell-free native continu
   assert.equal(review.outcome, "passed");
 });
 
-// Regression: configured full pass must reach the child; provider-only tests miss inheritance.
-test("CodeBuddy launches bypassPermissions with explicit or inherited sandbox environment", async () => {
+// Regression: unattended execution must work without per-Project permission configuration.
+test("CodeBuddy defaults to sandbox full pass and preserves environment overrides", async () => {
   const original = process.env.CODEBUDDY_IS_SANDBOX;
   try {
     const { profile, fixture, argsFile } = await setup();
@@ -167,8 +166,10 @@ test("CodeBuddy launches bypassPermissions with explicit or inherited sandbox en
       ),
     ]);
     for (const { inherited, override, expected } of [
+      { inherited: undefined, override: undefined, expected: "1" },
       { inherited: undefined, override: "1", expected: "1" },
       { inherited: "1", override: undefined, expected: "1" },
+      { inherited: "0", override: undefined, expected: "0" },
       { inherited: "1", override: "0", expected: "0" },
     ]) {
       if (inherited === undefined) delete process.env.CODEBUDDY_IS_SANDBOX;
@@ -178,7 +179,6 @@ test("CodeBuddy launches bypassPermissions with explicit or inherited sandbox en
         ...profile,
         options: {
           ...profile.options,
-          permissionMode: "bypassPermissions",
           env:
             override === undefined
               ? profile.options.env
