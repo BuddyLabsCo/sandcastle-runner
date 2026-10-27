@@ -146,6 +146,9 @@ test("--document starts fresh after an interrupted Parent-independent occurrence
       async execute(input) {
         agentCalls += 1;
         documentationInput = input;
+        assert.equal(input.idleTimeoutMs, 600_000);
+        assert.equal(input.timeoutMs, 7_200_000);
+        assert.equal(typeof input.pauseForTimeout, "function");
         return agentCalls === 1
           ? {
               outcome: "blocked",

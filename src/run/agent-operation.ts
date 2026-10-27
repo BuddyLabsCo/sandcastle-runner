@@ -32,6 +32,7 @@ import {
   advance,
   externalRead,
   OperatorCancelled,
+  pauseForAgentTimeout,
   workflowWrite,
 } from "./operations.ts";
 import { appendOperation, discardAgentLogs } from "./operation-audit.ts";
@@ -60,6 +61,7 @@ export interface AgentOperationInput extends DiscoveryInput {
   targetBranch: string;
   projectDirectory: string;
   timeoutMs: number;
+  idleTimeoutMs: number;
   gitWorkspace: GitWorkspace;
   agentExecutor: AgentExecutor;
 }
@@ -249,6 +251,14 @@ export async function runAgentOperation(
             gitConfigGlobal,
             logFile,
             timeoutMs: input.timeoutMs,
+            idleTimeoutMs: input.idleTimeoutMs,
+            pauseForTimeout: (cause) =>
+              pauseForAgentTimeout(
+                input.audit,
+                event,
+                input.operator,
+                `Agent ${cause} threshold reached for ${operation.runName}. Working directory: ${operation.worktree}. Diagnostic log: ${logFile}.`,
+              ),
             retryPolicy: input.retryPolicy,
             signal: input.operator.coordination
               ? AbortSignal.any([
@@ -444,6 +454,7 @@ export async function runAgentOperation(
         diagnostics.error!,
         diagnostics,
       );
+      if (diagnostics.errorCategory === "process_cleanup") throw error;
       const continuable = diagnostics.retryable !== false;
       const decision = await pauseAgentAttempt(
         input,

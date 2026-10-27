@@ -414,6 +414,7 @@ async function runMaintenanceOccurrence(
     promptFile: input.documentationPrompt,
     agent: input.documentationAgent,
     timeoutMs: input.agentTimeoutMs,
+    idleTimeoutMs: input.agentIdleTimeoutMs,
   });
   if (attempt.outcome === "boundary")
     return stopped(attempt.boundary, ticket.number);

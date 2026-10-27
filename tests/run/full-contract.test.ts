@@ -151,7 +151,10 @@ test(
     const configPath = path.join(root, "projects", "demo", "config.yaml");
     const config = await readProjectConfig<{
       agents: Record<string, unknown>;
+      timeouts: Record<string, number>;
     }>(configPath);
+    config.timeouts.agentIdleMinutes = 3.5;
+    config.timeouts.agentMinutes = 1.5;
     config.agents = {
       implement: {
         agent: "claude-code",
@@ -178,6 +181,15 @@ test(
     };
     await writeProjectConfig(configPath, config);
     const scenario = createFiveTicketScenario(root, true);
+    const executor = scenario.dependencies.agentExecutor;
+    assert.ok(executor);
+    const execute = executor.execute.bind(executor);
+    executor.execute = (input) => {
+      assert.equal(input.idleTimeoutMs, 210_000);
+      assert.equal(input.timeoutMs, 90_000);
+      assert.equal(typeof input.pauseForTimeout, "function");
+      return execute(input);
+    };
 
     const result = await executeCli(
       ["run", "--project", "demo", "--parent", "8"],

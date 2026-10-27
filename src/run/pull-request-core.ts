@@ -51,6 +51,7 @@ export interface PublicationInput extends ReadinessInput {
   ciRepairAgent: AgentConfig;
   conflictRepairAgent: AgentConfig;
   agentTimeoutMs: number;
+  agentIdleTimeoutMs: number;
   handoffs: VerifiedHandoff[];
   gitWorkspace: GitWorkspace;
   agentExecutor: AgentExecutor;

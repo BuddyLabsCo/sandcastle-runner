@@ -83,6 +83,7 @@ export interface RunInput {
   documentationAgent?: AgentConfig;
   maintenanceTicket: { title: string; body: string; label: string };
   agentTimeoutMs: number;
+  agentIdleTimeoutMs: number;
   requiredChecksTimeoutMs: number;
   mergeQueueTimeoutMs: number;
   adminMerge: boolean;

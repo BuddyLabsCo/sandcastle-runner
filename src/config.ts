@@ -42,6 +42,7 @@ export interface ProjectConfig {
   };
   timeouts: {
     agentMinutes: number;
+    agentIdleMinutes: number;
     requiredChecksMinutes: number;
     mergeQueueMinutes: number;
   };
@@ -272,6 +273,12 @@ function parseConfig(
     },
     timeouts: {
       agentMinutes: positive(timeouts.agentMinutes, "timeouts.agentMinutes"),
+      agentIdleMinutes: positive(
+        timeouts.agentIdleMinutes === undefined
+          ? 10
+          : timeouts.agentIdleMinutes,
+        "timeouts.agentIdleMinutes",
+      ),
       requiredChecksMinutes: positive(
         timeouts.requiredChecksMinutes,
         "timeouts.requiredChecksMinutes",

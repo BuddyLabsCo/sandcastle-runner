@@ -8,7 +8,7 @@ import { OperatorCancelled } from "../../src/run/operations.ts";
 import { input } from "../support/sandcastle.ts";
 
 for (const stop of ["cancellation", "timeout"] as const) {
-  test(`${stop} during exhausted output recovery takes precedence over validation`, async (t) => {
+  test(`${stop} after completion ${stop === "cancellation" ? "takes precedence over validation" : "does not replace validation"}`, async (t) => {
     t.mock.timers.enable({ apis: ["setTimeout"] });
     const controller = new AbortController();
     let substantiveCalls = 0;
@@ -52,7 +52,11 @@ for (const stop of ["cancellation", "timeout"] as const) {
       (error) => {
         if (stop === "cancellation")
           assert.ok(error instanceof OperatorCancelled);
-        else assert.match((error as Error).message, /Agent Attempt timed out/u);
+        else
+          assert.ok(
+            error instanceof Error &&
+              error.message.includes("invalid structured output"),
+          );
         return true;
       },
     );

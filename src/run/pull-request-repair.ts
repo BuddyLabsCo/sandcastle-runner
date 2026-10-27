@@ -226,6 +226,7 @@ export async function repairRequiredChecks(
         failedChecks,
         agent: input.ciRepairAgent,
         timeoutMs: input.agentTimeoutMs,
+        idleTimeoutMs: input.agentIdleTimeoutMs,
         signal,
         attemptCounter: budget.attempts,
       });
@@ -409,6 +410,7 @@ export async function repairMergeConflict(
         conflict,
         agent: input.conflictRepairAgent,
         timeoutMs: input.agentTimeoutMs,
+        idleTimeoutMs: input.agentIdleTimeoutMs,
         signal: controller.signal,
         attemptCounter: budget.attempts,
       });

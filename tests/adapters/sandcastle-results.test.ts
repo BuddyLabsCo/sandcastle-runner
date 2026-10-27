@@ -204,7 +204,7 @@ test("SandcastleAgentExecutor runs a fresh strict review result with one correct
   );
 });
 
-test("SandcastleAgentExecutor applies timeout and caller cancellation to review", async () => {
+test("SandcastleAgentExecutor settles review after timeout cancellation and forwards caller cancellation", async () => {
   const hanging = createExecutor(
     (options) =>
       new Promise((_resolve, reject) => {
@@ -233,8 +233,15 @@ test("SandcastleAgentExecutor applies timeout and caller cancellation to review"
       }),
   );
   await assert.rejects(
-    hanging.executeReview({ ...reviewInput(), timeoutMs: 5 }),
-    /Agent Attempt timed out/u,
+    hanging.executeReview({
+      ...reviewInput(),
+      timeoutMs: 5,
+      pauseForTimeout: async () => {
+        throw new Error("review cancelled at timeout");
+      },
+      retryPolicy: { ...input().retryPolicy, agentRetry: 0 },
+    }),
+    /review cancelled at timeout/u,
   );
 
   const controller = new AbortController();
@@ -308,33 +315,6 @@ test("SandcastleAgentExecutor requires Pull Request metadata only for committed 
       pullRequestMetadata: "required_for_committed",
     }),
     noChange,
-  );
-});
-
-test("SandcastleAgentExecutor aborts a continuously active run at the configured total timeout", async () => {
-  const executor = createExecutor(
-    (options) =>
-      new Promise((_resolve, reject) => {
-        options.signal?.addEventListener(
-          "abort",
-          () => {
-            reject(new Error("Agent Attempt timed out"));
-          },
-          { once: true },
-        );
-      }),
-  );
-
-  await assert.rejects(
-    executor.execute({ ...input(), timeoutMs: 5 }),
-    (error) => {
-      const failure = error as Error & {
-        diagnostics?: { sessionId?: string };
-      };
-      assert.match(failure.message, /Agent Attempt timed out/u);
-      assert.equal(failure.diagnostics?.sessionId, "probe-session");
-      return true;
-    },
   );
 });
 

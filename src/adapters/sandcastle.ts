@@ -27,10 +27,9 @@ import type {
 import { nativeAgent } from "./agent-provider.ts";
 import { AgentOutputError } from "./process-errors.ts";
 import { OperatorCancelled } from "../run/operations.ts";
-import { noShellSandbox } from "./no-shell-sandbox.ts";
+import { superviseInvocation } from "./agent-supervision.ts";
 import {
   cleanupFailure,
-  invokeSandbox,
   ProcessCleanupError,
   sessionFromError,
   type SandcastleRun,
@@ -95,9 +94,8 @@ export class SandcastleAgentExecutor implements AgentExecutor {
   private async waitForContinuation(
     input: ReviewAttemptInput,
     recoveryAttempt: number,
-    timeoutSignal: AbortSignal,
   ): Promise<number | undefined> {
-    if (input.signal.aborted || timeoutSignal.aborted) return undefined;
+    if (input.signal.aborted) return undefined;
     const policy = input.retryPolicy;
     const backoff =
       policy.agentRetryDelay[
@@ -107,28 +105,26 @@ export class SandcastleAgentExecutor implements AgentExecutor {
       input.logFile,
       `Waiting ${backoff / 1000} seconds before automatic prompt continuation (retry ${recoveryAttempt + 1}/${policy.agentRetry}).`,
     );
-    if (input.signal.aborted || timeoutSignal.aborted) return undefined;
-    let resolveTimeout!: () => void;
-    const timeout = new Promise<void>((resolve) => {
-      resolveTimeout = () => resolve();
-      if (timeoutSignal.aborted) resolve();
+    if (input.signal.aborted) return undefined;
+    let resolveCancellation!: () => void;
+    const cancelled = new Promise<void>((resolve) => {
+      resolveCancellation = () => resolve();
+      if (input.signal.aborted) resolve();
       else
-        timeoutSignal.addEventListener("abort", resolveTimeout, {
+        input.signal.addEventListener("abort", resolveCancellation, {
           once: true,
         });
     });
     try {
-      await Promise.race([this.wait(backoff, timeoutSignal), timeout]);
+      await Promise.race([this.wait(backoff, input.signal), cancelled]);
     } catch (error) {
       if (error instanceof OperatorCancelled) throw error;
-      if (input.signal.aborted || timeoutSignal.aborted) return undefined;
+      if (input.signal.aborted) return undefined;
       throw error;
     } finally {
-      timeoutSignal.removeEventListener("abort", resolveTimeout);
+      input.signal.removeEventListener("abort", resolveCancellation);
     }
-    return input.signal.aborted || timeoutSignal.aborted
-      ? undefined
-      : recoveryAttempt + 1;
+    return input.signal.aborted ? undefined : recoveryAttempt + 1;
   }
 
   private agentFailure(
@@ -162,21 +158,10 @@ export class SandcastleAgentExecutor implements AgentExecutor {
   private stopFailure(
     input: ReviewAttemptInput,
     provider: string,
-    timeoutSignal: AbortSignal,
     resumeSession: string | undefined,
   ): Error | undefined {
-    const signal = input.signal.aborted
-      ? input.signal
-      : timeoutSignal.aborted
-        ? timeoutSignal
-        : undefined;
-    if (signal === undefined) return undefined;
-    const reason = abortReason(
-      signal,
-      signal === input.signal
-        ? "Agent Attempt cancelled"
-        : "Agent Attempt timed out",
-    );
+    if (!input.signal.aborted) return undefined;
+    const reason = abortReason(input.signal, "Agent Attempt cancelled");
     return reason instanceof OperatorCancelled
       ? reason
       : this.agentFailure(input, provider, resumeSession, reason, true);
@@ -201,23 +186,17 @@ export class SandcastleAgentExecutor implements AgentExecutor {
         );
         if (input.signal.aborted)
           throw abortReason(input.signal, "Agent Attempt cancelled");
-        const sandbox = noShellSandbox({
-          env: { GIT_CONFIG_GLOBAL: input.gitConfigGlobal },
-        });
         const invoke = () => {
           input.signal.throwIfAborted();
-          return invokeSandbox(this.run, {
+          return superviseInvocation(this.run, input, {
             agent: provider,
-            sandbox,
             cwd: input.worktree,
             name: input.runName,
             prompt: "Reply with exactly: SESSION_READY",
             maxIterations: 1,
             completionSignal: ["SESSION_READY"],
-            idleTimeoutSeconds: input.timeoutMs / 1000,
             branchStrategy: { type: "head" },
             logging: { type: "file", path: input.logFile },
-            signal: input.signal,
           });
         };
         const invocation = await (input.advance?.(invoke) ?? invoke());
@@ -354,264 +333,218 @@ export class SandcastleAgentExecutor implements AgentExecutor {
         },
       );
     }
-    const controller = new AbortController();
-    const relayAbort = () => controller.abort(input.signal.reason);
-    if (input.signal.aborted) relayAbort();
-    else input.signal.addEventListener("abort", relayAbort, { once: true });
-    let timeout: ReturnType<typeof setTimeout> | undefined;
     let result: Awaited<ReturnType<SandcastleRun>>;
     let recoveryAttempt = 0;
     const policy = input.retryPolicy;
     let structuredRetryRemaining = policy.agentRetry;
     let structuredRetryAttempt = 0;
-    try {
-      for (;;) {
-        const stopBeforePrompt = this.stopFailure(
-          input,
-          provider.name,
-          controller.signal,
-          resumeSession,
-        );
-        if (stopBeforePrompt !== undefined) throw stopBeforePrompt;
-        const normalizedPrompt = prompt.trimEnd();
-        const runPrompt = normalizedPrompt.endsWith(outputPrompt)
-          ? prompt
-          : `${normalizedPrompt}\n\n${outputPrompt}`;
-        await this.logPrompt(input.logFile, runPrompt);
-        const stopBeforeInvocation = this.stopFailure(
-          input,
-          provider.name,
-          controller.signal,
-          resumeSession,
-        );
-        if (stopBeforeInvocation !== undefined) throw stopBeforeInvocation;
-        try {
-          const sandbox = noShellSandbox({
-            env: { GIT_CONFIG_GLOBAL: input.gitConfigGlobal },
+    for (;;) {
+      const stopBeforePrompt = this.stopFailure(
+        input,
+        provider.name,
+        resumeSession,
+      );
+      if (stopBeforePrompt !== undefined) throw stopBeforePrompt;
+      const normalizedPrompt = prompt.trimEnd();
+      const runPrompt = normalizedPrompt.endsWith(outputPrompt)
+        ? prompt
+        : `${normalizedPrompt}\n\n${outputPrompt}`;
+      await this.logPrompt(input.logFile, runPrompt);
+      const stopBeforeInvocation = this.stopFailure(
+        input,
+        provider.name,
+        resumeSession,
+      );
+      if (stopBeforeInvocation !== undefined) throw stopBeforeInvocation;
+      try {
+        const invoke = () => {
+          const stopped = this.stopFailure(input, provider.name, resumeSession);
+          if (stopped !== undefined) throw stopped;
+          return superviseInvocation(this.run, input, {
+            agent: provider,
+            cwd: input.worktree,
+            name: input.runName,
+            prompt: runPrompt,
+            maxIterations: 1,
+            completionSignal: [],
+            branchStrategy: { type: "head" },
+            logging: { type: "file", path: input.logFile },
+            output: Output.object({
+              tag,
+              schema,
+              maxRetries: 0,
+            }),
+            ...(isUsableSessionId(resumeSession) ? { resumeSession } : {}),
           });
-          const invoke = () => {
-            const stopped = this.stopFailure(
-              input,
-              provider.name,
-              controller.signal,
+        };
+        const invocation = await (input.advance?.(invoke) ?? invoke());
+        if (invocation.settlement.outcome === "failed")
+          throw cleanupFailure(
+            input,
+            provider.name,
+            firstUsableSessionId(
+              invocation.result?.iterations.at(-1)?.sessionId,
+              sessionFromError(invocation.runError),
               resumeSession,
-            );
-            if (stopped !== undefined) throw stopped;
-            timeout ??= setTimeout(
-              () => controller.abort(new Error("Agent Attempt timed out")),
-              input.timeoutMs,
-            );
-            return invokeSandbox(this.run, {
-              agent: provider,
-              sandbox,
-              cwd: input.worktree,
-              name: input.runName,
-              prompt: runPrompt,
-              maxIterations: 1,
-              completionSignal: [],
-              idleTimeoutSeconds: input.timeoutMs / 1000,
-              branchStrategy: { type: "head" },
-              logging: { type: "file", path: input.logFile },
-              output: Output.object({
-                tag,
-                schema,
-                maxRetries: 0,
-              }),
-              ...(isUsableSessionId(resumeSession) ? { resumeSession } : {}),
-              signal: controller.signal,
-            });
-          };
-          const invocation = await (input.advance?.(invoke) ?? invoke());
-          if (invocation.settlement.outcome === "failed")
-            throw cleanupFailure(
-              input,
-              provider.name,
-              firstUsableSessionId(
-                invocation.result?.iterations.at(-1)?.sessionId,
-                sessionFromError(invocation.runError),
-                resumeSession,
-              ),
-              invocation.runError,
-              invocation.settlement,
-            );
-          const stopped = this.stopFailure(
+            ),
+            invocation.runError,
+            invocation.settlement,
+          );
+        const stopped = this.stopFailure(input, provider.name, resumeSession);
+        if (stopped !== undefined) throw stopped;
+        if (invocation.runError !== undefined) throw invocation.runError;
+        if (invocation.result === undefined)
+          throw new Error("Sandcastle returned no invocation result");
+        result = invocation.result;
+      } catch (error) {
+        if (
+          error instanceof ProcessCleanupError ||
+          error instanceof OperatorCancelled
+        )
+          throw error;
+        const stopped = this.stopFailure(input, provider.name, resumeSession);
+        if (stopped !== undefined) throw stopped;
+        if (error instanceof StructuredOutputError) {
+          await this.logStatus(
+            input.logFile,
+            `Structured output validation failed; retryRemaining=${structuredRetryRemaining}; raw=${error.rawMatched ?? "<none>"}; issues=${formatStructuredCause(error.cause)}`,
+          );
+          const stopAfterValidation = this.stopFailure(
             input,
             provider.name,
-            controller.signal,
-            resumeSession,
+            firstUsableSessionId(error.sessionId, resumeSession),
           );
-          if (stopped !== undefined) throw stopped;
-          if (invocation.runError !== undefined) throw invocation.runError;
-          if (invocation.result === undefined)
-            throw new Error("Sandcastle returned no invocation result");
-          result = invocation.result;
-        } catch (error) {
-          if (error instanceof ProcessCleanupError) throw error;
-          const stopped = this.stopFailure(
-            input,
-            provider.name,
-            controller.signal,
-            resumeSession,
-          );
-          if (stopped !== undefined) throw stopped;
-          if (error instanceof StructuredOutputError) {
-            await this.logStatus(
-              input.logFile,
-              `Structured output validation failed; retryRemaining=${structuredRetryRemaining}; raw=${error.rawMatched ?? "<none>"}; issues=${formatStructuredCause(error.cause)}`,
-            );
-            const stopAfterValidation = this.stopFailure(
-              input,
-              provider.name,
-              controller.signal,
-              firstUsableSessionId(error.sessionId, resumeSession),
-            );
-            if (stopAfterValidation !== undefined) throw stopAfterValidation;
-            if (
-              structuredRetryRemaining > 0 &&
-              isUsableSessionId(error.sessionId)
-            ) {
-              structuredRetryRemaining -= 1;
-              const nextRecoveryAttempt = await this.waitForContinuation(
-                input,
-                structuredRetryAttempt,
-                controller.signal,
-              );
-              if (nextRecoveryAttempt === undefined) {
-                const failed = this.stopFailure(
-                  input,
-                  provider.name,
-                  controller.signal,
-                  error.sessionId,
-                );
-                if (failed !== undefined) throw failed;
-                throw this.agentFailure(
-                  input,
-                  provider.name,
-                  error.sessionId,
-                  error,
-                );
-              }
-              structuredRetryAttempt = nextRecoveryAttempt;
-              prompt = [
-                `The previous structured output failed validation. Specific validation errors: ${formatStructuredCause(error.cause)}`,
-                "Re-emit exactly one corrected result using the complete output protocol below.",
-                outputPrompt,
-              ].join("\n\n");
-              resumeSession = error.sessionId;
-              await this.logStatus(
-                input.logFile,
-                `Starting structured output retry; retryRemaining=${structuredRetryRemaining}; resumeSession=${error.sessionId}`,
-              );
-              continue;
-            }
-            const recovered = recoverStructuredOutput(error, schema);
-            if (recovered !== undefined) {
-              await this.logStatus(
-                input.logFile,
-                "Recovered the final structured output from the retry result.",
-              );
-              const stopped = this.stopFailure(
-                input,
-                provider.name,
-                controller.signal,
-                isUsableSessionId(error.sessionId)
-                  ? error.sessionId
-                  : resumeSession,
-              );
-              if (stopped !== undefined) throw stopped;
-              const diagnostics = structuredDiagnostics(
-                input,
-                error,
-                provider.name,
-              );
-              Object.defineProperty(recovered, "diagnostics", {
-                value: diagnostics,
-                enumerable: false,
-                configurable: true,
-              });
-              return recovered;
-            }
-            const diagnostics = structuredDiagnostics(
-              input,
-              error,
-              provider.name,
-            );
-            diagnostics.error =
-              formatStructuredCause(error.cause) || error.message;
-            throw new AgentOutputError(error.message, diagnostics);
-          }
+          if (stopAfterValidation !== undefined) throw stopAfterValidation;
           if (
-            // Recovery is state-based; Sandcastle error text is deliberately opaque.
-            !controller.signal.aborted &&
-            !input.signal.aborted &&
-            isUsableSessionId(resumeSession) &&
-            recoveryAttempt < policy.agentRetry
+            structuredRetryRemaining > 0 &&
+            isUsableSessionId(error.sessionId)
           ) {
+            structuredRetryRemaining -= 1;
             const nextRecoveryAttempt = await this.waitForContinuation(
               input,
-              recoveryAttempt,
-              controller.signal,
+              structuredRetryAttempt,
             );
             if (nextRecoveryAttempt === undefined) {
               const failed = this.stopFailure(
                 input,
                 provider.name,
-                controller.signal,
-                resumeSession,
+                error.sessionId,
               );
               if (failed !== undefined) throw failed;
               throw this.agentFailure(
                 input,
                 provider.name,
-                resumeSession,
-                controller.signal.reason ?? error,
+                error.sessionId,
+                error,
               );
             }
-            recoveryAttempt = nextRecoveryAttempt;
-            prompt = "continue";
-            resumeSession = this.sessions.get(input.logFile) ?? resumeSession;
+            structuredRetryAttempt = nextRecoveryAttempt;
+            prompt = [
+              `The previous structured output failed validation. Specific validation errors: ${formatStructuredCause(error.cause)}`,
+              "Re-emit exactly one corrected result using the complete output protocol below.",
+              outputPrompt,
+            ].join("\n\n");
+            resumeSession = error.sessionId;
+            await this.logStatus(
+              input.logFile,
+              `Starting structured output retry; retryRemaining=${structuredRetryRemaining}; resumeSession=${error.sessionId}`,
+            );
             continue;
           }
-          throw this.agentFailure(input, provider.name, resumeSession, error);
+          const recovered = recoverStructuredOutput(error, schema);
+          if (recovered !== undefined) {
+            await this.logStatus(
+              input.logFile,
+              "Recovered the final structured output from the retry result.",
+            );
+            const stopped = this.stopFailure(
+              input,
+              provider.name,
+              isUsableSessionId(error.sessionId)
+                ? error.sessionId
+                : resumeSession,
+            );
+            if (stopped !== undefined) throw stopped;
+            const diagnostics = structuredDiagnostics(
+              input,
+              error,
+              provider.name,
+            );
+            Object.defineProperty(recovered, "diagnostics", {
+              value: diagnostics,
+              enumerable: false,
+              configurable: true,
+            });
+            return recovered;
+          }
+          const diagnostics = structuredDiagnostics(
+            input,
+            error,
+            provider.name,
+          );
+          diagnostics.error =
+            formatStructuredCause(error.cause) || error.message;
+          throw new AgentOutputError(error.message, diagnostics);
         }
-        const sessionId = result.iterations.at(-1)?.sessionId;
-        if (isUsableSessionId(sessionId))
-          this.sessions.set(input.logFile, sessionId);
-        const openingTags = result.stdout.split(`<${tag}>`).length - 1;
-        const closingTags = result.stdout.split(`</${tag}>`).length - 1;
         if (
-          openingTags !== 0 ||
-          closingTags !== 0 ||
-          recoveryAttempt === policy.agentRetry
-        )
-          break;
-        const nextRecoveryAttempt = await this.waitForContinuation(
-          input,
-          recoveryAttempt,
-          controller.signal,
-        );
-        if (nextRecoveryAttempt === undefined) {
-          const failed = this.stopFailure(
+          // Recovery is state-based; Sandcastle error text is deliberately opaque.
+          !input.signal.aborted &&
+          isUsableSessionId(resumeSession) &&
+          recoveryAttempt < policy.agentRetry
+        ) {
+          const nextRecoveryAttempt = await this.waitForContinuation(
             input,
-            provider.name,
-            controller.signal,
-            resumeSession,
+            recoveryAttempt,
           );
-          if (failed !== undefined) throw failed;
-          throw this.agentFailure(
-            input,
-            provider.name,
-            resumeSession,
-            controller.signal.reason,
-          );
+          if (nextRecoveryAttempt === undefined) {
+            const failed = this.stopFailure(
+              input,
+              provider.name,
+              resumeSession,
+            );
+            if (failed !== undefined) throw failed;
+            throw this.agentFailure(
+              input,
+              provider.name,
+              resumeSession,
+              input.signal.reason ?? error,
+            );
+          }
+          recoveryAttempt = nextRecoveryAttempt;
+          prompt = "continue";
+          resumeSession = this.sessions.get(input.logFile) ?? resumeSession;
+          continue;
         }
-        recoveryAttempt = nextRecoveryAttempt;
-        prompt = "continue";
-        resumeSession = this.sessions.get(input.logFile) ?? resumeSession;
+        throw this.agentFailure(input, provider.name, resumeSession, error);
       }
-    } finally {
-      clearTimeout(timeout);
-      input.signal.removeEventListener("abort", relayAbort);
+      const sessionId = result.iterations.at(-1)?.sessionId;
+      if (isUsableSessionId(sessionId))
+        this.sessions.set(input.logFile, sessionId);
+      const openingTags = result.stdout.split(`<${tag}>`).length - 1;
+      const closingTags = result.stdout.split(`</${tag}>`).length - 1;
+      if (
+        openingTags !== 0 ||
+        closingTags !== 0 ||
+        recoveryAttempt === policy.agentRetry
+      )
+        break;
+      const nextRecoveryAttempt = await this.waitForContinuation(
+        input,
+        recoveryAttempt,
+      );
+      if (nextRecoveryAttempt === undefined) {
+        const failed = this.stopFailure(input, provider.name, resumeSession);
+        if (failed !== undefined) throw failed;
+        throw this.agentFailure(
+          input,
+          provider.name,
+          resumeSession,
+          input.signal.reason,
+        );
+      }
+      recoveryAttempt = nextRecoveryAttempt;
+      prompt = "continue";
+      resumeSession = this.sessions.get(input.logFile) ?? resumeSession;
     }
     const openingTags = result.stdout.split(`<${tag}>`).length - 1;
     const closingTags = result.stdout.split(`</${tag}>`).length - 1;

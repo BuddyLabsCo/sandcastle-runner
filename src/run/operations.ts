@@ -154,6 +154,23 @@ export type TicketAgentPauseDecision =
   | { decision: "continue"; response: string }
   | { decision: "skip" };
 
+export async function pauseForAgentTimeout(
+  audit: AuditLog,
+  event: Omit<AuditEvent, "result" | "error">,
+  operator: OperatorIO,
+  message: string,
+): Promise<void> {
+  await waitForOperator(
+    audit,
+    event,
+    operator,
+    `${message} Enter to keep waiting on the same invocation or accept its retained outcome; q/EOF to cancel. Other input is unsupported.`,
+    false,
+    false,
+    "acknowledged",
+  );
+}
+
 export async function pauseTicketAgentForOperator(
   audit: AuditLog,
   event: Omit<AuditEvent, "result" | "error">,
@@ -181,6 +198,7 @@ async function waitForOperator(
   message: string,
   allowsSkip: boolean,
   allowsInstructions: boolean,
+  emptyResponse: "retry" | "acknowledged" = "retry",
 ): Promise<string> {
   const release = operator.coordination?.intervene();
   try {
@@ -205,7 +223,7 @@ async function waitForOperator(
       }
       const result =
         response === ""
-          ? "retry"
+          ? emptyResponse
           : allowsSkip && response === "s"
             ? "skipped"
             : allowsInstructions

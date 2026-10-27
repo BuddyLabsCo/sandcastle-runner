@@ -49,6 +49,8 @@ export function input() {
     gitConfigGlobal: "/tmp/attempt/config",
     logFile: "/runner/projects/demo/logs/agent.log",
     timeoutMs: 120_000,
+    idleTimeoutMs: 600_000,
+    pauseForTimeout: async () => {},
     retryPolicy: {
       operationRetry: 4,
       agentRetry: 4,

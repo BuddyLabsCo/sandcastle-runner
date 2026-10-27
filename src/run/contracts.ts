@@ -266,6 +266,8 @@ export interface AgentAttemptInput {
   gitConfigGlobal: string;
   logFile: string;
   timeoutMs: number;
+  idleTimeoutMs: number;
+  pauseForTimeout: (cause: "idle" | "overall") => Promise<void>;
   retryPolicy: RetryPolicy;
   signal: AbortSignal;
   advance?: <T>(action: () => Promise<T>) => Promise<T>;
