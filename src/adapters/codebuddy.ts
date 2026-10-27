@@ -205,11 +205,6 @@ function nativeOptions(options: Record<string, unknown>) {
       env[key] = value;
     }
   }
-  const sandbox = env.CODEBUDDY_IS_SANDBOX ?? process.env.CODEBUDDY_IS_SANDBOX;
-  if (["1", "true", "yes", "on"].includes(sandbox?.trim().toLowerCase() ?? ""))
-    throw new Error(
-      "CodeBuddy host execution cannot enable CODEBUDDY_IS_SANDBOX",
-    );
   const store = env.CODEBUDDY_CONFIG_DIR ?? process.env.CODEBUDDY_CONFIG_DIR;
   if (store?.trim() && !isAbsolute(store))
     throw new Error("CodeBuddy CODEBUDDY_CONFIG_DIR must be absolute");

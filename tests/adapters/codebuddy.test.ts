@@ -174,7 +174,6 @@ test("CodeBuddy preserves supported options and rejects unsafe or malformed prof
     { effort: "extreme" },
     { maxTurns: 0 },
     { maxTurns: 1.5 },
-    { env: { CODEBUDDY_IS_SANDBOX: "1" } },
     { env: { X: 1 } },
     { env: { CODEBUDDY_CONFIG_DIR: "relative-store" } },
     { tools: ["Read"] },
@@ -262,45 +261,14 @@ test("CodeBuddy keeps concurrent custom session stores isolated", async () => {
   );
 });
 
-// Regression: native truthy spellings must never enable sandbox bypass on the host.
-// Seam: provider profiles; existing coverage rejects only the literal "1".
-test("CodeBuddy rejects explicit and inherited native sandbox-bypass values", () => {
-  const original = process.env.CODEBUDDY_IS_SANDBOX;
-  const enabled = ["1", "true", "yes", "on", " TRUE ", "YeS", "oN", "\t1\n"];
-  try {
-    delete process.env.CODEBUDDY_IS_SANDBOX;
-    for (const value of enabled)
-      assert.throws(
-        () =>
-          nativeAgent("codebuddy", "model", {
-            permissionMode: "bypassPermissions",
-            env: { CODEBUDDY_IS_SANDBOX: value },
-          }),
-        /host execution cannot enable CODEBUDDY_IS_SANDBOX/u,
-        `explicit ${JSON.stringify(value)}`,
-      );
-    for (const value of enabled) {
-      process.env.CODEBUDDY_IS_SANDBOX = value;
-      assert.throws(
-        () =>
-          nativeAgent("codebuddy", "model", {
-            permissionMode: "bypassPermissions",
-          }),
-        /host execution cannot enable CODEBUDDY_IS_SANDBOX/u,
-        `inherited ${JSON.stringify(value)}`,
-      );
-    }
-    for (const value of ["", "0", "false", "no", "off"])
-      assert.equal(
-        nativeAgent("codebuddy", "model", {
-          env: { CODEBUDDY_IS_SANDBOX: value },
-        }).env.CODEBUDDY_IS_SANDBOX,
-        value,
-      );
-  } finally {
-    if (original === undefined) delete process.env.CODEBUDDY_IS_SANDBOX;
-    else process.env.CODEBUDDY_IS_SANDBOX = original;
-  }
+test("CodeBuddy defaults to dontAsk without enabling sandbox full pass", () => {
+  const provider = nativeAgent("codebuddy", "model");
+  const built = provider.buildPrintCommand({
+    prompt: "task",
+    dangerouslySkipPermissions: true,
+  });
+  assert.match(built.command, /--permission-mode 'dontAsk'/u);
+  assert.equal(provider.env.CODEBUDDY_IS_SANDBOX, undefined);
 });
 
 // Regression: overriding the child home must not split probe persistence and lookup.

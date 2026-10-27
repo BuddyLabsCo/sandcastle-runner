@@ -121,28 +121,41 @@ before starting Runner. The provider was checked with CLI 2.177.0 and
 Sandcastle 0.12.0; account access and authentication renewal remain native CLI
 prerequisites. Keep credentials outside Project YAML.
 
-Select CodeBuddy independently for any role, for example:
+Select CodeBuddy independently for any role:
+
+```yaml
+agent: codebuddy
+model: deepseek-v4.1-flash
+```
+
+Runner defaults `permissionMode` to `dontAsk`, overriding the CLI's configured
+default mode: unapproved operations are denied without prompting.
+Prepare trusted native allow rules for the Project's required edits, commands,
+Git operations, repairs, and Documentation Maintenance, or supply them through
+`options.allowedTools`.
+
+To request CodeBuddy's native sandbox full-pass mode, configure the role as follows:
 
 ```yaml
 agent: codebuddy
 model: deepseek-v4.1-flash
 options:
-  effort: high
-  permissionMode: dontAsk
-  allowedTools: [Read, Write, Edit, "Bash(git:*)", "Bash(node:*)"]
+  permissionMode: bypassPermissions
   env:
-    CODEBUDDY_CONFIG_DIR: /absolute/path/to/dedicated-codebuddy-state
+    CODEBUDDY_IS_SANDBOX: "1"
 ```
 
-The default `permissionMode` is `dontAsk`: unapproved operations are denied.
-Prepare trusted native allow rules for the Project's required edits, commands,
-Git operations, repairs, and Documentation Maintenance. The example rules are
-a starting point, not certified operation coverage. Explicit native policy can
+If Runner already inherits `CODEBUDDY_IS_SANDBOX=1`, omit the `env` block.
+Explicit `options.env` values override inherited environment values. Select
+`permissionMode: bypassPermissions` even when it is the CLI's configured default;
+otherwise Runner uses `dontAsk`. This setup requires neither `allowedTools` nor
+a dedicated `CODEBUDDY_CONFIG_DIR`.
+
+The [native full-pass mode](https://www.codebuddy.cn/docs/cli/permission-modes)
+permits dangerous commands without confirmation; the environment flag creates
+no OS sandbox. Runner still launches CodeBuddy on the host. Native policy can
 still refuse an operation. Runner preserves refusal evidence and requires the
 tagged result and independent Git verification, even when the CLI exits zero.
-`bypassPermissions` and `-y` do not guarantee unattended execution. Runner rejects
-all enabled `CODEBUDDY_IS_SANDBOX` values on the host: `1`, `true`, `yes`, and
-`on`, ignoring case and surrounding whitespace.
 
 Supported `options` are `effort` (minimal/low/medium/high/xhigh/max), positive
 integer `maxTurns`, `permissionMode` (acceptEdits/bypassPermissions/default/plan/
