@@ -1,3 +1,5 @@
+English | [简体中文](README.zh-CN.md)
+
 # Sandcastle Runner
 
 Sandcastle Runner is a local CLI that uses code to manage the routine steps of
