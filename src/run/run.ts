@@ -627,9 +627,7 @@ async function runProjectInternal(
         : {
             recoveryPublication: maintenancePublication,
           }),
-      ciRepairPrompt: input.ciRepairPrompt,
       ciRepairAgent: input.ciRepairAgent,
-      conflictRepairPrompt: input.conflictRepairPrompt,
       conflictRepairAgent: input.conflictRepairAgent,
       agentTimeoutMs: input.agentTimeoutMs,
       requiredChecksTimeoutMs: input.requiredChecksTimeoutMs,

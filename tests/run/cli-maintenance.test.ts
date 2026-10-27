@@ -387,7 +387,7 @@ test("Documentation Maintenance reuses CI and conflict repair on its original Pu
         async execute(input) {
           if (input.ticket !== maintenance.number)
             return delivery.agentExecutor.execute!(input);
-          if (input.promptFile.endsWith("ci-repair.md")) {
+          if (input.promptArgs.FAILED_CHECKS !== undefined) {
             repairPrompts.push("ci");
             return {
               outcome: "committed",
@@ -399,7 +399,7 @@ test("Documentation Maintenance reuses CI and conflict repair on its original Pu
               blocker: null,
             };
           }
-          if (input.promptFile.endsWith("conflict-repair.md")) {
+          if (input.promptArgs.MERGE_CONFLICT !== undefined) {
             repairPrompts.push("conflict");
             return {
               outcome: "committed",

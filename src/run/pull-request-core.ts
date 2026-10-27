@@ -48,9 +48,7 @@ export interface PublicationInput extends ReadinessInput {
   targetBranch: string;
   checkout: string;
   projectDirectory: string;
-  ciRepairPrompt: string;
   ciRepairAgent: AgentConfig;
-  conflictRepairPrompt: string;
   conflictRepairAgent: AgentConfig;
   agentTimeoutMs: number;
   handoffs: VerifiedHandoff[];

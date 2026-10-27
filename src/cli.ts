@@ -542,13 +542,7 @@ export async function executeCli(
       ...(loaded.config.agents.review === undefined
         ? {}
         : { reviewAgent: loaded.config.agents.review }),
-      ciRepairPrompt: path.join(loaded.directory, "prompts", "ci-repair.md"),
       ciRepairAgent: loaded.config.agents.ciRepair,
-      conflictRepairPrompt: path.join(
-        loaded.directory,
-        "prompts",
-        "conflict-repair.md",
-      ),
       conflictRepairAgent: loaded.config.agents.conflictRepair,
       docMaintainTriggerLabel: loaded.config.workflow.docMaintainTriggerLabel,
       ...(selector === "document" ? { documentOnly: true } : {}),

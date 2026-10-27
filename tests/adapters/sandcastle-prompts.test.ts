@@ -69,9 +69,13 @@ test("Runner supplies task context even when project prompts contain only user i
         },
       });
     } else {
+      const { promptFile: unusedPrompt, ...attempt } = input();
+      void unusedPrompt;
       await executor.execute({
-        ...input(),
-        promptFile,
+        ...attempt,
+        ...(purpose === "ciRepair" || purpose === "conflictRepair"
+          ? {}
+          : { promptFile }),
         promptArgs: context,
         pullRequestMetadata:
           purpose === "documentation"
@@ -89,15 +93,28 @@ test("Runner supplies task context even when project prompts contain only user i
       ...Object.values(context),
     ])
       assert.ok(prompt.includes(value), `${purpose}: missing ${value}`);
-    assert.match(prompt, /Follow this project's instructions/u);
+    if (purpose === "ciRepair" || purpose === "conflictRepair")
+      assert.doesNotMatch(prompt, /Follow this project's instructions/u);
+    else assert.match(prompt, /Follow this project's instructions/u);
     assert.match(prompt, /Work only in the supplied Worktree/u);
     if (purpose === "conflictRepair") {
       assert.doesNotMatch(prompt, /Do not fetch or pull/u);
-      assert.match(prompt, /Merge the supplied TARGET_BRANCH_SHA/u);
-      assert.match(prompt, /Fetch if needed/u);
+      assert.match(
+        prompt,
+        /Resolve the reported merge conflict while preserving both accepted intents/u,
+      );
+      assert.doesNotMatch(
+        prompt,
+        /Merge the supplied TARGET_BRANCH_SHA|Fetch if needed/u,
+      );
     } else {
       assert.match(prompt, /Do not fetch or pull/u);
     }
+    if (purpose === "ciRepair")
+      assert.match(
+        prompt,
+        /Diagnose the failed required checks and make the smallest accepted repair/u,
+      );
     assert.doesNotMatch(prompt, /\bRunner\b/u);
     assert.doesNotMatch(prompt, /For conflict repair/u);
     assert.ok(prompt.includes(`<${tag}>`));

@@ -298,20 +298,25 @@ export class SandcastleAgentExecutor implements AgentExecutor {
     ).trim();
     if (prompt === undefined) {
       resumeSession ??= await this.prepareSession(input, provider);
-      const template = replacePromptPlaceholders(
-        await readFile(input.promptFile, "utf8"),
-        {
-          ...input.promptArgs,
-          SOURCE_BRANCH: input.branch,
-          TARGET_BRANCH: String(input.targetBranch),
-        },
-      );
+      const template =
+        input.promptFile === undefined
+          ? ""
+          : replacePromptPlaceholders(
+              await readFile(input.promptFile, "utf8"),
+              {
+                ...input.promptArgs,
+                SOURCE_BRANCH: input.branch,
+                TARGET_BRANCH: String(input.targetBranch),
+              },
+            );
       const context = replacePromptPlaceholders(
         await readFile(
           join(
             runnerPromptDirectory,
             input.promptArgs.TARGET_BRANCH_SHA === undefined
-              ? `${promptKind}-attempt-input.md`
+              ? input.promptArgs.FAILED_CHECKS === undefined
+                ? `${promptKind}-attempt-input.md`
+                : "ci-repair-input.md"
               : "conflict-repair-input.md",
           ),
           "utf8",
@@ -328,7 +333,9 @@ export class SandcastleAgentExecutor implements AgentExecutor {
           }),
         },
       );
-      prompt = `${context.trimEnd()}\n\n${template.trimEnd()}\n\n${outputPrompt}`;
+      prompt = [context.trimEnd(), template.trimEnd(), outputPrompt]
+        .filter(Boolean)
+        .join("\n\n");
     }
     if (prompt !== undefined && !isUsableSessionId(resumeSession)) {
       throw new AgentOutputError(

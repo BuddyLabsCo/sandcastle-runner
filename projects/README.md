@@ -5,7 +5,7 @@ This directory is a project template for Sandcastle Runner. Copy it to `projects
 ## Configure a Project
 
 Edit the [example config.yaml](sandcastle-runner/config.yaml); its inline comments explain each field and native session lookup options.
-Implementation, CI repair, and conflict repair prompts must be nonempty. Review and documentation prompts are required when their workflow is enabled.
+The implementation prompt must be nonempty. Review and documentation prompts are required when their workflow is enabled. CI and conflict repairs use fixed input templates under `src/prompts`; no Project repair prompt is required.
 
 ## Operator Pause actions
 
@@ -154,8 +154,6 @@ Keep only repository-specific instructions in these files:
 
 - `implement.md`: implementation practices and checks
 - `review.md`: review skills and criteria
-- `ci-repair.md`: diagnosis and repair guidance
-- `conflict-repair.md`: conflict resolution guidance
 - `documentation.md`: documentation scope and conventions
 
 Runner templates under `src/prompts` supply task context, Worktree and branch restrictions, review diff boundaries, findings paths, and output protocols.

@@ -10,8 +10,6 @@ const root = path.resolve(import.meta.dirname, "../..");
 const placeholders = {
   "implement.md": [],
   "review.md": [],
-  "ci-repair.md": [],
-  "conflict-repair.md": [],
   "documentation.md": [],
 } as const;
 

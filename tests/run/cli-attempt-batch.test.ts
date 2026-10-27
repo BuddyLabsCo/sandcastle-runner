@@ -391,7 +391,9 @@ test("multiple matching Delivery Tickets trigger one committed Documentation Mai
           runNames.push(input.runName);
           operations.push("maintenance:agent");
           assert.ok(
-            input.promptFile.endsWith(path.join("prompts", "documentation.md")),
+            input.promptFile?.endsWith(
+              path.join("prompts", "documentation.md"),
+            ),
           );
           assert.deepEqual(Object.keys(input.promptArgs).sort(), [
             "BASE_SHA",

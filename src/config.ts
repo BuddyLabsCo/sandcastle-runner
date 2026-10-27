@@ -4,7 +4,6 @@ import { parse } from "yaml";
 
 import type { RetryPolicy, TicketClosurePolicy } from "./run/contracts.ts";
 
-const promptNames = ["implement", "ci-repair", "conflict-repair"] as const;
 const documentationConfigurationError =
   "Documentation Maintenance is enabled; supply agents.documentation and prompts/documentation.md";
 const reviewConfigurationError =
@@ -318,18 +317,13 @@ export async function loadProject(
     );
   }
   const config = parseConfig(value, options);
-  await Promise.all(
-    promptNames.map(async (name) => {
-      const filename = `${name}.md`;
-      if (
-        (
-          await readFile(path.join(directory, "prompts", filename), "utf8")
-        ).trim() === ""
-      ) {
-        throw new Error(`${filename} must not be empty`);
-      }
-    }),
-  );
+  if (
+    (
+      await readFile(path.join(directory, "prompts", "implement.md"), "utf8")
+    ).trim() === ""
+  ) {
+    throw new Error("implement.md must not be empty");
+  }
   if (
     options.requireDocumentationMaintenance === true ||
     config.workflow.docMaintainTriggerLabel.length > 0

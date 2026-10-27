@@ -74,9 +74,7 @@ export interface RunInput {
   maxReviewRounds?: number;
   reviewPrompt: string;
   reviewAgent?: AgentConfig;
-  ciRepairPrompt: string;
   ciRepairAgent: AgentConfig;
-  conflictRepairPrompt: string;
   conflictRepairAgent: AgentConfig;
   docMaintainTriggerLabel: string;
   documentOnly?: boolean;

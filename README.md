@@ -116,8 +116,6 @@ projects/<project-key>/
   prompts/
     implement.md
     review.md
-    ci-repair.md
-    conflict-repair.md
     documentation.md
   logs/
 ```

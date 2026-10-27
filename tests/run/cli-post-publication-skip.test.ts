@@ -33,7 +33,7 @@ test("a CI skip keeps its failed row when a peer leaves the Batch barrier unreso
       },
       agentExecutor: {
         async execute(input) {
-          if (input.promptFile.endsWith("ci-repair.md"))
+          if (input.promptArgs.FAILED_CHECKS !== undefined)
             return {
               outcome: "blocked",
               summary: "CI repair needs a decision",
@@ -159,7 +159,11 @@ for (const repair of ["ci", "conflict"] as const) {
       },
       agentExecutor: {
         async execute(input) {
-          if (input.promptFile.endsWith(`${repair}-repair.md`)) {
+          if (
+            input.promptArgs[
+              repair === "ci" ? "FAILED_CHECKS" : "MERGE_CONFLICT"
+            ] !== undefined
+          ) {
             await mkdir(input.logFile);
             return {
               outcome: "blocked",

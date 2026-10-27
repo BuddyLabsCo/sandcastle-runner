@@ -146,7 +146,7 @@ export async function runAgentOperation(
     branch: string;
     base: string;
     requiredAncestor?: string;
-    promptFile: string;
+    promptFile?: string;
     promptArgs: Record<string, string | number>;
     pullRequestMetadata: "required" | "required_for_committed" | "ignored";
     existingPrMetadata?: Pick<VerifiedHandoff, "prTitle" | "prBody">;
@@ -210,7 +210,9 @@ export async function runAgentOperation(
           branch: operation.branch,
           base: operation.base,
           targetBranch: input.targetBranch,
-          promptFile: operation.promptFile,
+          ...(operation.promptFile === undefined
+            ? {}
+            : { promptFile: operation.promptFile }),
           promptArgs: operation.promptArgs,
           pullRequestMetadata: operation.pullRequestMetadata,
           agent: operation.agent.agent,

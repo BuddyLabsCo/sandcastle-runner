@@ -130,7 +130,6 @@ export async function runCiRepairAttempt(
     base: string;
     pullRequest: PullRequestIdentity;
     failedChecks: RequiredCheck[];
-    promptFile: string;
     agent: AgentConfig;
     signal: AbortSignal;
     attemptCounter: { value: number };
@@ -152,7 +151,6 @@ export async function runCiRepairAttempt(
       worktree: input.handoff.worktree,
       branch: input.handoff.branch,
       base: input.base,
-      promptFile: input.promptFile,
       promptArgs: {
         TICKET_NUMBER: input.handoff.ticket,
         TICKET_REFERENCE: `${input.repository}#${input.handoff.ticket}`,
@@ -203,7 +201,6 @@ export async function runConflictRepairAttempt(
     targetBase: string;
     pullRequest: PullRequestIdentity;
     conflict: string;
-    promptFile: string;
     agent: AgentConfig;
     signal: AbortSignal;
     attemptCounter: { value: number };
@@ -226,7 +223,6 @@ export async function runConflictRepairAttempt(
       branch: input.handoff.branch,
       base: input.base,
       requiredAncestor: input.targetBase,
-      promptFile: input.promptFile,
       promptArgs: {
         TICKET_NUMBER: input.handoff.ticket,
         TICKET_REFERENCE: `${input.repository}#${input.handoff.ticket}`,
