@@ -35,7 +35,7 @@ test("implementation and review logs are stage-named and removed on success", as
   const logPaths: string[] = [];
   const logs = path.join(root, "projects/demo/logs");
   await mkdir(logs, { recursive: true });
-  const unrelatedMarkdown = path.join(logs, "review-9-notes.md");
+  const unrelatedMarkdown = path.join(logs, "review-9-notes-round-1.md");
   await writeFile(unrelatedMarkdown, "keep Markdown");
   const historicalLog = path.join(logs, "agent-9-historical.log");
   await writeFile(historicalLog, "keep");
