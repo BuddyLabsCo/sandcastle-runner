@@ -176,12 +176,13 @@ async function runReviewRound(
             logFile,
             timeoutMs: input.timeoutMs,
             idleTimeoutMs: input.idleTimeoutMs,
-            pauseForTimeout: (cause) =>
+            pauseForTimeout: (cause, intervention) =>
               pauseForAgentTimeout(
                 input.audit,
                 event,
                 input.operator,
                 `Agent ${cause} threshold reached for review issue ${handoff.ticket}. Working directory: ${handoff.worktree}. Diagnostic log: ${logFile}.`,
+                intervention,
               ),
             retryPolicy: input.retryPolicy,
             signal: input.operator.coordination

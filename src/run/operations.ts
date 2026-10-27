@@ -1,5 +1,10 @@
 import type { AuditEvent, AuditLog } from "../audit.ts";
-import type { Clock, OperatorIO, RetryPolicy } from "./contracts.ts";
+import type {
+  AgentTimeoutIntervention,
+  Clock,
+  OperatorIO,
+  RetryPolicy,
+} from "./contracts.ts";
 import { RunCoordination } from "./run-coordination.ts";
 
 export class OperatorCancelled extends Error {}
@@ -18,7 +23,7 @@ export function scopeOperator(operator: OperatorIO, scope: string): OperatorIO {
     ...operator,
     skipScope: scope,
     write: (message) => operator.write(message),
-    pause: (message) => operator.pause(message),
+    pause: (message, render) => operator.pause(message, render),
   };
 }
 
@@ -36,7 +41,7 @@ export function serializeOperator(
     write(message) {
       operator.write(message);
     },
-    async pause(message) {
+    async pause(message, render) {
       const releaseIntervention = coordination.intervene();
       const previous = tail;
       let release!: () => void;
@@ -46,7 +51,7 @@ export function serializeOperator(
       await previous;
       try {
         if (controller.signal.aborted) return null;
-        const response = await operator.pause(message);
+        const response = await operator.pause(render?.() ?? message);
         if (response === null || response === "q")
           controller.abort(new OperatorCancelled("operator cancelled"));
         return response;
@@ -159,16 +164,48 @@ export async function pauseForAgentTimeout(
   event: Omit<AuditEvent, "result" | "error">,
   operator: OperatorIO,
   message: string,
+  intervention?: AgentTimeoutIntervention,
 ): Promise<void> {
-  await waitForOperator(
-    audit,
-    event,
-    operator,
-    `${message} Enter to keep waiting on the same invocation or accept its retained outcome; q/EOF to cancel. Other input is unsupported.`,
-    false,
-    false,
-    "acknowledged",
-  );
+  const release = operator.coordination?.intervene();
+  let takeover: { message: string; continuable: boolean } | undefined;
+  const render = () => {
+    if (takeover) {
+      const action = takeover.continuable
+        ? "Exit the manual CLI before pressing Enter to resume the exact session through Runner."
+        : "Continuation is blocked.";
+      return `${takeover.message} ${action} q/EOF cancels the Run. Other input is unsupported.`;
+    }
+    const kill = intervention
+      ? "k to stop only this invocation and remain paused; "
+      : "";
+    return `${message} Enter to keep waiting on the same invocation or accept its retained outcome; ${kill}q/EOF to cancel. Other input is unsupported.\n${intervention?.describe() ?? ""}`;
+  };
+  const record = (result: string, transition = result) =>
+    recordPause(audit, event, operator, result, transition);
+  try {
+    for (;;) {
+      await record("started", "pause_started");
+      const response = await operator.pause(render(), render);
+      if (response === null || response === "q") {
+        await record("cancelled");
+        throw new OperatorCancelled("operator cancelled");
+      }
+      if (response === "k" && intervention && !takeover) {
+        await record("kill_requested");
+        takeover = await intervention.kill();
+        await record("process_settled");
+        continue;
+      }
+      if (response === "" && takeover?.continuable !== false) {
+        await record("acknowledged");
+        return;
+      }
+      await record("unsupported_input", "pause_started");
+      operator.write("Unsupported input. " + render());
+    }
+  } finally {
+    release?.();
+  }
 }
 
 export async function pauseTicketAgentForOperator(
@@ -191,6 +228,26 @@ export async function pauseTicketAgentForOperator(
   return { decision: "continue", response };
 }
 
+async function recordPause(
+  audit: AuditLog,
+  event: Omit<AuditEvent, "result" | "error">,
+  operator: OperatorIO,
+  result: string,
+  transition: string,
+): Promise<void> {
+  await supervisedAuditWrite(
+    () =>
+      audit.append({
+        ...event,
+        operation: "operator_pause",
+        result,
+        error: null,
+        transition,
+      }),
+    operator,
+  );
+}
+
 async function waitForOperator(
   audit: AuditLog,
   event: Omit<AuditEvent, "result" | "error">,
@@ -198,22 +255,11 @@ async function waitForOperator(
   message: string,
   allowsSkip: boolean,
   allowsInstructions: boolean,
-  emptyResponse: "retry" | "acknowledged" = "retry",
 ): Promise<string> {
   const release = operator.coordination?.intervene();
   try {
     const record = (result: string, transition = result) =>
-      supervisedAuditWrite(
-        () =>
-          audit.append({
-            ...event,
-            operation: "operator_pause",
-            result,
-            error: null,
-            transition,
-          }),
-        operator,
-      );
+      recordPause(audit, event, operator, result, transition);
     for (;;) {
       await record("started", "pause_started");
       const response = await operator.pause(message);
@@ -223,7 +269,7 @@ async function waitForOperator(
       }
       const result =
         response === ""
-          ? emptyResponse
+          ? "retry"
           : allowsSkip && response === "s"
             ? "skipped"
             : allowsInstructions

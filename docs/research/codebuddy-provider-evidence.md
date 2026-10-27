@@ -1,6 +1,6 @@
 # CodeBuddy provider evidence
 
-Issue [#261](https://github.com/BuddyLabsCo/sandcastle-runner/issues/261) adds a local provider under the [settled parent specification](https://github.com/BuddyLabsCo/sandcastle-runner/issues/260). Durable continuation passed a live check. Basic native operations and instruction precedence also passed bounded controls. Full workflow operation coverage and the retained-invocation/manual-takeover chain remain acceptance work for the final takeover ticket.
+Issue [#261](https://github.com/BuddyLabsCo/sandcastle-runner/issues/261) adds a local provider under the [settled parent specification](https://github.com/BuddyLabsCo/sandcastle-runner/issues/260). Durable continuation passed a live check. Basic native operations and instruction precedence also passed bounded controls. Issue #264 completes the focused live operation checks and retained-invocation/manual-takeover chain; see [takeover evidence](codebuddy-takeover-evidence.md).
 
 ## Versions and isolation
 
@@ -57,10 +57,8 @@ Final repository verification passed:
 
 Review regressions also verify rejection of every native truthy sandbox-bypass spelling in explicit and inherited environments. No bypass-enabled CLI was launched. Session lookup now follows the child home environment, checked against a harmless Node child's `os.homedir()` result. Empty or relative fallback homes fail visibly. These configuration checks required no additional live backend calls.
 
-## Remaining live acceptance work
+## Follow-up live acceptance
 
-The parent specification assigns the complete timeout intervention and takeover chain to the final ticket. It must demonstrate retained output/outcomes, Run-wide gating, selected-only kill, confirmed CLI/descendant settlement, manual resume in the original worktree/store/session, manual exit, and Runner continuation accepted by normal validation and independent Git verification.
+The [#264 evidence](codebuddy-takeover-evidence.md) records the completed live takeover chain and operation checks on CLI 2.177.1. It separates native capabilities and policy assumptions from automated workflow routing, scheduling, and safeguards. The earlier 2.177.0 measurements on this page remain bounded provider evidence.
 
-Also verify real implementation/review session separation, original-session fixes, Agent Retry, CI repair, conflict repair, and independent/automatic Documentation Maintenance under the chosen Project permissions. Automated workflow regressions establish routing and safeguards; they do not certify native permission coverage for those operations. The basic operation control used raw final text, while controlled CLI tests exercise both tagged contracts through the real executor. The live blocked/schema-failure cases are not successful delivery certification.
-
-The standard installed CLI has no product-specific data-layout override. Custom distributions that change the native CLI home need separate verification. Existing Runner platform evidence is inherited only for the unchanged provider-independent launcher/workflow paths; these live measurements cover Linux and this CLI version. No additional whole-platform certification, production rollout, or manual takeover claim is made here.
+The standard installed CLI has no product-specific data-layout override. Custom distributions that change the native CLI home need separate verification. Existing Runner platform evidence applies to unchanged provider-independent paths; the focused takeover measurements cover Linux and their stated CLI version. Neither page promises cross-restart native-session adoption or universal permission coverage.

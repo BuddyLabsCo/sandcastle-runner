@@ -15,6 +15,7 @@ export interface Invocation {
   result?: RunResult & { output: unknown };
   runError?: Error;
   settlement: ProcessSettlement;
+  takeoverSession?: string;
 }
 
 export class ProcessCleanupError extends AgentOutputError {}

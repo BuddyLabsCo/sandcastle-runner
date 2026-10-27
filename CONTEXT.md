@@ -21,8 +21,20 @@ The canonical persisted record a Run uses to resume its delivery scope, includin
 _Avoid_: Checkpoint, state file
 
 **Operator Pause**:
-A point at which a Run waits for an operator to retry, cancel, skip the current issue or maintenance occurrence, or instruct a continuable Agent session. Operator input never substitutes for a successful result. Audit failures permit only retry or cancellation. Pending pauses gate new Agent steps and delivery advancement across the Run. In-flight work keeps collecting output, and each retained outcome waits until every pending pause is resolved.
+A point at which a Run waits for an operator to retry, cancel, skip the current issue or maintenance occurrence, instruct a continuable Agent session, or stop a selected Retained Invocation for Manual Takeover. Operator input never substitutes for a successful result. Audit failures permit only retry or cancellation. Pending pauses gate new Agent steps and delivery advancement across the Run. In-flight work keeps collecting output, and each retained outcome waits until every pending pause is resolved.
 _Avoid_: Terminal pause, human intervention
+
+**Retained Invocation**:
+An Agent CLI invocation whose execution, output, and eventual outcome remain owned by the current Run during Operator Pause. Acknowledgement releases only that intervention.
+_Avoid_: Suspended process, adopted process
+
+**Process Settlement**:
+Confirmation that an invocation's CLI and owned descendants have stopped. Failed or uncertain settlement blocks takeover, replacement execution, and Worktree cleanup.
+_Avoid_: Kill acknowledgement, successful delivery
+
+**Manual Takeover**:
+Operator handling of an exact native session in its original Worktree and configured storage after Process Settlement. The operator exits the manual CLI before returning control; Runner continuation still requires ordinary result and Git verification.
+_Avoid_: Approval bridge, live-process adoption
 
 **Parent Ticket**:
 The GitHub issue supplied to a Run as its delivery scope. Only its same-repository direct children can be Delivery Tickets.

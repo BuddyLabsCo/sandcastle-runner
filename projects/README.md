@@ -22,9 +22,39 @@ Either Agent threshold opens Operator Pause without stopping the invocation. Its
 
 If the Agent finishes during a pause, Runner retains its original success or failure and logs. After Enter and every pending pause in the Run resolves, normal validation, retry policy, and independent Git verification apply. Enter does not launch a duplicate Agent or consume a retry. Other attempts retain their outcomes while any intervention remains pending; they cannot start another Agent step, verify, publish, or integrate.
 
-These timeout actions apply to session probing, implementation, Review, review fixes, CI repair, conflict repair, and independent or automatic Documentation Maintenance. Only Enter and `q`/EOF are supported at a timeout pause. `q`/EOF cancels the Run and settles its owned processes and descendants. Cleanup failure fails the Run and blocks retries, continuation, and Worktree cleanup. Selected-only termination and manual takeover are not available.
+These timeout actions apply to session probing, implementation, Review, review fixes, CI repair, conflict repair, and independent or automatic Documentation Maintenance. Timeout pauses support Enter, `k`, and `q`/EOF. `q`/EOF cancels the Run and settles its owned processes and descendants. Cleanup failure fails the Run and blocks retries, continuation, and Worktree cleanup.
 
 Retention lasts within the current Runner process. Recovery Snapshots preserve delivery evidence but do not adopt live Agent processes after a restart. Graceful shutdown closes owned handles; a timeout acknowledgement does not close them.
+
+### Stop one invocation for manual takeover
+
+Use `k` only at the selected invocation's timeout pause. Runner stops that invocation and waits for its CLI and owned descendants to settle. Other active invocations keep collecting output; every queued pause remains independent. Killing work never counts as delivery.
+
+The pause identifies the invocation, provider, native session when known, worktree, diagnostic log, elapsed time, and idle/overall thresholds. Queued entries refresh their state when displayed. A natural completion while queued retains its own outcome.
+
+After confirmed settlement, Runner locates the exact native transcript using the selected provider's configured storage. It displays that path and keeps the intervention pending. Missing or ambiguous lookup blocks takeover and Enter; correct your native storage configuration before a new Run. Failed process settlement fails the Run and blocks replacement execution, retry, continuation, and Worktree cleanup. Do not start a manual CLI when ownership is uncertain.
+
+To handle the settled invocation:
+
+1. Open another terminal in the displayed worktree. Keep the same native session ID, model, native storage/home overrides, and per-Attempt `GIT_CONFIG_GLOBAL` file. Use the selected Project agent profile's permissions and options.
+2. Resume the exact session with the native CLI. Do not select the latest session, fork it, or create a missing session. Keep only one writer for that session and worktree.
+3. Finish manual handling and **exit the manual CLI** before returning control to Runner, including cancellation.
+4. Press Enter in Runner to continue the original task in that exact session. Runner applies its ordinary tagged result validation and independent Git verification. Manual continuation starts a new invocation with fresh thresholds and consumes no Agent Retry budget.
+
+For CodeBuddy, this illustrative command uses dedicated storage and separate allow-rule arguments:
+
+```sh
+cd /runner/worktrees/ticket-264
+CODEBUDDY_CONFIG_DIR=/runner/native-state \
+GIT_CONFIG_GLOBAL=/runner/git-config \
+CODEBUDDY_CODE_DISABLE_BACKGROUND_TASKS=1 \
+codebuddy --resume session-123 --model deepseek-v4.1-flash \
+  --permission-mode dontAsk --allowedTools Read Write Edit Bash
+```
+
+Use your displayed paths and native session ID, and preserve your own trusted allow rules. The broad Bash rule above is a tested policy assumption, not a permission default. Our tested CLI refused tools with comma-separated allow rules in manual mode; separate arguments passed. Read the [live evidence and limits](../docs/research/codebuddy-takeover-evidence.md) before relying on a different version or policy.
+
+Runner's pause prevents its own new writers; it cannot discover or control independently launched native CLIs. Pressing Enter acknowledges that you exited manual handling. Enter does not answer an approval request from the terminated process. Recovery Snapshots preserve delivery evidence, not live-process adoption or native-session restoration after restart. Skip and recovery-text actions remain available only in their existing contexts; audit failures still permit only retry or cancellation.
 
 ### Continue an Agent session
 

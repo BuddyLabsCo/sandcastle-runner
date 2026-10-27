@@ -250,6 +250,11 @@ export interface AgentDiagnostics {
   raw?: string;
 }
 
+export interface AgentTimeoutIntervention {
+  describe(): string;
+  kill(): Promise<{ message: string; continuable: boolean }>;
+}
+
 export interface AgentAttemptInput {
   runName: string;
   ticket: number;
@@ -267,7 +272,10 @@ export interface AgentAttemptInput {
   logFile: string;
   timeoutMs: number;
   idleTimeoutMs: number;
-  pauseForTimeout: (cause: "idle" | "overall") => Promise<void>;
+  pauseForTimeout: (
+    cause: "idle" | "overall",
+    intervention?: AgentTimeoutIntervention,
+  ) => Promise<void>;
   retryPolicy: RetryPolicy;
   signal: AbortSignal;
   advance?: <T>(action: () => Promise<T>) => Promise<T>;
@@ -297,5 +305,5 @@ export interface OperatorIO {
   coordination?: RunCoordination;
   skipScope?: string;
   write(message: string): void;
-  pause(message: string): Promise<string | null>;
+  pause(message: string, render?: () => string): Promise<string | null>;
 }
