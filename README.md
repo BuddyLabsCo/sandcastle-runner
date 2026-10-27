@@ -171,6 +171,7 @@ agents:
       effort: high
 workflow:
   review: true
+  maxReviewRounds: 2
   docMaintainTriggerLabel: doc-check
 ```
 
@@ -179,6 +180,23 @@ and `documentation`. `review` is required when review is enabled;
 `documentation` is required for Documentation Maintenance. Agent, model, and
 purpose are independent: Runner forwards the model and nested native options
 unchanged and never infers the agent from the model.
+
+With review enabled, the original review session inspects Standards and Spec;
+the original implementation session fixes findings and commits. The reviewer writes
+a Markdown findings file under `projects/<project>/logs` and returns its path as
+`findings_file` with outcome `findings`. A clean review returns `passed` without a
+findings document; an execution obstacle returns `blocked` for Operator Pause.
+Disputed or unfixable findings pause the implementation session.
+
+`workflow.maxReviewRounds` is an optional positive integer. The initial review is
+round 1; execution retries and Operator Pause continuations do not consume rounds.
+Omitting it repeats review and fixes until a clean review. At a configured limit,
+the last review's findings still receive a fix, then delivery continues without
+another review. Subsequent reviews cover only the diff from the previous review
+HEAD to the latest fix HEAD, including resolution of previous findings.
+`workflow.review: false` bypasses the loop. Session logs and findings remain
+available throughout the loop; completion or skip cleans owned files, while
+pause and cancellation retain them. Session reuse is limited to one Runner process.
 
 Enabled workflow nodes require their prompt file. Implementation, CI repair,
 and conflict repair prompts must be non-empty.

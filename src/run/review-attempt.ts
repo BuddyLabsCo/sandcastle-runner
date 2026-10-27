@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import type { AuditEvent } from "../audit.ts";
 import type {
@@ -26,6 +27,8 @@ import {
 import {
   boundary,
   BoundaryStop,
+  runAgentOperation,
+  type AgentSession,
   type AttemptInput,
   type VerifiedHandoff,
 } from "./agent-operation.ts";
@@ -85,28 +88,33 @@ async function acceptReview(
     retryPolicy: input.retryPolicy,
   });
   if (!evidence.clean) throw new Error("Review left a dirty Worktree");
+  if (evidence.reviewCommits.length !== 0)
+    throw new Error(
+      "Reviewer created commits; only implementation may commit fixes",
+    );
   return {
     ...handoff,
     commits: evidence.deliveryCommits,
-    implementationCommits: handoff.commits,
-    reviewCommits: evidence.reviewCommits,
+    implementationCommits: evidence.deliveryCommits,
+    reviewCommits: [],
     reviewChecks: checks,
     reviewVerification: "verified",
   };
 }
 
-export async function reviewHandoff(
+async function runReviewRound(
   input: AttemptInput,
   handoff: VerifiedHandoff,
   signal: AbortSignal,
-): Promise<VerifiedHandoff> {
+  round: { number: number; base: string; session: AgentSession },
+): Promise<{ handoff: VerifiedHandoff; result: ReviewAttemptResult }> {
   if (handoff.verification !== "verified" || handoff.commits.length === 0)
     throw new Error(
       "Review requires a committed implementation Verified Handoff",
     );
   if (!input.reviewAgent) throw new Error("Review agent is not configured");
   const implementationHead = handoff.commits.at(-1)!.sha;
-  let continuationPrompt: string | undefined;
+  let continuationPrompt = round.session.resumePrompt;
   let attemptNumber!: number;
   let attemptId = "";
   let logFile = "";
@@ -116,15 +124,18 @@ export async function reviewHandoff(
     const resumePrompt = continuationPrompt;
 
     continuationPrompt = undefined;
-    if (resumePrompt === undefined) {
+    if (attemptNumber === undefined || resumePrompt === undefined) {
       attemptNumber = (attemptNumber || 0) + 1;
       attemptId = randomUUID();
-      logFile = agentLogFile(
-        input.projectDirectory,
-        handoff.ticket,
-        "review",
-        `${input.runId}-${attemptId}`,
-      );
+      logFile =
+        (resumePrompt === undefined ? undefined : round.session.logFile) ??
+        agentLogFile(
+          input.projectDirectory,
+          handoff.ticket,
+          "review",
+          `${input.runId}-${attemptId}`,
+        );
+      round.session.logFile = logFile;
       event = input.event(
         "review",
         "agent_attempt",
@@ -169,6 +180,28 @@ export async function reviewHandoff(
       const gitDirectory = await mkdtemp(
         path.join(tmpdir(), "sandcastle-runner-git-"),
       );
+      const findingsFile = logFile.replace(
+        /\.log$/u,
+        `-round-${round.number}.md`,
+      );
+      const reviewHandoff = JSON.stringify({
+        repository: input.repository,
+        projectTargetBranch: input.targetBranch,
+        worktree: handoff.worktree,
+        deliveryBranch: handoff.branch,
+        originalFixedPoint: handoff.base,
+        reviewBase: round.base,
+        reviewRound: round.number,
+        implementationHead,
+        findingsFile,
+        deliveryTicket,
+        governingSpecification,
+        standardsSources,
+        acceptedExceptions: [
+          "Runner verifies Worktree cleanliness and rejects reviewer-created commits without comparing frozen branch or merge-base values.",
+        ],
+        implementationReportedChecks: handoff.checks,
+      });
       let result: ReviewAttemptResult;
       try {
         const gitConfigGlobal = path.join(gitDirectory, "config");
@@ -182,21 +215,7 @@ export async function reviewHandoff(
           targetBranch: input.targetBranch,
           promptFile: input.reviewPrompt,
           promptArgs: {
-            REVIEW_HANDOFF: JSON.stringify({
-              repository: input.repository,
-              projectTargetBranch: input.targetBranch,
-              worktree: handoff.worktree,
-              deliveryBranch: handoff.branch,
-              originalFixedPoint: handoff.base,
-              implementationHead,
-              deliveryTicket,
-              governingSpecification,
-              standardsSources,
-              acceptedExceptions: [
-                "After a passing review, the Runner verifies only Worktree cleanliness and does not compare frozen HEAD, branch, or merge-base values.",
-              ],
-              implementationReportedChecks: handoff.checks,
-            }),
+            REVIEW_HANDOFF: reviewHandoff,
           },
           agent: input.reviewAgent.agent,
           model: input.reviewAgent.model,
@@ -258,6 +277,15 @@ export async function reviewHandoff(
             decision.decision === "retry" ? "continue" : decision.response;
         continue;
       }
+      if (result.outcome === "findings") {
+        if (result.findings_file !== findingsFile)
+          throw new Error(
+            "Review findings_file must match the assigned findings path",
+          );
+        const file = await lstat(findingsFile);
+        if (!file.isFile() || file.size === 0)
+          throw new Error("Review findings must be a nonempty Markdown file");
+      }
       const reviewed = await acceptReview(
         input,
         handoff,
@@ -271,14 +299,7 @@ export async function reviewHandoff(
         null,
         result.diagnostics,
       );
-      await discardAgentLogs(
-        input,
-        "review",
-        handoff.ticket,
-        "review",
-        attemptNumber,
-      );
-      return reviewed;
+      return { handoff: reviewed, result };
     } catch (error) {
       if (error instanceof OperatorCancelled || error instanceof TicketSkipped)
         throw error;
@@ -339,4 +360,84 @@ export async function reviewHandoff(
           decision.decision === "retry" ? "continue" : decision.response;
     }
   }
+}
+
+export async function reviewHandoff(
+  input: AttemptInput,
+  initialHandoff: VerifiedHandoff,
+  signal: AbortSignal,
+  implementationSession: AgentSession,
+): Promise<VerifiedHandoff> {
+  let handoff = initialHandoff;
+  let reviewBase = handoff.base;
+  const reviewSession: AgentSession = {};
+  const checks: AgentAttemptResult["checks"] = [];
+  for (let round = 1; ; round += 1) {
+    const reviewedHead = handoff.commits.at(-1)!.sha;
+    const reviewed = await runReviewRound(input, handoff, signal, {
+      number: round,
+      base: reviewBase,
+      session: reviewSession,
+    });
+    handoff = reviewed.handoff;
+    checks.push(...reviewed.result.checks);
+    handoff.reviewChecks = [...checks];
+    if (reviewed.result.outcome === "passed") break;
+    implementationSession.resumePrompt = (
+      await readFile(
+        new URL("../prompts/implementation-review-fix.md", import.meta.url),
+        "utf8",
+      )
+    )
+      .replaceAll("{{FINDINGS_FILE}}", reviewed.result.findings_file!)
+      .replaceAll("{{BASE_SHA}}", reviewedHead);
+    const fixed = await runAgentOperation(input, {
+      phase: "implement",
+      runName: `fix review findings for issue ${handoff.ticket}`,
+      ticket: handoff.ticket,
+      worktree: handoff.worktree,
+      branch: handoff.branch,
+      base: reviewedHead,
+      promptFile: fileURLToPath(
+        new URL("../prompts/implementation-review-fix.md", import.meta.url),
+      ),
+      promptArgs: {
+        FINDINGS_FILE: reviewed.result.findings_file!,
+        BASE_SHA: reviewedHead,
+      },
+      pullRequestMetadata: "ignored",
+      existingPrMetadata: initialHandoff,
+      agent: input.agent,
+      signal,
+      attemptCounter: { value: 0 },
+      session: implementationSession,
+    });
+    if ("reason" in fixed) throw new Error(fixed.reason);
+    const commits = [...handoff.commits, ...fixed.commits];
+    handoff = {
+      ...handoff,
+      commits,
+      implementationCommits: commits,
+      checks: [...handoff.checks, ...fixed.checks],
+    };
+    if (input.maxReviewRounds !== undefined && round >= input.maxReviewRounds)
+      break;
+    reviewBase = reviewedHead;
+    reviewSession.resumePrompt = (
+      await readFile(
+        new URL("../prompts/review-continuation.md", import.meta.url),
+        "utf8",
+      )
+    )
+      .replaceAll("{{REVIEW_BASE}}", reviewBase)
+      .replaceAll("{{IMPLEMENTATION_HEAD}}", fixed.commits.at(-1)!.sha)
+      .replaceAll("{{REVIEW_ROUND}}", String(round + 1))
+      .replaceAll(
+        "{{FINDINGS_FILE}}",
+        reviewSession.logFile!.replace(/\.log$/u, `-round-${round + 1}.md`),
+      );
+  }
+  for (const stage of ["implement", "review"] as const)
+    await discardAgentLogs(input, "review", handoff.ticket, stage, 1);
+  return handoff;
 }

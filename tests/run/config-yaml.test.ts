@@ -214,3 +214,25 @@ test("obsolete reasoningEffort requires migration, even beside new fields", asyn
     );
   }
 });
+
+test("review rounds accept only an optional positive integer without a default cap", async () => {
+  const root = await createProject();
+  const config = structuredClone(validConfig);
+  const configPath = path.join(root, "projects/demo/config.yaml");
+  const load = () => loadProject(root, "demo", { TEST_GH_TOKEN: "token" });
+  assert.equal((await load()).config.workflow.maxReviewRounds, undefined);
+  for (const value of [0, -1, 1.5, "2", null, true]) {
+    await writeProjectConfig(configPath, {
+      ...config,
+      workflow: { ...config.workflow, maxReviewRounds: value },
+    });
+    await assert.rejects(load(), /workflow.maxReviewRounds.*positive integer/u);
+  }
+  for (const value of [1, 2]) {
+    await writeProjectConfig(configPath, {
+      ...config,
+      workflow: { ...config.workflow, maxReviewRounds: value },
+    });
+    assert.equal((await load()).config.workflow.maxReviewRounds, value);
+  }
+});

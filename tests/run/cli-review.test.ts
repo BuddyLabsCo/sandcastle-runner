@@ -214,85 +214,15 @@ test("a clean fresh-context review gates publication and preserves implementatio
   assert.deepEqual(runNames, ["review issue 9"]);
 });
 
-test("review fix commits become part of the complete delivery without replacing implementation identity", async () => {
-  const root = await createProject();
-  const config = structuredClone(validConfig);
-  config.workflow.review = true;
-  await writeProjectConfig(
-    path.join(root, "projects/demo/config.yaml"),
-    config,
-  );
-  const delivery = createCommittedDelivery(9);
-  const implementation = {
-    sha: "b".repeat(40),
-    message: "feat: implementation",
-  };
-  const fix = { sha: "c".repeat(40), message: "fix: review finding" };
-  let branch = "";
-
-  const result = await executeCli(
-    ["run", "--project", "demo", "--parent", "8"],
-    createCliDependencies(root, {
-      tracker: delivery.tracker,
-      gitWorkspace: {
-        async fetchTargetBranch() {
-          return "a".repeat(40);
-        },
-        async createWorktree(input) {
-          branch = input.branch;
-        },
-        async inspect({ worktree, base }) {
-          return {
-            worktree,
-            branch,
-            base,
-            commits: [implementation],
-            clean: true,
-          };
-        },
-        async readReviewStandards() {
-          return [];
-        },
-        async inspectReview() {
-          return {
-            clean: true,
-            deliveryCommits: [implementation, fix],
-            reviewCommits: [fix],
-          };
-        },
-      },
-      agentExecutor: {
-        async execute(input) {
-          return delivery.agentExecutor.execute!(input);
-        },
-        async executeReview() {
-          return {
-            outcome: "passed",
-            summary: "Fixed one finding.",
-            standards: { verdict: "passed", unresolved_findings: [] },
-            spec: { verdict: "passed", unresolved_findings: [] },
-            checks: [],
-            blocker: null,
-          };
-        },
-      },
-    }),
-  );
-
-  assert.equal(result.summary.outcome, "succeeded");
-  assert.deepEqual(result.summary.handoffs?.[0]?.commits, [
-    implementation,
-    fix,
-  ]);
-  assert.deepEqual(result.summary.handoffs?.[0]?.implementationCommits, [
-    implementation,
-  ]);
-  assert.deepEqual(result.summary.handoffs?.[0]?.reviewCommits, [fix]);
-  assert.equal(result.summary.handoffs?.[0]?.prTitle, "feat: implementation");
-});
-
 test("blocked, dirty, or invalid review pauses before publication", async () => {
-  for (const failure of ["blocked", "dirty", "invalid"] as const) {
+  for (const failure of [
+    "blocked",
+    "dirty",
+    "invalid",
+    "reviewer_commit",
+    "wrong_path",
+    "missing_file",
+  ] as const) {
     const root = await createProject();
     const config = structuredClone(validConfig);
     config.workflow.review = true;
@@ -317,7 +247,10 @@ test("blocked, dirty, or invalid review pauses before publication", async () => 
             return {
               clean: failure !== "dirty",
               deliveryCommits: [],
-              reviewCommits: [],
+              reviewCommits:
+                failure === "reviewer_commit"
+                  ? [{ sha: "c".repeat(40), message: "forbidden reviewer fix" }]
+                  : [],
             };
           },
           async push() {
@@ -328,9 +261,26 @@ test("blocked, dirty, or invalid review pauses before publication", async () => 
           async execute(input) {
             return delivery.agentExecutor.execute!(input);
           },
-          async executeReview() {
+          async executeReview(input) {
             if (failure === "invalid")
               throw new Error("second invalid review result");
+            if (failure === "wrong_path" || failure === "missing_file") {
+              const handoff = JSON.parse(
+                String(input.promptArgs.REVIEW_HANDOFF),
+              ) as { findingsFile: string };
+              return {
+                outcome: "findings",
+                summary: "Findings",
+                findings_file:
+                  failure === "wrong_path"
+                    ? "/unrelated/findings.md"
+                    : handoff.findingsFile,
+                standards: { verdict: "findings", unresolved_findings: ["P1"] },
+                spec: { verdict: "passed", unresolved_findings: [] },
+                checks: [],
+                blocker: null,
+              };
+            }
             return failure === "blocked"
               ? {
                   outcome: "blocked",
@@ -374,7 +324,7 @@ test("blocked, dirty, or invalid review pauses before publication", async () => 
   }
 });
 
-test("review retry uses a fresh attempt and verifies the Worktree", async () => {
+test("review continuation verifies the Worktree without consuming a review round", async () => {
   const root = await createProject();
   const config = structuredClone(validConfig);
   config.workflow.review = true;
@@ -387,7 +337,6 @@ test("review retry uses a fresh attempt and verifies the Worktree", async () => 
     sha: "b".repeat(40),
     message: "feat: implementation",
   };
-  const fix = { sha: "c".repeat(40), message: "fix: review finding" };
   const gitConfigs: string[] = [];
   let reviews = 0;
 
@@ -403,8 +352,8 @@ test("review retry uses a fresh attempt and verifies the Worktree", async () => 
         async inspectReview() {
           return {
             clean: true,
-            deliveryCommits: [implementation, fix],
-            reviewCommits: [fix],
+            deliveryCommits: [implementation],
+            reviewCommits: [],
           };
         },
       },
@@ -425,7 +374,7 @@ test("review retry uses a fresh attempt and verifies the Worktree", async () => 
               blocker: null,
             };
           }
-          throw new Error("review failed after committing a fix");
+          throw new Error("review could not finish");
         },
       },
       operator: {
@@ -439,11 +388,8 @@ test("review retry uses a fresh attempt and verifies the Worktree", async () => 
   assert.equal(result.summary.outcome, "succeeded");
   assert.equal(reviews, 2);
   assert.notEqual(gitConfigs[0], gitConfigs[1]);
-  assert.deepEqual(result.summary.handoffs?.[0]?.commits, [
-    implementation,
-    fix,
-  ]);
-  assert.deepEqual(result.summary.handoffs?.[0]?.reviewCommits, [fix]);
+  assert.deepEqual(result.summary.handoffs?.[0]?.commits, [implementation]);
+  assert.deepEqual(result.summary.handoffs?.[0]?.reviewCommits, []);
   assert.equal(result.summary.handoffs?.[0]?.reviewVerification, "verified");
 });
 

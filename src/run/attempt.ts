@@ -74,8 +74,10 @@ async function implementTicket(
       operator: input.operator,
       retryPolicy: input.retryPolicy,
     });
+    const session = {};
     const result = await runAgentOperation(ticketInput, {
       phase: "implement",
+      ...(input.review ? { session: session } : {}),
       runName: `implement issue ${ticket}`,
       ticket,
       worktree,
@@ -96,14 +98,13 @@ async function implementTicket(
     });
     if ("reason" in result)
       return { ticket, outcome: result.outcome, detail: result.reason };
-    const handoff = input.review
-      ? await reviewHandoff(ticketInput, result, controller.signal)
-      : result;
     return {
       ticket,
       outcome: "handoff",
       detail: "Implementation and review completed",
-      handoff,
+      handoff: input.review
+        ? await reviewHandoff(ticketInput, result, controller.signal, session)
+        : result,
     };
   } catch (error) {
     if (error instanceof TicketSkipped) {

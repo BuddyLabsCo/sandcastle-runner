@@ -40,9 +40,9 @@ Place these modules under `src/run/`. Each owns a cohesive workflow responsibili
 | `report.ts` | Ordered per-ticket Run outcome presentation and final operator report rendering. |
 | `run-input.ts` / `run-batch.ts` | Run contracts and the wiring from a reserved Batch into Agent Attempts. |
 | `discovery.ts` / `discovery-state.ts` | Eligibility, Reservations, Parent/child/blocker reads and revalidation, exhaustion, and Parent closeout eligibility. |
-| `attempt.ts` / `agent-operation.ts` / `review-attempt.ts` | Worktree preparation, per-Attempt Git configuration, prompt metadata, Agent and Review Attempt execution, and Verified Handoff decisions using observed Git state. Reused for implementation, repairs, and maintenance. |
+| `attempt.ts` / `agent-operation.ts` / `review-attempt.ts` | Worktree preparation, per-Attempt Git configuration, prompt metadata, Agent and Review Attempt execution, the alternating review/fix loop with independent in-process session reuse, and Verified Handoff decisions using observed Git state. Reused for implementation, repairs, and maintenance. |
 | `agent-pause.ts` | Operator Pause presentation for Agent Attempt failures, ticket-bound skip decisions, and audit-only disposal of skipped Agent logs. |
-| `agent-logs.ts` | Stage-specific Agent Attempt log naming, owned-stage cleanup, and deletion-failure evidence. |
+| `agent-logs.ts` | Stage-specific Agent Attempt log naming, review findings Markdown lifecycle, owned-stage cleanup, and deletion-failure evidence. |
 | `operation-audit.ts` | Workflow operation audit appends and audit-only Agent log cleanup failures. |
 | `pull-request.ts` / `pull-request-core.ts` | Publication/readiness, integration, merge confirmation, and Ticket Closure Policy. It never decides Batch order. |
 | `pull-request-recovery.ts` / `pull-request-repair.ts` | Durable publication recovery, required-check polling, and CI/conflict repair budgets. |

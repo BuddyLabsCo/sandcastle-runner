@@ -35,6 +35,8 @@ test("implementation and review logs are stage-named and removed on success", as
   const logPaths: string[] = [];
   const logs = path.join(root, "projects/demo/logs");
   await mkdir(logs, { recursive: true });
+  const unrelatedMarkdown = path.join(logs, "review-9-notes.md");
+  await writeFile(unrelatedMarkdown, "keep Markdown");
   const historicalLog = path.join(logs, "agent-9-historical.log");
   await writeFile(historicalLog, "keep");
 
@@ -62,6 +64,7 @@ test("implementation and review logs are stage-named and removed on success", as
           return delivery.agentExecutor.execute!(input);
         },
         async executeReview(input) {
+          await access(logPaths[0]!);
           logPaths.push(input.logFile);
           await writeFile(input.logFile, "review attempt");
           return {
@@ -84,6 +87,7 @@ test("implementation and review logs are stage-named and removed on success", as
     logPaths.map((filename) => assert.rejects(access(filename))),
   );
   assert.equal(await readFile(historicalLog, "utf8"), "keep");
+  assert.equal(await readFile(unrelatedMarkdown, "utf8"), "keep Markdown");
 });
 
 test("a cancelled implementation retains its log while paused", async () => {

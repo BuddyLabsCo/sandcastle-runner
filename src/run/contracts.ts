@@ -281,12 +281,13 @@ export interface AgentAttemptInput {
 }
 
 export interface ReviewVerdict {
-  verdict: "passed" | "blocked";
+  verdict: "passed" | "findings" | "blocked";
   unresolved_findings: string[];
 }
 
 export interface ReviewAttemptResult {
-  outcome: "passed" | "blocked";
+  outcome: "passed" | "findings" | "blocked";
+  findings_file?: string;
   summary: string;
   standards: ReviewVerdict;
   spec: ReviewVerdict;

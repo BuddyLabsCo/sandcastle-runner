@@ -71,6 +71,7 @@ export interface RunInput {
   implementationPrompt: string;
   implementationAgent: AgentConfig;
   review: boolean;
+  maxReviewRounds?: number;
   reviewPrompt: string;
   reviewAgent?: AgentConfig;
   ciRepairPrompt: string;

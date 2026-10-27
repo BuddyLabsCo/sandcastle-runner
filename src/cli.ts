@@ -535,6 +535,9 @@ export async function executeCli(
       ),
       implementationAgent: loaded.config.agents.implement,
       review: loaded.config.workflow.review,
+      ...(loaded.config.workflow.maxReviewRounds === undefined
+        ? {}
+        : { maxReviewRounds: loaded.config.workflow.maxReviewRounds }),
       reviewPrompt: path.join(loaded.directory, "prompts", "review.md"),
       ...(loaded.config.agents.review === undefined
         ? {}

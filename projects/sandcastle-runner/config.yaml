@@ -23,6 +23,7 @@ maintenanceTicket:
 workflow:
   # Review defaults to true; an empty documentation trigger label disables automatic maintenance.
   review: true
+  maxReviewRounds: 2
   docMaintainTriggerLabel: ""
 tracker:
   # GitHub tracker settings. tokenEnv names an environment variable; reservationLabel marks Runner-owned Delivery Tickets.

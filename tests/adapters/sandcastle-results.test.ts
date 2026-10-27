@@ -460,3 +460,64 @@ test("SandcastleAgentExecutor reports an unavailable continuation session", asyn
     /Provider session unavailable for continuation/u,
   );
 });
+
+test("review results distinguish actionable findings from clean reviews and execution blockers", async () => {
+  const { reviewResultSchema } =
+    await import("../../src/adapters/sandcastle-output.ts");
+  const schema = reviewResultSchema();
+  const validate = (value: unknown) => schema["~standard"].validate(value);
+  const findings = {
+    outcome: "findings",
+    summary: "One standards finding.",
+    standards: {
+      verdict: "findings",
+      unresolved_findings: ["P1 missing validation"],
+    },
+    spec: { verdict: "passed", unresolved_findings: [] },
+    checks: [],
+    blocker: null,
+    findings_file: "/project/logs/review-9-run-round-1.md",
+  };
+  assert.deepEqual(validate(findings), { value: findings });
+  for (const invalid of [
+    { ...findings, findings_file: "" },
+    { ...findings, findings_file: undefined },
+    { ...findings, blocker: "execution failed" },
+    { ...findings, standards: { verdict: "passed", unresolved_findings: [] } },
+    {
+      ...findings,
+      standards: {
+        verdict: "blocked",
+        unresolved_findings: ["cannot read spec"],
+      },
+    },
+    { ...findings, outcome: "passed" },
+  ]) {
+    assert.ok("issues" in validate(invalid));
+  }
+  const clean = {
+    outcome: "passed",
+    summary: "Clean",
+    standards: { verdict: "passed", unresolved_findings: [] },
+    spec: findings.spec,
+    checks: [],
+    blocker: null,
+  };
+  assert.ok(
+    "value" in
+      validate({
+        ...clean,
+        outcome: "passed",
+        standards: { verdict: "passed", unresolved_findings: [] },
+      }),
+  );
+  assert.ok(
+    "value" in
+      validate({
+        ...clean,
+        outcome: "blocked",
+        blocker: "Cannot access specification",
+        standards: { verdict: "blocked", unresolved_findings: [] },
+      }),
+  );
+});
