@@ -203,7 +203,7 @@ else {
       worktree: repository,
       gitConfigGlobal,
       logFile,
-      idleTimeoutMs: 200,
+      idleTimeoutMs: 2_000,
       timeoutMs: 10_000,
       retryPolicy: { ...attempt.retryPolicy, agentRetry: 0 },
     },
@@ -224,7 +224,9 @@ test("integrated supervision disables native idle kill and retains natural compl
         pid = await waitForPid(fixture.pidFile);
         assert.equal(processExists(pid), true);
         // Survive multiple configured idle windows with the native lifecycle active.
-        await new Promise((resolve) => setTimeout(resolve, 450));
+        await new Promise((resolve) =>
+          setTimeout(resolve, fixture.attempt.idleTimeoutMs * 2 + 50),
+        );
         assert.equal(processExists(pid), true);
         await writeFile(fixture.releaseFile, "complete");
         await fixture.finished;
