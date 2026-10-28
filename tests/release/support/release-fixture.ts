@@ -142,7 +142,7 @@ const userConfig = args.includes("--userconfig") ? flag("--userconfig") : null;
 const authConfig = userConfig && fs.existsSync(userConfig)
   ? fs.readFileSync(userConfig, "utf8") : null;
 fs.appendFileSync(logPath, JSON.stringify({ command: "npm", args,
-  body: null, authConfig, token: Boolean(process.env.NODE_AUTH_TOKEN) }) + "\n");
+  body: null, authConfig, token: Boolean(process.env.NODE_AUTH_TOKEN || process.env.NPM_TOKEN) }) + "\n");
 if (state.fail === args[0] + " " + args[1] || state.fail === args[0]) {
   console.error(state.message || "simulated npm " + state.fail + " failure");
   process.exit(42);

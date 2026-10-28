@@ -63,7 +63,8 @@ export function publishEnvironment(
     PR_HEAD_REPOSITORY: releaseRepository,
     MERGE_SHA: mergeSha,
     TARBALL: tarball,
-    NODE_AUTH_TOKEN: "test-npm-token",
+    ACTIONS_ID_TOKEN_REQUEST_URL: "https://oidc.example.invalid/token",
+    ACTIONS_ID_TOKEN_REQUEST_TOKEN: "test-oidc-request-token",
     ...overrides,
   };
 }

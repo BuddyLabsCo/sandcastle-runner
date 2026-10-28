@@ -21,13 +21,13 @@ export interface CommandOptions {
 
 const versionPattern = /^(\d+)\.(\d+)\.(\d+)$/;
 
-// npm reads NODE_AUTH_TOKEN implicitly. Only the publication command may see
-// it, so every other external command starts from an environment without it.
+// Routine releases use OIDC; never pass legacy npm publication tokens to tools.
 export function withoutNpmToken(
   environment: NodeJS.ProcessEnv = process.env,
 ): NodeJS.ProcessEnv {
   const copy = { ...environment };
   delete copy.NODE_AUTH_TOKEN;
+  delete copy.NPM_TOKEN;
   return copy;
 }
 
