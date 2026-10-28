@@ -36,16 +36,12 @@ posixTest(
       ),
       ["--tag", "latest", "--access", "public"],
     );
-    // npm authenticates through a config file, so the publication command must
-    // carry the registry mapping rather than a bare environment variable.
+    assert.equal(publish[0]?.token, false);
     assert.match(
       String(publish[0]?.authConfig),
       /^registry=https:\/\/registry\.npmjs\.org\/$/m,
     );
-    assert.match(
-      String(publish[0]?.authConfig),
-      /^\/\/registry\.npmjs\.org\/:_authToken=\$\{NODE_AUTH_TOKEN\}$/m,
-    );
+    assert.doesNotMatch(String(publish[0]?.authConfig), /_authToken/);
     assert.equal(fixture.remoteTag("v0.1.1"), merge);
     const release = fixture.state().release as { tag: string; draft: boolean };
     assert.deepEqual(release, { tag: "v0.1.1", draft: false });
@@ -367,15 +363,17 @@ posixTest(
   },
 );
 
-// Regression: a broad npm token must not reach earlier commands or logs, and
-// only the publication command may see the registry mapping.
-posixTest("only the publication command receives NODE_AUTH_TOKEN", (t) => {
+// Regression: leftover bootstrap credentials must not become a fallback.
+posixTest("no npm command receives legacy publication tokens", (t) => {
   const fixture = createPublishFixture(t);
   const { merge, tarball } = mergedRelease(fixture);
 
   const result = fixture.run(
     "publish-release",
-    publishEnvironment(merge, tarball),
+    publishEnvironment(merge, tarball, {
+      NODE_AUTH_TOKEN: "test-npm-token",
+      NPM_TOKEN: "test-legacy-token",
+    }),
   );
 
   assert.equal(result.status, 0, result.stderr);
@@ -385,8 +383,8 @@ posixTest("only the publication command receives NODE_AUTH_TOKEN", (t) => {
   for (const call of npm) {
     assert.equal(
       call.token,
-      call.args[0] === "publish",
-      `NODE_AUTH_TOKEN leaked into npm ${call.args.join(" ")}`,
+      false,
+      `A publication token leaked into npm ${call.args.join(" ")}`,
     );
     if (call.args[0] !== "publish") {
       assert.equal(
@@ -399,6 +397,33 @@ posixTest("only the publication command receives NODE_AUTH_TOKEN", (t) => {
   assert.ok(!result.stdout.includes("test-npm-token"));
   assert.ok(!result.stderr.includes("test-npm-token"));
 });
+
+posixTest(
+  "missing OIDC identity fails without using a stored npm token",
+  (t) => {
+    const fixture = createPublishFixture(t);
+    const { merge, tarball } = mergedRelease(fixture);
+
+    const result = fixture.runExpectingFailure(
+      "publish-release",
+      publishEnvironment(merge, tarball, {
+        ACTIONS_ID_TOKEN_REQUEST_URL: "",
+        ACTIONS_ID_TOKEN_REQUEST_TOKEN: "",
+        NODE_AUTH_TOKEN: "test-npm-token",
+        NPM_TOKEN: "test-legacy-token",
+      }),
+    );
+
+    assert.match(result.stderr, /GitHub Actions OIDC.*id-token: write/);
+    assert.match(result.stderr, /No publication stages completed/);
+    assert.equal(
+      fixture.calls("npm").some(({ args }) => args[0] === "publish"),
+      false,
+    );
+    assert.equal(fixture.remoteTag("v0.1.1"), "");
+    assert.equal(fixture.state().release, null);
+  },
+);
 
 // Regression: metadata and an executable entry point do not prove the packed
 // bytes start. A tarball whose CLI throws must not reach the registry.

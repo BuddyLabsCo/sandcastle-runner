@@ -4,11 +4,12 @@
 //   GITHUB_REPOSITORY=<owner/repo> PR_NUMBER=<n> PR_MERGED=true \
 //   PR_HEAD_REF=auto-release PR_BASE_REF=main \
 //   PR_HEAD_REPOSITORY=<owner/repo> MERGE_SHA=<squash commit> \
-//   TARBALL=<packed tarball> NODE_AUTH_TOKEN=<npm token> \
+//   TARBALL=<packed tarball> \
 //     node scripts/release/publish-release.ts
 //
 // Requires git, gh, and npm in a clean checkout of MERGE_SHA. The tarball must
 // have been packed from that same commit after the required checks passed.
+// Publication requires GitHub Actions OIDC and the package's trusted publisher.
 // Tests: node --test "tests/release/publish-release*.test.ts"
 //
 // Only a merged pull request from this repository's release branch into the
@@ -17,9 +18,8 @@
 // is preceded by read-only validation, and a re-run reuses stages that already
 // match the release identity instead of republishing them.
 //
-// NODE_AUTH_TOKEN is read at the publication boundary only: every earlier
-// command runs without it, and the registry mapping is written for that single
-// command so a fresh runner needs no preconfigured `.npmrc`.
+// npm exchanges the workflow's OIDC identity at publication. Publication receives
+// no stored npm credentials and uses isolated npm configuration.
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -351,38 +351,49 @@ function releaseState(
 }
 
 function publishToRegistry(tarball: string, version: string): void {
-  const token = requireEnvironment("NODE_AUTH_TOKEN");
+  if (
+    !process.env.ACTIONS_ID_TOKEN_REQUEST_URL ||
+    !process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN
+  ) {
+    throw new Error(
+      "npm Trusted Publishing requires GitHub Actions OIDC identity; grant id-token: write to the publication job on a GitHub-hosted runner. No npm token fallback is supported.",
+    );
+  }
   const directory = mkdtempSync(join(tmpdir(), "release-npm-"));
   try {
-    // npm reads `_authToken` from a config file, not from the bare environment,
-    // so map the publication token for this command only.
     const userConfig = join(directory, "npmrc");
-    writeFileSync(
-      userConfig,
-      [
-        "registry=https://registry.npmjs.org/",
-        "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}",
-        "",
-      ].join("\n"),
-    );
+    const globalConfig = join(directory, "global-npmrc");
+    writeFileSync(userConfig, "registry=https://registry.npmjs.org/\n");
+    writeFileSync(globalConfig, "");
+    const environment = withoutNpmToken();
+    // npm can fall back to environment credentials even with isolated npmrc files.
+    for (const name of Object.keys(environment)) {
+      if (/^npm_config_/i.test(name)) delete environment[name];
+    }
     const result = execute(
       "npm",
       [
         "publish",
-        tarball,
+        resolve(tarball),
         "--tag",
         "latest",
         "--access",
         "public",
         "--userconfig",
         userConfig,
+        "--globalconfig",
+        globalConfig,
       ],
-      { env: { ...withoutNpmToken(), NODE_AUTH_TOKEN: token } },
+      { env: environment, cwd: directory },
     );
     if (result.status !== 0) {
       const detail = result.stderr.trim() || result.stdout.trim();
-      if (/E401|E403|ENEEDAUTH|authenticate|permission/i.test(detail)) {
-        throw new Error(`npm publish was rejected by the registry: ${detail}`);
+      if (
+        /E401|E403|E404|ENEEDAUTH|authenticate|permission|oidc/i.test(detail)
+      ) {
+        throw new Error(
+          `npm publish was rejected by the registry: ${detail}\nCheck the issue-runner Trusted Publisher for BuddyLabsCo/sandcastle-runner, workflow publish-release.yml and its environment; verify direct publishing permission, the two-day first-publication window, matching repository.url, Node >=22.14.0 and npm >=11.5.1. No npm token fallback is supported.`,
+        );
       }
       throw new Error(
         `npm publish ${PACKAGE_NAME}@${version} failed: ${detail}`,

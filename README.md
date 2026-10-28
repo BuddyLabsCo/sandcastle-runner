@@ -239,6 +239,9 @@ call authenticated agents or mutate a remote GitHub repository. Packaging tests
 build and pack the real artifact, install it into a temporary prefix, and run
 the npm executable shim from unrelated directories.
 
+Maintainers: see [release guidance](docs/releasing.md) for the human-reviewed
+release flow, npm OIDC authorization, and real-release verification.
+
 ## Acknowledgements
 
 Thanks to [Sandcastle](https://github.com/mattpocock/sandcastle) and its

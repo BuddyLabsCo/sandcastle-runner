@@ -166,30 +166,71 @@ posixTest(
   },
 );
 
-// Regression: an expired or under-scoped token must be reported as an
+// Regression: an invalid OIDC publisher must be reported as an actionable
 // authorization failure, not as a successful or absent release.
-posixTest(
-  "an npm authorization failure is reported and stops the release",
-  (t) => {
+for (const code of ["E401", "E403", "E404"]) {
+  posixTest(
+    `an invalid OIDC publisher (${code}) stops the release without token fallback`,
+    (t) => {
+      const fixture = createPublishFixture(t);
+      const { merge, tarball } = mergedRelease(fixture);
+      fixture.configureNpm({
+        fail: "publish",
+        message: `npm error code ${code}\nnpm error publication rejected`,
+      });
+
+      const result = fixture.runExpectingFailure(
+        "publish-release",
+        publishEnvironment(merge, tarball, {
+          NODE_AUTH_TOKEN: "test-npm-token",
+          NPM_TOKEN: "test-legacy-token",
+        }),
+      );
+
+      assert.match(result.stderr, /rejected by the registry/);
+      assert.match(result.stderr, /Trusted Publisher.*publish-release\.yml/);
+      assert.match(result.stderr, /direct publishing.*two-day/);
+      assert.match(result.stderr, /No npm token fallback/);
+      assert.match(result.stderr, /No publication stages completed\./);
+      assert.equal(fixture.remoteTag("v0.1.1"), "");
+      assert.equal(fixture.state().release, null);
+      assert.equal(fixture.npmState().latest, "");
+      assert.equal(
+        fixture.calls("npm").filter(({ args }) => args[0] === "publish").length,
+        1,
+      );
+      assert.ok(fixture.calls("npm").every(({ token }) => !token));
+    },
+  );
+}
+
+for (const prefix of ["npm_config_", "NPM_CONFIG_"]) {
+  posixTest(`failed OIDC cannot fall back to a ${prefix}scoped token`, (t) => {
     const fixture = createPublishFixture(t);
     const { merge, tarball } = mergedRelease(fixture);
-    fixture.configureNpm({
-      fail: "publish",
-      message:
-        "npm error code E401\nnpm error Unable to authenticate, need: Bearer",
-    });
+    fixture.configureNpm({ oidcFailure: true });
 
     const result = fixture.runExpectingFailure(
       "publish-release",
-      publishEnvironment(merge, tarball),
+      publishEnvironment(merge, tarball, {
+        [`${prefix}//registry.npmjs.org/:_authToken`]: "test-scoped-token",
+      }),
     );
 
-    assert.match(result.stderr, /rejected by the registry/);
-    assert.match(result.stderr, /No publication stages completed\./);
+    assert.match(result.stderr, /OIDC authorization failed/);
+    assert.match(result.stderr, /No publication stages completed/);
+    assert.equal(fixture.npmState().latest, "");
     assert.equal(fixture.remoteTag("v0.1.1"), "");
     assert.equal(fixture.state().release, null);
-  },
-);
+    const publish = fixture
+      .calls("npm")
+      .filter(({ args }) => args[0] === "publish");
+    assert.equal(publish.length, 1);
+    assert.equal(publish[0]?.token, false);
+    assert.ok(!result.stdout.includes("test-scoped-token"));
+    assert.ok(!result.stderr.includes("test-scoped-token"));
+  });
+}
 
 // Regression: the exit status of `npm publish` is the authority for the
 // publication stage. Any nonzero exit, not only an authorization rejection,
