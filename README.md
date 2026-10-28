@@ -7,10 +7,10 @@ and coordinates merges and ticket closure.
 
 This keeps AI agents focused on writing, reviewing, and repairing code while
 reducing unnecessary token use for workflow coordination. Runner invokes agents
-through Sandcastle when a task needs code changes or review.
+through [Sandcastle](https://github.com/mattpocock/sandcastle) when a task needs code changes or review.
 
 Runner runs on Windows, macOS, and Linux and supports `codex`,
-`claude-code`, `pi`, and `codebuddy`. Agents run locally through Sandcastle.
+`claude-code`, `pi`, and `codebuddy`. 
 
 The npm package and executable are both named `issue-runner`. See the
 [Configuration and workflow guide](docs/config-guide.md) for detailed setup and workflow explanations.
