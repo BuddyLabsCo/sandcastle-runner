@@ -54,6 +54,7 @@ test("the packed artifact accepts the reviewed runtime and executable shim", asy
     assert.ok(
       file === "package.json" ||
         file === "README.md" ||
+        file === "README.zh-CN.md" ||
         file === "LICENSE" ||
         file.startsWith("dist/") ||
         file.startsWith("templates/"),
