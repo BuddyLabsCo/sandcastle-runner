@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { access, mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
@@ -363,3 +364,114 @@ test("matching unfinished automatic maintenance resumes without duplication", as
   assert.equal(creates, 0);
   assert.equal(parentCloses, 0);
 });
+
+for (const { flags, changes } of [
+  { flags: [], changes: true },
+  { flags: ["--auto-merge"], changes: true },
+  { flags: ["--no-auto-merge"], changes: true },
+  { flags: ["--no-auto-merge"], changes: false },
+]) {
+  test(`--document ${flags.join(" ") || "default"} handles ${changes ? "a PR" : "no changes"} and Worktree cleanup`, async () => {
+    const root = await createProject();
+    const delivery = createCommittedDelivery(100);
+    const ticket = delivery.tickets[0]!;
+    ticket.labels = ["doc-maintain"];
+    const autoMerge = !flags.includes("--no-auto-merge");
+    let workspace: { worktree: string; branch: string; repository: string };
+    let merges = 0;
+    let pullRequests = 0;
+    let checkReads = 0;
+    const deletedBranches: string[] = [];
+    const messages: string[] = [];
+    const result = await executeCli(
+      ["run", "--project", "demo", "--document", ...flags],
+      createCliDependencies(root, {
+        tracker: {
+          ...delivery.tracker,
+          async createMaintenanceTicket() {
+            return ticket;
+          },
+        },
+        gitWorkspace: {
+          ...delivery.gitWorkspace,
+          async createWorktree(input) {
+            workspace = {
+              worktree: input.worktree,
+              branch: input.branch,
+              repository: input.checkout,
+            };
+            await mkdir(input.worktree, { recursive: true });
+            await delivery.gitWorkspace.createWorktree!(input);
+          },
+          async inspect(input) {
+            const inspected = await delivery.gitWorkspace.inspect!(input);
+            return { ...inspected, commits: changes ? inspected.commits : [] };
+          },
+          async listWorktrees() {
+            return [workspace!];
+          },
+          async removeWorktree(_checkout, worktree) {
+            await rm(worktree, { recursive: true });
+          },
+          async deleteBranch(_checkout, branch) {
+            deletedBranches.push(branch);
+          },
+        },
+        agentExecutor: {
+          async execute(input) {
+            return changes
+              ? delivery.agentExecutor.execute!(input)
+              : { ...noChangeResult, commits: [], checks: [] };
+          },
+        },
+        codeHost: {
+          async createPullRequest() {
+            pullRequests += 1;
+            return { number: 1, url: "https://github.com/owner/repo/pull/1" };
+          },
+          async getRequiredChecks() {
+            checkReads += 1;
+            return [];
+          },
+          async getPullRequest() {
+            return {
+              headSha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              createdAt: "2026-09-08T00:00:00Z",
+              merged: merges > 0,
+              mergeFailure: null,
+            };
+          },
+          async requestSquashMerge() {
+            merges += 1;
+            return { outcome: "accepted" };
+          },
+        },
+        operator: {
+          write(message) {
+            messages.push(message);
+          },
+        },
+      }),
+    );
+    assert.equal(result.exitCode, 0, result.summary.reasons.join("; "));
+    assert.equal(result.summary.outcome, "succeeded");
+    assert.equal(pullRequests, changes ? 1 : 0);
+    assert.equal(merges, changes && autoMerge ? 1 : 0);
+    assert.equal(ticket.state, changes && !autoMerge ? "open" : "closed");
+    const retained = changes && !autoMerge;
+    assert.equal(
+      result.summary.tickets?.[0]?.status,
+      changes ? (autoMerge ? "completed" : "PR ready") : "no_change",
+    );
+    assert.deepEqual(
+      result.summary.tickets?.[0]?.retainedWorktrees,
+      retained ? [workspace!.worktree] : [],
+    );
+    assert.deepEqual(deletedBranches, retained ? [] : [workspace!.branch]);
+    if (retained) {
+      await access(workspace!.worktree);
+      assert.ok(messages.at(-1)!.includes(workspace!.worktree));
+    } else await assert.rejects(access(workspace!.worktree));
+    if (changes) assert.ok(checkReads > 0);
+  });
+}

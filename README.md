@@ -103,7 +103,8 @@ issue-runner run --project my-project --parent 42                # Deliver the c
 issue-runner run --project my-project --issue 43                 # Deliver single issue #42.
 issue-runner run --project my-project --issue                    # Deliver the issues list configured in config.yaml.
 issue-runner run --project my-project --document                 # only start document maintain job
-issue-runner run --project my-project --issue 43 --no-auto-merge # Deliver single issue #42, but keep pr open and won't remove related worktree
+issue-runner run --project my-project --issue 43 --no-auto-merge # Keep the PR and Worktree for manual review.
+issue-runner run --project my-project --document --no-auto-merge # Keep the documentation PR and Worktree if changes exist.
 ```
 
 ## Help and version

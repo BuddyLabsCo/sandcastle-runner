@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import test from "node:test";
 
 import { executeCli } from "../../src/cli.ts";
-import { readRecoverySnapshot } from "../../src/recovery.ts";
+import {
+  readRecoverySnapshot,
+  writeRecoverySnapshot,
+} from "../../src/recovery.ts";
 import {
   createCliDependencies,
   createAttemptTracker,
@@ -11,63 +15,107 @@ import {
   createProject,
   publicationIntent,
   recoverySnapshot,
+  validConfig,
+  writeProjectConfig,
 } from "../support/cli-project.ts";
 import { cleanupTempRoots } from "../support/temp-cleanup.ts";
 
 test.afterEach(cleanupTempRoots);
 
-test("a recovered no-auto-merge standalone run stops before merge", async () => {
-  const root = await createProject();
-  const intent = publicationIntent("pr_created", 9);
-  const snapshot = await recoverySnapshot(root, 9, intent);
-  const { tracker, tickets } = createAttemptTracker(9);
-  tickets[0]!.labels = ["ready-for-agent", "sandcastle:reserved"];
-  tickets[0]!.assignees = ["runner"];
-  let mergeRequests = 0;
-  const result = await executeCli(
-    ["run", "--issue", "9", "--project", "demo", "--no-auto-merge"],
-    createCliDependencies(root, {
-      tracker,
-      codeHost: {
-        async getRemoteBranchHead() {
-          return intent.intendedHeadSha;
+for (const kind of ["delivery", "maintenance"] as const) {
+  test(`a recovered no-auto-merge ${kind} run stops before merge and retains its Worktree`, async () => {
+    const root = await createProject();
+    const ticket = kind === "delivery" ? 9 : 100;
+    const intent = { ...publicationIntent("pr_created", ticket), kind };
+    const evidence = intent.completionEvidence;
+    assert.ok(
+      evidence && typeof evidence === "object" && "worktree" in evidence,
+    );
+    const snapshot = await recoverySnapshot(root, 9, intent);
+    if (kind === "maintenance") {
+      await writeProjectConfig(path.join(root, "demo/config.yaml"), {
+        ...validConfig,
+        workflow: {
+          ...validConfig.workflow,
+          docMaintainTriggerLabel: "documentation",
         },
-        async getPullRequest() {
-          return {
-            headSha: intent.intendedHeadSha,
-            createdAt: "2026-09-08T00:00:00.000Z",
-            merged: false,
-            mergeFailure: null,
-          };
+      });
+      await writeRecoverySnapshot(snapshot, {
+        ...(await readRecoverySnapshot(snapshot))!,
+        batch: [9],
+        completedDeliveries: [{ ticket: 9, labels: ["documentation"] }],
+        maintenance: {
+          phase: "attempting",
+          ticket,
+          deliveryTickets: [9],
+          barrier: true,
         },
-        async requestSquashMerge() {
-          mergeRequests += 1;
-          return { outcome: "rejected", error: "merge must not be requested" };
+      });
+    }
+    const { tracker, tickets } = createAttemptTracker(ticket);
+    tickets[0]!.labels =
+      kind === "delivery"
+        ? ["ready-for-agent", "sandcastle:reserved"]
+        : ["doc-maintain"];
+    tickets[0]!.assignees = kind === "delivery" ? ["runner"] : [];
+    let mergeRequests = 0;
+    const result = await executeCli(
+      ["run", "--issue", "9", "--project", "demo", "--no-auto-merge"],
+      createCliDependencies(root, {
+        tracker,
+        codeHost: {
+          async getRemoteBranchHead() {
+            return intent.intendedHeadSha;
+          },
+          async getPullRequest() {
+            return {
+              headSha: intent.intendedHeadSha,
+              createdAt: "2026-09-08T00:00:00.000Z",
+              merged: false,
+              mergeFailure: null,
+            };
+          },
+          async requestSquashMerge() {
+            mergeRequests += 1;
+            return {
+              outcome: "rejected",
+              error: "merge must not be requested",
+            };
+          },
+          async createPullRequest() {
+            throw new Error("must not recreate the Pull Request");
+          },
         },
-        async createPullRequest() {
-          throw new Error("must not recreate the Pull Request");
+        agentExecutor: {
+          async execute() {
+            throw new Error("must not rerun implementation");
+          },
         },
-      },
-      agentExecutor: {
-        async execute() {
-          throw new Error("must not rerun implementation");
-        },
-      },
-    }),
-  );
+      }),
+    );
 
-  assert.equal(result.exitCode, 0);
-  assert.equal(result.summary.outcome, "succeeded");
-  assert.deepEqual(result.summary.completedTickets ?? [], []);
-  assert.equal(mergeRequests, 0);
-  const recovered = await readRecoverySnapshot(snapshot);
-  assert.equal(recovered?.phase, "running");
-  assert.deepEqual(recovered?.completedDeliveries ?? [], []);
-  assert.deepEqual(
-    recovered?.publications?.map(({ ticket, phase }) => ({ ticket, phase })),
-    [{ ticket: 9, phase: "pr_created" }],
-  );
-});
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.summary.outcome, "succeeded");
+    if (kind === "delivery")
+      assert.deepEqual(result.summary.completedTickets ?? [], []);
+    assert.equal(mergeRequests, 0);
+    const recovered = await readRecoverySnapshot(snapshot);
+    assert.equal(recovered?.phase, "running");
+    assert.equal(tickets[0]!.state, "open");
+    assert.deepEqual(
+      result.summary.tickets?.find((row) => row.ticket === ticket)
+        ?.retainedWorktrees,
+      [evidence.worktree],
+    );
+    if (kind === "delivery")
+      assert.deepEqual(recovered?.completedDeliveries ?? [], []);
+    else assert.equal(recovered?.maintenance?.barrier, true);
+    assert.deepEqual(
+      recovered?.publications?.map(({ ticket, phase }) => ({ ticket, phase })),
+      [{ ticket, phase: "pr_created" }],
+    );
+  });
+}
 
 test("a recovered standalone run with auto-merge continues through merge", async () => {
   const root = await createProject();

@@ -36,10 +36,9 @@ startup failure; there is no fallback to another configuration.
 `--issue` without a number uses the Project's configured `issueList`.
 `--document` runs standalone Documentation Maintenance.
 
-Standalone runs request a merge after their pull request is CI-ready. Use
-`--no-auto-merge` with a value-bearing `--issue` to leave the pull request open
-after validation and cleanup. `--auto-merge` and `--no-auto-merge` are mutually
-exclusive, reject supplied values, and require a value-bearing `--issue`.
+Runs merge their pull requests after CI passes by default. With a numbered `--issue` or `--document`, add `--no-auto-merge` to leave the PR open and retain its Worktree and local branch. If Documentation Maintenance makes no changes, Runner closes its issue and cleans the Worktree without creating a PR.
+
+`--auto-merge` and `--no-auto-merge` are mutually exclusive and accept no value. Neither flag can be used with `--parent` or a value-less `--issue`.
 
 Audit logs, agent logs, review findings, Recovery Snapshots, and Worktrees stay
 under the selected Project.  

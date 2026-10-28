@@ -94,17 +94,24 @@ test("processed Delivery and Maintenance Tickets render in processing order", as
   );
 });
 
-test("a CI-ready --no-auto-merge Run reports PR ready without local artifacts", async () => {
+test("a CI-ready --no-auto-merge Run reports PR ready and its retained Worktree", async () => {
   const root = await createProject();
   const delivery = createCommittedBatch(9);
   let mergeRequests = 0;
+  let worktree = "";
   const messages: string[] = [];
   const result = await executeCli(
     ["run", "--issue", "9", "--project", "demo", "--no-auto-merge"],
     createCliDependencies(root, {
       tracker: delivery.tracker,
       agentExecutor: delivery.agentExecutor,
-      gitWorkspace: delivery.gitWorkspace,
+      gitWorkspace: {
+        ...delivery.gitWorkspace,
+        async createWorktree(input) {
+          worktree = input.worktree;
+          await delivery.gitWorkspace.createWorktree(input);
+        },
+      },
       codeHost: {
         async requestSquashMerge() {
           mergeRequests += 1;
@@ -130,11 +137,11 @@ test("a CI-ready --no-auto-merge Run reports PR ready without local artifacts", 
       pullRequest: 1,
       pullRequestUrl: "https://github.com/owner/repo/pull/1",
       detail: "Pull Request #1 is CI-ready; awaiting manual merge",
-      retainedWorktrees: [],
+      retainedWorktrees: [worktree],
     },
   ]);
   assert.match(withoutHyperlinks(messages.at(-1)!), /^9\s+PR ready\s+#1\s+/mu);
-  assert.doesNotMatch(messages.at(-1)!, /Retained Worktrees:/u);
+  assert.ok(messages.at(-1)!.includes(`- ${worktree}`));
 });
 
 test("processed work with no pickable tickets stays incomplete without routine reasons", async () => {

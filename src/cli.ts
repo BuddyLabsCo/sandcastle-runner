@@ -96,20 +96,21 @@ Options:
   --document               Run Documentation Maintenance without a Parent or
                            issue scope
   --auto-merge             Request merge after the Pull Request is CI-ready
-  --no-auto-merge          Stop after the Pull Request is CI-ready
+  --no-auto-merge          Stop after CI readiness and retain the PR Worktree
   -h, --help               Show this help
 
 Constraints:
   Exactly one of --parent, --issue, or --document is required.
   --auto-merge and --no-auto-merge are mutually exclusive, reject a supplied
-  value, and require a value-bearing --issue.
+  value, and require a value-bearing --issue or --document.
 
 Examples:
   ${commandName} run --project my-project --parent 42
   ${commandName} run --project my-project --issue 77
   ${commandName} run --project my-project --issue
   ${commandName} run --project my-project --document
-  ${commandName} run --project my-project --issue 77 --no-auto-merge`;
+  ${commandName} run --project my-project --issue 77 --no-auto-merge
+  ${commandName} run --project my-project --document --no-auto-merge`;
 
 const initHelp = `usage: ${initUsageMessage}
 
@@ -298,7 +299,10 @@ function parseRunOptions(argv: string[]) {
     .option("--issue [ticket]", "Standalone Issue number")
     .option("--document", "Run Documentation Maintenance")
     .option("--auto-merge", "Request merge after the Pull Request is CI-ready")
-    .option("--no-auto-merge", "Stop after the Pull Request is CI-ready")
+    .option(
+      "--no-auto-merge",
+      "Stop after CI readiness and retain the PR Worktree",
+    )
     .action(() => undefined);
   cli.parse(["node", commandName, ...argv]);
   if (cli.matchedCommandName !== "run") throw new Error(usageMessage);
@@ -376,10 +380,11 @@ function parseArguments(argv: string[]): {
   const issueTicket = ticketNumber(options.issue);
   const explicitAutoMerge =
     argv.includes("--auto-merge") || argv.includes("--no-auto-merge");
-  if (explicitAutoMerge && issueTicket === undefined)
-    throw new Error("auto-merge flags require a value-bearing --issue");
-  if (documentSelector)
-    return { project, selector: "document", autoMerge: false };
+  if (explicitAutoMerge && issueTicket === undefined && !documentSelector)
+    throw new Error(
+      "auto-merge flags require a value-bearing --issue or --document",
+    );
+  if (documentSelector) return { project, selector: "document", autoMerge };
   if (parentSelector) {
     if (parentTicket === undefined) throw new Error(usageMessage);
     return {

@@ -223,6 +223,8 @@ test("no-auto-merge publishes, repairs CI, and preserves recovery state without 
   const root = await createProject();
   const delivery = createCommittedDelivery(9);
   const worktrees: string[] = [];
+  const removedWorktrees: string[] = [];
+  const deletedBranches: string[] = [];
   const implementation = {
     sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     message: "feat: implementation",
@@ -262,6 +264,19 @@ test("no-auto-merge publishes, repairs CI, and preserves recovery state without 
     },
     async push() {
       pushCalls += 1;
+    },
+    async listWorktrees() {
+      return worktrees.map((worktree) => ({
+        worktree,
+        branch,
+        repository: "/tmp/repo",
+      }));
+    },
+    async removeWorktree(_checkout: string, worktree: string) {
+      removedWorktrees.push(worktree);
+    },
+    async deleteBranch(_checkout: string, branch: string) {
+      deletedBranches.push(branch);
     },
   };
   const result = await executeCli(
@@ -338,9 +353,10 @@ test("no-auto-merge publishes, repairs CI, and preserves recovery state without 
     snapshot.publications?.map(({ ticket, phase }) => ({ ticket, phase })),
     [{ ticket: 9, phase: "pr_created" }],
   );
-  assert.deepEqual(snapshot.terminalCleanup, {
-    9: { status: "cleaned", candidates: [] },
-  });
+  assert.equal(snapshot.terminalCleanup, undefined);
+  assert.deepEqual(removedWorktrees, []);
+  assert.deepEqual(deletedBranches, []);
+  assert.deepEqual(result.summary.tickets?.[0]?.retainedWorktrees, worktrees);
 });
 
 test("auto-merge flag forms are parsed and restricted", async () => {
