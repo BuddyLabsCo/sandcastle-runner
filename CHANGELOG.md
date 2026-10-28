@@ -2,6 +2,8 @@
 
 ## 0.1.0
 
+- - feat: [issue-286] ship the installable issue-runner CLI (#290)
+- - chore: propose release v0.1.0 (#289)
 - - feat: [issue-285] automate release proposals and gated publication (#288)
 - - feat: [issue-269] simplify terminal progress and unresolved skips (#272)
 - - fix: [issue-270] default CodeBuddy to unattended sandbox full pass (#271)
