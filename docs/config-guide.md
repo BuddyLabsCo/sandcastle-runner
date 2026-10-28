@@ -42,23 +42,12 @@ after validation and cleanup. `--auto-merge` and `--no-auto-merge` are mutually
 exclusive, reject supplied values, and require a value-bearing `--issue`.
 
 Audit logs, agent logs, review findings, Recovery Snapshots, and Worktrees stay
-under the selected Project. Runner never writes Run data into the installation
-directory, npm's global prefix, or the npx cache.
-
-An Operator Pause gates new Agent steps and delivery advancement across the Run.
-Already-started invocations keep collecting output; Runner retains their results
-and logs until every pending pause is resolved. Prompts appear one at a time,
-and each response applies only to its displayed invocation. Enter, recovery
-instructions, and skip keep their context-specific meanings. `q` or EOF cancels
-the Run and settles its owned processes. Other Runs continue independently.
-
-Runner prints the outcome of each Delivery and Maintenance Ticket, remaining
-discovery reasons, retained worktrees, and the Audit Log path. `succeeded` and
-`no_work` exit successfully; `incomplete`, `cancelled`, and `failed` do not.
+under the selected Project.  
 
 ## Operator Pause actions
 
-When automatic recovery stops or an Agent reaches a timeout threshold, the Runner waits for your input. These terminal examples use illustrative paths and diagnostics; `[Enter]` means press Enter without typing text.
+When automatic recovery stops or an Agent reaches a timeout threshold, the Runner waits for your input.  
+These terminal examples use illustrative paths and diagnostics; `[Enter]` means press Enter without typing text.
 
 ### Agent timeout thresholds
 
