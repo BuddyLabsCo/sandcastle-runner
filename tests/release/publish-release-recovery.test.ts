@@ -204,6 +204,34 @@ for (const code of ["E401", "E403", "E404"]) {
   );
 }
 
+for (const prefix of ["npm_config_", "NPM_CONFIG_"]) {
+  posixTest(`failed OIDC cannot fall back to a ${prefix}scoped token`, (t) => {
+    const fixture = createPublishFixture(t);
+    const { merge, tarball } = mergedRelease(fixture);
+    fixture.configureNpm({ oidcFailure: true });
+
+    const result = fixture.runExpectingFailure(
+      "publish-release",
+      publishEnvironment(merge, tarball, {
+        [`${prefix}//registry.npmjs.org/:_authToken`]: "test-scoped-token",
+      }),
+    );
+
+    assert.match(result.stderr, /OIDC authorization failed/);
+    assert.match(result.stderr, /No publication stages completed/);
+    assert.equal(fixture.npmState().latest, "");
+    assert.equal(fixture.remoteTag("v0.1.1"), "");
+    assert.equal(fixture.state().release, null);
+    const publish = fixture
+      .calls("npm")
+      .filter(({ args }) => args[0] === "publish");
+    assert.equal(publish.length, 1);
+    assert.equal(publish[0]?.token, false);
+    assert.ok(!result.stdout.includes("test-scoped-token"));
+    assert.ok(!result.stderr.includes("test-scoped-token"));
+  });
+}
+
 // Regression: the exit status of `npm publish` is the authority for the
 // publication stage. Any nonzero exit, not only an authorization rejection,
 // must stop before the tag and Release are written.

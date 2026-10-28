@@ -18,8 +18,8 @@
 // is preceded by read-only validation, and a re-run reuses stages that already
 // match the release identity instead of republishing them.
 //
-// npm exchanges the workflow's OIDC identity at publication. No command receives
-// an npm publication token, and publication uses isolated npm configuration.
+// npm exchanges the workflow's OIDC identity at publication. Publication receives
+// no stored npm credentials and uses isolated npm configuration.
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -365,6 +365,11 @@ function publishToRegistry(tarball: string, version: string): void {
     const globalConfig = join(directory, "global-npmrc");
     writeFileSync(userConfig, "registry=https://registry.npmjs.org/\n");
     writeFileSync(globalConfig, "");
+    const environment = withoutNpmToken();
+    // npm can fall back to environment credentials even with isolated npmrc files.
+    for (const name of Object.keys(environment)) {
+      if (/^npm_config_/i.test(name)) delete environment[name];
+    }
     const result = execute(
       "npm",
       [
@@ -379,7 +384,7 @@ function publishToRegistry(tarball: string, version: string): void {
         "--globalconfig",
         globalConfig,
       ],
-      { env: withoutNpmToken(), cwd: directory },
+      { env: environment, cwd: directory },
     );
     if (result.status !== 0) {
       const detail = result.stderr.trim() || result.stdout.trim();

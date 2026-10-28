@@ -20,8 +20,10 @@ completion. An npm failure stops before tag/Release creation.
 
 Only the GitHub-hosted `publish` job has `id-token: write`. It uses Node 22.18.0
 and explicitly installs npm 11.19.0, without package-manager caching. Publication
-uses isolated registry configuration and strips both `NODE_AUTH_TOKEN` and
-`NPM_TOKEN`; routine releases have no stored-token fallback.
+uses isolated registry configuration and strips `NODE_AUTH_TOKEN`, `NPM_TOKEN`,
+and all inherited `npm_config_*` environment settings (case-insensitively) from
+the publication command. This includes registry-scoped authentication settings;
+routine releases have no stored-token fallback.
 
 ## Package authorization
 

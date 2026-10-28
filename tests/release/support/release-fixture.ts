@@ -141,8 +141,10 @@ const flag = (name) => args[args.indexOf(name) + 1];
 const userConfig = args.includes("--userconfig") ? flag("--userconfig") : null;
 const authConfig = userConfig && fs.existsSync(userConfig)
   ? fs.readFileSync(userConfig, "utf8") : null;
+const scopedToken = process.env["npm_config_//registry.npmjs.org/:_authToken"] ||
+  process.env["NPM_CONFIG_//registry.npmjs.org/:_authToken"];
 fs.appendFileSync(logPath, JSON.stringify({ command: "npm", args,
-  body: null, authConfig, token: Boolean(process.env.NODE_AUTH_TOKEN || process.env.NPM_TOKEN) }) + "\n");
+  body: null, authConfig, token: Boolean(process.env.NODE_AUTH_TOKEN || process.env.NPM_TOKEN || scopedToken) }) + "\n");
 if (state.fail === args[0] + " " + args[1] || state.fail === args[0]) {
   console.error(state.message || "simulated npm " + state.fail + " failure");
   process.exit(42);
@@ -201,6 +203,11 @@ if (args[0] === "view") {
   process.exit(0);
 }
 if (args[0] === "publish") {
+  // npm can fall back to existing registry credentials after OIDC fails.
+  if (state.oidcFailure && !scopedToken) {
+    console.error("npm error code ENEEDAUTH\nnpm error OIDC authorization failed");
+    process.exit(1);
+  }
   if (!args.includes("--tag") || args[args.indexOf("--tag") + 1] !== "latest") process.exit(92);
   const tarball = args[1], version = tarball.split("-").at(-1).replace(/\.tgz$/, "");
   if (state.registry[version]) {
