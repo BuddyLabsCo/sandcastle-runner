@@ -61,13 +61,15 @@ test("Run and init help list options, constraints, and examples", async () => {
     "--parent",
     "--issue",
     "--document",
-    "--auto-merge",
     "--no-auto-merge",
   ]) {
     assert.ok(run.output.includes(option), option);
   }
   assert.match(run.output, /Exactly one of --parent, --issue, or --document/u);
-  assert.match(run.output, /mutually exclusive/u);
+  assert.match(run.output, /^usage: issue-runner run --project/u);
+  assert.doesNotMatch(run.output, /--auto-merge/u);
+  assert.match(run.output, /Standalone Issue \(--issue <issue-number>\)/u);
+  assert.match(run.output, /or --document, and accepts no value/u);
   assert.match(
     run.output,
     /issue-runner run --project my-project --parent 42/u,
@@ -81,10 +83,10 @@ test("Run and init help list options, constraints, and examples", async () => {
   assert.equal(init.result.exitCode, 0);
   assert.match(
     init.output,
-    /usage: issue-runner init --project <project-key>/u,
+    /^usage: issue-runner init --project <project-key>/u,
   );
   assert.match(init.output, /prompts\/\{implement,review,documentation\}\.md/u);
-  assert.match(init.output, /no\noverwrite, merge, or force mode/u);
+  assert.doesNotMatch(init.output, /The copy performs/u);
 });
 
 test("--version reports the executing package version without a Project", async () => {

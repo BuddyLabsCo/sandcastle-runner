@@ -84,7 +84,7 @@ Project discovery uses only the launch directory. The init command neither
 needs credentials nor copies an existing configured Project. Run
 \`${commandName} run --help\` for Run options and selector examples.`;
 
-const runHelp = `usage: ${usageMessage}
+const runHelp = `${usageMessage}
 
 Options:
   --project <project-key>  Child of the launch directory that holds config.yaml
@@ -95,14 +95,13 @@ Options:
                            issueList
   --document               Run Documentation Maintenance without a Parent or
                            issue scope
-  --auto-merge             Request merge after the Pull Request is CI-ready
   --no-auto-merge          Stop after CI readiness and retain the PR Worktree
   -h, --help               Show this help
 
 Constraints:
   Exactly one of --parent, --issue, or --document is required.
-  --auto-merge and --no-auto-merge are mutually exclusive, reject a supplied
-  value, and require a value-bearing --issue or --document.
+  --no-auto-merge applies only to a Standalone Issue (--issue <issue-number>)
+  or --document, and accepts no value.
 
 Examples:
   ${commandName} run --project my-project --parent 42
@@ -112,16 +111,11 @@ Examples:
   ${commandName} run --project my-project --issue 77 --no-auto-merge
   ${commandName} run --project my-project --document --no-auto-merge`;
 
-const initHelp = `usage: ${initUsageMessage}
+const initHelp = `${initUsageMessage}
 
 Creates <launch directory>/<project-key>/config.yaml and
 <launch directory>/<project-key>/prompts/{implement,review,documentation}.md
 from the reviewed initialization templates.
-
-The copy performs no substitutions, machine probing, credential reads, network
-calls, agent login, or target-checkout access. The destination must not exist;
-empty directories, files, and symbolic links are refused. There is no
-overwrite, merge, or force mode.
 
 Project keys use letters, digits, dot, underscore, or hyphen and must name a
 child of the launch directory.
