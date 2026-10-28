@@ -37,8 +37,9 @@ flowchart TD
         C44 -- Failed --> CI44["AI: codebuddy repair CI"] --> C44
     end
     C43 & C44 -- CI-ready --> G["Wait until both PRs are CI-ready"]
-    G --> MC["AI: codex resolve merge conflicts if needed"]
-    MC --> M["Merge PRs in order"] --> T["Close issues"]
+    G --> M["Merge PRs in order"]
+    M -- Conflict --> MC["AI: codex resolve merge conflicts"] --> M
+    M -- Merged --> T["Close issues"]
     T --> D["Create Maintenance Issue<br/>Triggered by Sub #44"]
     D --> U["AI: claude-code update documentation"]
     U --> Q{"Documentation changed?"}
