@@ -25,21 +25,21 @@ issue-runner run --project my-project --parent 42
 flowchart TD
     P["Parent #42: sub-issues #43, #44, #45"] --> A43 & A44
     subgraph B1["Batch 1: two issues in parallel"]
-        A43["Sub #43<br/>AI: Implement / review / fix"] --> C43["Publish PR / CI<br/>AI: Repair CI if needed"]
-        A44["Sub #44: documentation label<br/>AI: Implement / review / fix"] --> C44["Publish PR / CI<br/>AI: Repair CI if needed"]
+        A43["Sub #43<br/>codebuddy implement / codex review / back to codebuddy to fix"] --> C43["Publish PR / CI<br/>codebuddy repair CI if needed"]
+        A44["Sub #44: documentation label<br/>codebuddy implement / codex review / back to codebuddy to fix"] --> C44["Publish PR / CI<br/>codebuddy repair CI if needed"]
     end
     C43 & C44 --> G["Wait until both PRs are CI-ready"]
-    G --> M["Merge PRs in order<br/>AI: Resolve merge conflicts if needed<br/>Close issues"]
+    G --> M["Merge PRs in order<br/>codex Resolve merge conflicts if needed<br/>Close issues"]
     M --> D["Create Maintenance Issue<br/>Triggered by Sub #44"]
-    D --> U["AI: Update documentation"]
+    D --> U["claudecode Update documentation"]
     U --> Q{"Documentation changed?"}
-    Q -- Yes --> DC["Publish documentation PR / CI<br/>AI: Repair CI if needed"]
+    Q -- Yes --> DC["Publish documentation PR / CI<br/>codebuddy repair CI if needed"]
     DC --> DM["Merge documentation PR"]
     DM --> DF["Close Maintenance Issue / clean Worktree"]
     Q -- No --> DF
     DF --> A45
     subgraph B2["Batch 2: remaining issue"]
-        A45["Sub #45<br/>AI: Implement / review / fix"] --> C45["Publish PR / CI"]
+        A45["Sub #45<br/>codebuddy implement / codex review / back to codebuddy to fix"] --> C45["Publish PR / CI"]
         C45 --> M45["Merge PR / close #45 / clean Worktree"]
     end
     M45 --> F["Close Parent #42"]
