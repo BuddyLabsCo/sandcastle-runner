@@ -22,7 +22,7 @@ test.afterEach(cleanupTempRoots);
 
 async function createMaintenanceProject(): Promise<string> {
   const root = await createProject();
-  const configPath = path.join(root, "projects/demo/config.yaml");
+  const configPath = path.join(root, "demo/config.yaml");
   const config = await readProjectConfig<{
     workflow: { docMaintainTriggerLabel: string };
   }>(configPath);
@@ -39,7 +39,7 @@ function createMatchingDelivery(ticket = 9) {
 
 test("matching delivery label triggers one clean no_change Maintenance Ticket without a Pull Request", async () => {
   const root = await createMaintenanceProject();
-  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+  await writeProjectConfig(path.join(root, "demo/config.yaml"), {
     ...validConfig,
     ticketClosure: "code_host",
     workflow: {
@@ -236,7 +236,7 @@ test("blocked Documentation Maintenance pauses the live Run", async () => {
   assert.equal(parentCloses, 0);
   assert.equal(maintenanceCreates, 1);
   const snapshot = await readRecoverySnapshot(
-    recoveryPaths(path.join(root, "projects", "demo"), 8).snapshot,
+    recoveryPaths(path.join(root, "demo"), 8).snapshot,
   );
   assert.deepEqual(snapshot?.maintenance, {
     phase: "attempting",

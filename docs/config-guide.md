@@ -1,15 +1,52 @@
-# Project Template
+# Configuration and workflow guide
 
-This directory is a project template for Sandcastle Runner. Copy it to `projects/<project-key>` and adapt `config.yaml` and the prompts.
+A Project is one child of the directory you launch Runner from. It holds
+`config.yaml`, the three Project prompts, and that Project's logs, Recovery
+Snapshots, and Worktrees.
+
+## Create a Project
+
+From any directory, initialize a child Project with the published package:
+
+```sh
+npx issue-runner@latest init --project <project-key>
+```
+
+Initialization copies `config.yaml` and `prompts/{implement,review,documentation}.md`
+from reviewed templates. It never overwrites an existing destination and never
+uses credentials, the network, or a target checkout.
 
 ## Configure a Project
 
-Edit the [example config.yaml](sandcastle-runner/config.yaml); its inline comments explain each field and native session lookup options.
-The implementation prompt must be nonempty. Review and documentation prompts are required when their workflow is enabled. CI and conflict repairs use fixed input templates under `src/prompts`; no Project repair prompt is required.
+Edit your Project's `config.yaml`; the [template's inline comments](../templates/config.yaml) explain each field. Runner uses GitHub for both issue tracking and pull requests.
+The implementation prompt must be nonempty. Review and documentation prompts are required when their workflow is enabled. CI and conflict repairs use fixed Runner-owned input templates; no Project repair prompt is required.
+
+## Run
+
+```sh
+issue-runner run --project <project-key> --parent <issue-number>
+issue-runner run --project <project-key> --issue <issue-number>
+issue-runner run --project <project-key> --issue
+issue-runner run --project <project-key> --document
+```
+
+`run --project <key>` reads only `cwd/<key>`. A missing or invalid Project is a
+startup failure; there is no fallback to another configuration.
+
+`--issue` without a number uses the Project's configured `issueList`.
+`--document` runs standalone Documentation Maintenance.
+
+Runs merge their pull requests after CI passes by default. With a numbered `--issue` or `--document`, add `--no-auto-merge` to leave the PR open and retain its Worktree and local branch. If Documentation Maintenance makes no changes, Runner closes its issue and cleans the Worktree without creating a PR.
+
+`--auto-merge` and `--no-auto-merge` are mutually exclusive and accept no value. Neither flag can be used with `--parent` or a value-less `--issue`.
+
+Audit logs, agent logs, review findings, Recovery Snapshots, and Worktrees stay
+under the selected Project.  
 
 ## Operator Pause actions
 
-When automatic recovery stops or an Agent reaches a timeout threshold, the Runner waits for your input. These terminal examples use illustrative paths and diagnostics; `[Enter]` means press Enter without typing text.
+When automatic recovery stops or an Agent reaches a timeout threshold, the Runner waits for your input.  
+These terminal examples use illustrative paths and diagnostics; `[Enter]` means press Enter without typing text.
 
 ### Agent timeout thresholds
 
@@ -173,7 +210,7 @@ flowchart TD
 
 The reviewer writes actionable findings under the Project logs directory and returns the assigned path. A clean review needs no findings document.
 Both sessions are reused within one Runner process. Each review receives the issue reference, Worktree, branch, diff boundaries, and findings path through `review-attempt-input.md`. The reviewer reads the issue and repository instructions itself. Subsequent reviews inspect only the latest fix and verify earlier findings were resolved.
-At the configured limit, implementation still fixes the final findings before publication, without another review. See `workflow.maxReviewRounds` in [config.yaml](sandcastle-runner/config.yaml) for counting and limits.
+At the configured limit, implementation still fixes the final findings before publication, without another review. See `workflow.maxReviewRounds` in [config.yaml](../templates/config.yaml) for counting and limits.
 
 Findings and session logs remain available throughout the loop. Completion or skip cleans owned files; pause and cancellation retain them.
 
@@ -185,5 +222,5 @@ Keep only repository-specific instructions in these files:
 - `review.md`: review skills and criteria
 - `documentation.md`: documentation scope and conventions
 
-Runner templates under `src/prompts` supply task context, Worktree and branch restrictions, review diff boundaries, findings paths, and output protocols.
+Runner-owned templates supply task context, Worktree and branch restrictions, review diff boundaries, findings paths, and output protocols.
 Project prompts do not need placeholders for these inputs.

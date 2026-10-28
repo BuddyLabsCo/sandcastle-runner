@@ -26,7 +26,6 @@ import type {
   MaintenanceState,
   PublicationIntent,
 } from "../recovery.ts";
-import { deleteTicketAgentLogs } from "./agent-logs.ts";
 import { currentRepairHandoff } from "./pull-request-repair.ts";
 import { cleanupTicketWorktrees, type CleanupRecord } from "./cleanup.ts";
 import type { GitWorkspace, Ticket } from "./contracts.ts";
@@ -465,55 +464,24 @@ async function runProjectInternal(
     cleanupRecords.set(ticket, record);
   };
 
-  const cleanupTerminal = async (
-    ticket: number,
-    worktreeRoot = path.join(input.projectDirectory, "worktrees"),
-    workspaces: VerifiedHandoff[] = [],
-  ): Promise<void> => {
+  const cleanupTerminal = async (ticket: number): Promise<void> => {
     for (;;) {
       const previous = cleanupRecords.get(ticket);
       if (previous?.status === "cleaned" || previous?.status === "accepted")
         return;
       const pending: CleanupRecord = {
         status: "pending",
-        candidates: [
-          ...new Set([
-            ...(previous?.candidates ?? []),
-            ...workspaces.map(
-              ({ worktree, branch }) => `${worktree}:${branch}`,
-            ),
-          ]),
-        ],
+        candidates: previous?.candidates ?? [],
         ...(previous?.error === undefined ? {} : { error: previous.error }),
       };
       await input.persistCleanup?.(ticket, pending);
       cleanupRecords.set(ticket, pending);
       try {
-        if (workspaces.length > 0) {
-          const logFailures = await deleteTicketAgentLogs(
-            input.projectDirectory,
-            ticket,
-            [
-              input.runId,
-              ...workspaces.map(({ worktree }) =>
-                path.basename(path.dirname(worktree)),
-              ),
-            ],
-          );
-          if (logFailures.length > 0)
-            throw new Error(
-              logFailures
-                .map(
-                  ({ logFile, error }) => `${logFile ?? "Agent log"}: ${error}`,
-                )
-                .join("; "),
-            );
-        }
         const result = await cleanupTicketWorktrees(
           input.gitWorkspace,
           input.checkout,
           input.checkout,
-          worktreeRoot,
+          path.join(input.projectDirectory, "worktrees"),
           ticket,
           async (candidates) => {
             const discovered = { ...pending, candidates };
@@ -658,6 +626,7 @@ async function runProjectInternal(
       projectDirectory: input.projectDirectory,
       documentationPrompt: input.documentationPrompt,
       documentationAgent: input.documentationAgent,
+      autoMerge: input.autoMerge,
       maintenanceTicket: input.maintenanceTicket,
       maintenanceTicketLabel: input.maintenanceTicket.label,
       parentScopedMaintenance:
@@ -699,6 +668,16 @@ async function runProjectInternal(
     reasons.push(...result.reasons);
     if (result.handoff) handoffs.push(result.handoff);
     if (result.pullRequest) pullRequests.push(result.pullRequest);
+    if (result.outcome === "ready") {
+      recordWorktree(result.ticket, "maintenance", result.handoff.worktree);
+      updateTicket(result.ticket, {
+        status: "PR ready",
+        pullRequest: result.pullRequest.number,
+        pullRequestUrl: result.pullRequest.url,
+        detail: result.reasons.join("; "),
+      });
+      return "succeeded";
+    }
     if (result.ticket !== undefined) {
       const report = recordTicket(result.ticket, "maintenance");
       const detail =
@@ -807,11 +786,6 @@ async function runProjectInternal(
       (input.issueTicket !== undefined ||
         input.standaloneIssueList !== undefined)
     ) {
-      const worktreeRoot = path.join(
-        input.projectDirectory,
-        "worktrees",
-        input.runId,
-      );
       for (const { observation, handoff } of publication.published) {
         if (skippedTickets.has(observation.ticket)) continue;
         updateTicket(observation.ticket, {
@@ -820,9 +794,11 @@ async function runProjectInternal(
           pullRequestUrl: observation.url,
           detail: `Pull Request #${observation.number} is CI-ready; awaiting manual merge`,
         });
-        await cleanupTerminal(observation.ticket, worktreeRoot, [
-          currentRepairHandoff(publicationInputs, handoff),
-        ]);
+        recordWorktree(
+          observation.ticket,
+          "delivery",
+          currentRepairHandoff(publicationInputs, handoff).worktree,
+        );
       }
       return null;
     }

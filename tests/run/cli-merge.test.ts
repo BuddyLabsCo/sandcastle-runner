@@ -21,7 +21,7 @@ test.afterEach(cleanupTempRoots);
 
 test("code_host closure waits 10 seconds and then another 30 seconds while leaving closure to GitHub", async () => {
   const root = await createProject();
-  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+  await writeProjectConfig(path.join(root, "demo/config.yaml"), {
     ...validConfig,
     ticketClosure: "code_host",
   });
@@ -145,7 +145,7 @@ test("a transient merge failure retries after reconciling Pull Request state", a
 
 test("an explicit merge conflict is repaired on the original branch and Pull Request", async () => {
   const root = await createProject();
-  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+  await writeProjectConfig(path.join(root, "demo/config.yaml"), {
     ...validConfig,
     workflow: { ...validConfig.workflow, review: true },
     agents: {

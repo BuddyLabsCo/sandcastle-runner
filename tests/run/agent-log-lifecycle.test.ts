@@ -23,17 +23,14 @@ test("implementation and review logs are stage-named and removed on success", as
   const root = await createProject();
   const config = structuredClone(validConfig);
   config.workflow.review = true;
-  await writeProjectConfig(
-    path.join(root, "projects/demo/config.yaml"),
-    config,
-  );
+  await writeProjectConfig(path.join(root, "demo/config.yaml"), config);
   const delivery = createCommittedDelivery(9);
   const implementation = {
     sha: "b".repeat(40),
     message: "feat: implementation",
   };
   const logPaths: string[] = [];
-  const logs = path.join(root, "projects/demo/logs");
+  const logs = path.join(root, "demo/logs");
   await mkdir(logs, { recursive: true });
   const unrelatedMarkdown = path.join(logs, "review-9-notes-round-1.md");
   await writeFile(unrelatedMarkdown, "keep Markdown");

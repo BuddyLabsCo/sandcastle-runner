@@ -18,7 +18,7 @@ test.afterEach(cleanupTempRoots);
 for (const observation of ["implementation", "review"] as const) {
   test(`failed ${observation} Git observation retries only the read`, async () => {
     const root = await createProject();
-    await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+    await writeProjectConfig(path.join(root, "demo/config.yaml"), {
       ...validConfig,
       workflow: {
         ...validConfig.workflow,

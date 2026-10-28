@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { parse } from "yaml";
 
+import { resolveProjectDirectory } from "./project-directory.ts";
 import type { RetryPolicy, TicketClosurePolicy } from "./run/contracts.ts";
 
 const documentationConfigurationError =
@@ -22,12 +23,11 @@ export interface ProjectConfig {
   maxBatchSize: number;
   targetBranch?: string;
   tracker: {
-    type: "github";
     tokenEnv: string;
     runnerAccount: string;
     reservationLabel: string;
   };
-  codeHost: { type: "github"; tokenEnv: string; adminMerge: boolean };
+  codeHost: { tokenEnv: string; adminMerge: boolean };
   workflow: {
     review: boolean;
     maxReviewRounds?: number;
@@ -191,9 +191,6 @@ function parseConfig(
     throw new Error("repository must be owner/repo");
   const checkout = text(input.checkout, "checkout");
   if (!path.isAbsolute(checkout)) throw new Error("checkout must be absolute");
-  if (tracker.type !== "github" || codeHost.type !== "github") {
-    throw new Error("only github adapters are supported");
-  }
   if (typeof codeHost.adminMerge !== "boolean")
     throw new Error("codeHost.adminMerge is required");
   if (input.ticketClosure !== "runner" && input.ticketClosure !== "code_host") {
@@ -246,7 +243,6 @@ function parseConfig(
       ? {}
       : { targetBranch: text(input.targetBranch, "targetBranch") }),
     tracker: {
-      type: "github",
       tokenEnv: text(tracker.tokenEnv, "tracker.tokenEnv"),
       runnerAccount: text(tracker.runnerAccount, "tracker.runnerAccount"),
       reservationLabel: text(
@@ -255,7 +251,6 @@ function parseConfig(
       ),
     },
     codeHost: {
-      type: "github",
       tokenEnv: text(codeHost.tokenEnv, "codeHost.tokenEnv"),
       adminMerge: codeHost.adminMerge,
     },
@@ -305,14 +300,12 @@ function parseConfig(
 }
 
 export async function loadProject(
-  root: string,
+  launchDirectory: string,
   projectKey: string,
   env: Record<string, string | undefined>,
   options: { requireDocumentationMaintenance?: boolean } = {},
 ): Promise<LoadedProject> {
-  if (!/^[A-Za-z0-9._-]+$/u.test(projectKey))
-    throw new Error("invalid project key");
-  const directory = path.join(root, "projects", projectKey);
+  const directory = resolveProjectDirectory(launchDirectory, projectKey);
   const configPath = path.join(directory, "config.yaml");
   let value: unknown;
   try {

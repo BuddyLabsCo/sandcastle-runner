@@ -35,7 +35,7 @@ export function input() {
     branch: "sandcastle/run-id/ticket-9",
     base: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     targetBranch: "main",
-    promptFile: path.resolve("projects/sandcastle-runner/prompts/implement.md"),
+    promptFile: path.resolve("templates/prompts/implement.md"),
     promptArgs: {
       TICKET_NUMBER: 9,
       WORKTREE_PATH: "/repo/worktree",
@@ -67,7 +67,7 @@ export function reviewInput() {
   return {
     ...review,
     runName: "review issue 9",
-    promptFile: path.resolve("projects/sandcastle-runner/prompts/review.md"),
+    promptFile: path.resolve("templates/prompts/review.md"),
     promptArgs: { REVIEW_INPUT: "{}" },
   };
 }

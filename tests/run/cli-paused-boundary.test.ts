@@ -24,7 +24,7 @@ for (const review of [false, true]) {
   ] as const) {
     test(`a blocked ${review ? "review" : "implementation"} observes ${change} without a recovery prompt`, async () => {
       const root = await createProject();
-      await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+      await writeProjectConfig(path.join(root, "demo/config.yaml"), {
         ...validConfig,
         workflow: { ...validConfig.workflow, review },
       });

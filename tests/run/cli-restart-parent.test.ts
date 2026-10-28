@@ -26,10 +26,7 @@ test("restart adopts an exact published Pull Request without rerunning implement
   const root = await createProject();
   const config = structuredClone(validConfig);
   config.workflow.docMaintainTriggerLabel = "";
-  await writeProjectConfig(
-    path.join(root, "projects", "demo", "config.yaml"),
-    config,
-  );
+  await writeProjectConfig(path.join(root, "demo", "config.yaml"), config);
   const intent = publicationIntent("pending_pr");
   const snapshot = await writePublicationState(root, [intent]);
   const { tracker, tickets } = createAttemptTracker(9);
@@ -104,10 +101,7 @@ test("restart abandons an absent pending push and creates fresh work", async () 
   const root = await createProject();
   const config = structuredClone(validConfig);
   config.workflow.docMaintainTriggerLabel = "";
-  await writeProjectConfig(
-    path.join(root, "projects", "demo", "config.yaml"),
-    config,
-  );
+  await writeProjectConfig(path.join(root, "demo", "config.yaml"), config);
   const intent = publicationIntent("pending_push");
   await writePublicationState(root, [intent]);
   const delivery = createCommittedDelivery();
@@ -182,10 +176,7 @@ test("restart creates one absent Pull Request after rechecking the remote head",
   const root = await createProject();
   const config = structuredClone(validConfig);
   config.workflow.docMaintainTriggerLabel = "";
-  await writeProjectConfig(
-    path.join(root, "projects", "demo", "config.yaml"),
-    config,
-  );
+  await writeProjectConfig(path.join(root, "demo", "config.yaml"), config);
   const intent = publicationIntent("pending_pr");
   await writePublicationState(root, [intent]);
   const { tracker, tickets } = createAttemptTracker(9);
@@ -332,10 +323,7 @@ test("an interrupted Batch retains every pending publication", async () => {
   const root = await createProject();
   const config = structuredClone(validConfig);
   config.workflow.docMaintainTriggerLabel = "";
-  await writeProjectConfig(
-    path.join(root, "projects", "demo", "config.yaml"),
-    config,
-  );
+  await writeProjectConfig(path.join(root, "demo", "config.yaml"), config);
   const delivery = createCommittedBatch(9, 10);
   const result = await executeCli(
     ["run", "--project", "demo", "--parent", "8"],
@@ -356,7 +344,7 @@ test("an interrupted Batch retains every pending publication", async () => {
     }),
   );
   const snapshot = await readRecoverySnapshot(
-    recoveryPaths(path.join(root, "projects", "demo"), 8).snapshot,
+    recoveryPaths(path.join(root, "demo"), 8).snapshot,
   );
 
   assert.equal(result.summary.outcome, "cancelled");

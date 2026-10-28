@@ -26,7 +26,7 @@ test.afterEach(cleanupTempRoots);
 test("a successful Run removes its empty Worktree parent and preserves sibling Run directories", async () => {
   const root = await createProject();
   const { tracker } = createAttemptTracker(9);
-  const worktrees = path.join(root, "projects", "demo", "worktrees");
+  const worktrees = path.join(root, "demo", "worktrees");
   const historical = path.join(worktrees, "historical");
   const populated = path.join(worktrees, "historical-populated");
   await mkdir(historical, { recursive: true });
@@ -337,7 +337,7 @@ test("an unexpected current Run parent removal error warns without changing the 
 test("a final Recovery Snapshot exception still removes an empty current Run parent", async () => {
   const root = await createProject();
   const { tracker } = createAttemptTracker(9);
-  const project = path.join(root, "projects", "demo");
+  const project = path.join(root, "demo");
   const snapshot = recoveryPaths(project, 8).snapshot;
   let runParent = "";
 

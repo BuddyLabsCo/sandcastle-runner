@@ -1,9 +1,14 @@
-# Copy this Project and replace repository, checkout, runnerAccount, and targetBranch.
+# Project configuration created by `issue-runner init`.
+# Replace every placeholder below before the first Run:
+#   repository, checkout, targetBranch, tracker.runnerAccount,
+#   and each agent model (and agent when you use another supported CLI).
+# Credential values are read from the environment variables named by tokenEnv.
 
 # GitHub repository in owner/name form.
-repository: BuddyLabsCo/sandcastle-runner
-# Absolute path to the repository checkout.
-checkout: /home/xiakeng/Desktop/workspace/sandcastle-runner-checkout/
+repository: your-account/your-repository
+# Absolute path to the repository checkout. On Windows use a path such as
+# C:\work\your-repository. Relative paths are rejected.
+checkout: /absolute/path/to/your-repository
 # Unique positive issue numbers; limits Parent Runs or drives value-less --issue Runs.
 issueList: []
 # Required positive safe integer; caps newly discovered Parent and Standalone Batches.
@@ -11,7 +16,7 @@ maxBatchSize: 2
 # Branch to integrate into; omit to use the repository default branch.
 targetBranch: main
 # Additional automatic attempts after the initial attempt (non-negative integers).
-# See docs/adr/0001-configurable-retry-policy.md.
+# See docs/adr/0001-configurable-retry-policy.md in the issue-runner repository.
 operationRetry: 4
 agentRetry: 2
 # Positive delays in seconds; the final delay repeats when the retry budget is longer.
@@ -28,7 +33,7 @@ ticketClosure: runner
 # Title, body, and label for Documentation Maintenance tickets.
 maintenanceTicket:
   title: Maintain project documentation
-  body: n/a
+  body: Review and update the documentation surfaces named by the documentation prompt.
   label: doc-maintain
 workflow:
   # Defaults to true; false bypasses the entire review/fix loop.
@@ -36,22 +41,19 @@ workflow:
   # Optional positive integer, with no default cap. Omit to repeat until a clean review.
   # Initial review is round 1; retries and Operator Pause continuations do not add rounds.
   # 1 permits review + fix; 2 permits review + fix + review + fix.
-  # The final findings still receive a fix, then delivery proceeds without another review.
   maxReviewRounds: 2
   # Exact case-sensitive label on a completed issue triggers one maintenance per Batch.
   # Omitted, empty, or whitespace-only values disable automatic maintenance.
   docMaintainTriggerLabel: ""
 tracker:
   # GitHub tracker settings. tokenEnv names an environment variable; reservationLabel marks Runner-owned Delivery Tickets.
-  type: github
   tokenEnv: GH_TOKEN
-  runnerAccount: xiakeng
+  runnerAccount: your-github-account
   reservationLabel: sandcastle:reserved
 codeHost:
-  # GitHub Pull Request settings. adminMerge allows or forbids administrative squash merge requests.
-  type: github
+  # GitHub Pull Request settings. adminMerge allows administrative squash merge requests.
   tokenEnv: GH_TOKEN
-  adminMerge: true
+  adminMerge: false
 agents:
   # Each purpose independently selects agent (codex/claude-code/pi/codebuddy),
   # model, and optional native options.
@@ -63,36 +65,36 @@ agents:
   implement:
     # Initial Delivery Ticket implementation.
     agent: codex
-    model: group/deepseek-v4.1-flash
+    model: your-model-name
     options:
-      effort: max
+      effort: high
   review:
     # Independent Standards and Spec review session, reused across review rounds.
     agent: codex
-    model: codex/gpt-6.1-sol
+    model: your-review-model-name
     options:
       effort: high
   ciRepair:
     # Repair of failed required CI checks.
     agent: codex
-    model: group/deepseek-v4.1-flash
+    model: your-model-name
     options:
-      effort: max
+      effort: high
   conflictRepair:
     # Repair of an explicit merge conflict.
     agent: codex
-    model: group/deepseek-v4.1-flash
+    model: your-model-name
     options:
-      effort: max
+      effort: high
   documentation:
     # Documentation Maintenance.
     agent: codex
-    model: group/deepseek-v4.1-flash
+    model: your-model-name
     options:
-      effort: max
+      effort: high
 timeouts:
   # Positive minute thresholds. Agent thresholds pause while the invocation stays alive.
-  # Overall runtime per invocation; required, with no default (120 is this Project's choice).
+  # Overall runtime per invocation; required, with no default (120 is this template's choice).
   agentMinutes: 120
   # Silence on stdout/stderr, including partial lines; optional, defaults to 10.
   # Enter grants a fresh idle window without resetting overall runtime.

@@ -5,20 +5,58 @@ delivering GitHub tickets. It selects eligible tickets, prepares isolated
 worktrees, verifies and pushes commits, publishes pull requests, waits for CI,
 and coordinates merges and ticket closure.
 
-This keeps AI agents focused on writing, reviewing, and repairing code while
-reducing unnecessary token use for workflow coordination. Runner invokes agents
-through Sandcastle when a task needs code changes or review.
-
 Runner runs on Windows, macOS, and Linux and supports `codex`,
-`claude-code`, `pi`, and `codebuddy`. Agents run locally through Sandcastle.
+`claude-code`, `pi`, and `codebuddy`. 
 
-See the [Project guide](projects/README.md) for workflow details.
+The npm package and executable are both named `issue-runner`. See the
+[Configuration and workflow guide](docs/config-guide.md) for detailed setup and workflow explanations.
+
+## What can it do?
+<details>
+<summary>Expand the Parent Run workflow</summary>
+
+This successful Run processes three eligible sub-issues with `maxBatchSize: 2` and `workflow.docMaintainTriggerLabel: documentation`. Sub-issue #44 has the `documentation` label. `AI:` marks coding-agent work.
+
+```sh
+issue-runner run --project my-project --parent 42
+```
+
+```mermaid
+flowchart TD
+    P["Parent #42: sub-issues #43, #44, #45"] --> A43 & A44
+    subgraph B1["Batch 1: two issues in parallel"]
+        A43["Sub #43<br/>AI: Implement / review / fix"] --> C43["Publish PR / CI<br/>AI: Repair CI if needed"]
+        A44["Sub #44: documentation label<br/>AI: Implement / review / fix"] --> C44["Publish PR / CI<br/>AI: Repair CI if needed"]
+    end
+    C43 & C44 --> G["Wait until both PRs are CI-ready"]
+    G --> M["Merge PRs in order<br/>AI: Resolve merge conflicts if needed<br/>Close issues"]
+    M --> D["Create Maintenance Issue<br/>Triggered by Sub #44"]
+    D --> U["AI: Update documentation"]
+    U --> Q{"Documentation changed?"}
+    Q -- Yes --> DC["Publish documentation PR / CI<br/>AI: Repair CI if needed"]
+    DC --> DM["Merge documentation PR"]
+    DM --> DF["Close Maintenance Issue / clean Worktree"]
+    Q -- No --> DF
+    DF --> A45
+    subgraph B2["Batch 2: remaining issue"]
+        A45["Sub #45<br/>AI: Implement / review / fix"] --> C45["Publish PR / CI"]
+        C45 --> M45["Merge PR / close #45 / clean Worktree"]
+    end
+    M45 --> F["Close Parent #42"]
+```
+
+</details>
+
+Keeps AI agents focused on writing, reviewing, and repairing code while
+reducing unnecessary token use for workflow coordination. Runner invokes agents
+through [Sandcastle](https://github.com/mattpocock/sandcastle)
 
 ## Prerequisites
 
-Install these on the host that runs Runner:
+The npm package supplies only the Runner. Install these on the host that runs
+it:
 
-- Node.js 22.18.0 or newer, including its bundled npm.
+- Node.js 22.18.0 or newer in the 22.x series, including npm.
 - Git, with `git` on `PATH`; Runner requires worktree support.
 - GitHub CLI (`gh`), with `gh` on `PATH`.
 - An installed and authenticated coding-agent CLI for every configured agent,
@@ -27,29 +65,102 @@ Install these on the host that runs Runner:
   interactive CLI approval prompts.
 - A GitHub repository checkout at an absolute path.
 
-Prepare each selected agent's own sign-in,
-skills, MCP servers, and native configuration. Runner does not install or
-normalize them.
+Prepare each selected agent's own sign-in, skills, MCP servers, and native
+configuration. Runner does not install or normalize them.
 
 Complete authentication and permission setup before starting Runner. Operator
 Pause accepts recovery instructions after an Agent Attempt stops. Timeout pauses
 keep the original invocation alive. Conversation text cannot answer a native
 approval request or grant a denied permission.
 
-Keep the Runner checkout, project checkout, worktrees, state, logs, temporary
-files, and agent session state on paths without Chinese characters.
+Keep the project checkout, worktrees, state, logs, temporary files, and agent
+session state on paths without Chinese characters.
 
 ## Installation
 
-Runner is a checkout-only CLI and is not published to a package registry:
-
+Run the latest release with `npx`:
 ```sh
-git clone https://github.com/xiakeng/sandcastle-runner.git
-cd sandcastle-runner
-npm ci
+npx issue-runner@latest --help
 ```
 
-## Windows Setup
+or install it globally:
+```sh
+npm install -g issue-runner@latest
+issue-runner --help
+```
+
+## Initialize a Project
+
+Run initialization from the directory that should contain the Project. The
+launch directory is the only place Runner looks:
+
+```sh
+cd /work/my-projects
+npx issue-runner@latest init --project my-project
+```
+
+This creates exactly:
+
+```text
+my-project/
+  config.yaml
+  prompts/
+    implement.md
+    review.md
+    documentation.md
+```
+
+### Edit the placeholders
+
+Replace every placeholder in `my-project/config.yaml`:
+
+- `repository`: the target GitHub repository in `owner/repository` form.
+- `checkout`: the absolute path to that repository's checkout. On Windows use
+  a path such as `C:\work\your-repository`.
+- `targetBranch`: the branch to integrate into, or omit it to use the
+  repository default.
+- `tracker.runnerAccount`: the GitHub account that owns Reservations.
+- Every `agents.*.model`: a model name your configured agent accepts.
+- Each `agents.*.agent` when you use another supported agent CLI.
+- `agentMinutes`, the retry delays, and other limits when the template values
+  do not fit the project.
+- `maintenanceTicket` when Review or Documentation Maintenance uses a
+  different ticket template.
+
+Set the environment variables named by `tracker.tokenEnv` and
+`codeHost.tokenEnv`; the template uses `GH_TOKEN`.
+
+Edit the three prompt files with your repository's implementation, review, and documentation instructions.
+
+## Run
+
+```sh
+issue-runner run --project my-project --parent 42                # Deliver the child issues of #42.
+issue-runner run --project my-project --issue 43                 # Deliver single issue #42.
+issue-runner run --project my-project --issue                    # Deliver the issues list configured in config.yaml.
+issue-runner run --project my-project --document                 # only start document maintain job
+issue-runner run --project my-project --issue 43 --no-auto-merge # Keep the PR and Worktree for manual review.
+issue-runner run --project my-project --document --no-auto-merge # Keep the documentation PR and Worktree if changes exist.
+```
+
+## Help and version
+
+```sh
+issue-runner --help
+issue-runner -h
+issue-runner run --help
+issue-runner run -h
+issue-runner init --help
+issue-runner --version
+```
+
+Both help surfaces accept the long and short form. Informational output
+succeeds before required-argument, Project, credential, or external-tool
+validation and does not write files or start a Run. `--version` reads the
+executing package's own metadata, so direct and `npx` execution agree for the
+same artifact.
+
+## Windows setup
 
 Install Node.js, Git, `gh`, and each selected agent CLI. Reopen PowerShell after
 installation so `PATH` changes take effect, then verify:
@@ -85,7 +196,7 @@ Codex and Pi use `hostSessionsDir`; Claude Code uses `hostProjectsDir`. These
 options select where sessions are looked up and do not relocate agent storage.
 
 Set the credential variables named by `tracker.tokenEnv` and
-`codeHost.tokenEnv` in `config.yaml`; the templates use `GH_TOKEN`. As with
+`codeHost.tokenEnv` in `config.yaml`; the template uses `GH_TOKEN`. As with
 `HOME`, configure it once at the user level:
 
 ```powershell
@@ -94,7 +205,7 @@ $env:GH_TOKEN = [Environment]::GetEnvironmentVariable('GH_TOKEN', 'User')
 node -p "Boolean(process.env.GH_TOKEN)"
 ```
 
-## macOS and Linux Setup
+## macOS and Linux setup
 
 Install Node.js, Git, `gh`, and each selected agent CLI, then verify the
 commands in the shell that will run Runner:
@@ -111,66 +222,22 @@ export GH_TOKEN='your-github-token'
 Use a shell profile or another local secret mechanism when appropriate. Never
 commit a token.
 
-## Configuration
-
-Create a project directory under `projects/`:
-
-```text
-projects/<project-key>/
-  config.yaml
-  prompts/
-    implement.md
-    review.md
-    documentation.md
-  logs/
-```
-
-Start from `projects/sandcastle-runner/config.yaml` and configure the
-repository, absolute checkout, target branch, credential variable names,
-timeouts, workflow flags, and agent profiles.
-
-The [example configuration](projects/sandcastle-runner/config.yaml) explains each field in YAML comments.
-Write repository-specific instructions in the Project prompts; Runner supplies task context and output requirements.
-
-## Run
-
-```sh
-npm exec -- sandcastle-runner run --project <project-key> --parent <issue-number>
-npm exec -- sandcastle-runner run --project <project-key> --issue <issue-number>
-npm exec -- sandcastle-runner run --project <project-key> --issue
-npm exec -- sandcastle-runner run --project <project-key> --document
-```
-
-`--issue` without a number uses the project's configured `issueList`.
-`--document` runs standalone Documentation Maintenance.
-
-Standalone runs request a merge after their pull request is CI-ready. Use
-`--no-auto-merge` with a value-bearing `--issue` to leave the pull request open
-after validation and cleanup.
-
-An Operator Pause gates new Agent steps and delivery advancement across the Run.
-Already-started invocations keep collecting output; Runner retains their results
-and logs until every pending pause is resolved. Prompts appear one at a time,
-and each response applies only to its displayed invocation. Enter, recovery
-instructions, and skip keep their context-specific meanings. `q` or EOF cancels
-the Run and settles its owned processes. Other Runs continue independently.
-
-Runner prints the outcome of each Delivery and Maintenance Ticket, remaining
-discovery reasons, retained worktrees, and the Audit Log path. `succeeded` and
-`no_work` exit successfully; `incomplete`, `cancelled`, and `failed` do not.
-
 ## Verification and Development
 
 ```sh
-npm test                 # full test suite
+npm test                 # full test suite, including packaged-tarball acceptance
 npm run typecheck        # TypeScript diagnostics
 npm run check            # formatting, lint, and typecheck
+npm run build            # compile ESM JavaScript into dist/
+npm run release:accept   # accept a packed tarball (RELEASE_TARBALL=<path>)
 npm run verify           # tests plus all checks
 npm run format           # format source files
 ```
 
 The test suite uses scripted adapters and harmless local processes. It does not
-call authenticated agents or mutate a remote GitHub repository.
+call authenticated agents or mutate a remote GitHub repository. Packaging tests
+build and pack the real artifact, install it into a temporary prefix, and run
+the npm executable shim from unrelated directories.
 
 ## Acknowledgements
 

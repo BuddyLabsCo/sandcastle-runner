@@ -34,7 +34,7 @@ test("delivery and document selectors are mutually exclusive and required", asyn
 
 test("value-less issue processes the configured Issue List", async () => {
   const root = await createProject();
-  const configPath = `${root}/projects/demo/config.yaml`;
+  const configPath = `${root}/demo/config.yaml`;
   const config = await readProjectConfig<{
     issueList: number[];
   }>(configPath);
@@ -89,7 +89,7 @@ test("value-less issue rejects an empty Issue List before workflow operations", 
 
 test("standalone issue runs without Documentation Maintenance configuration", async () => {
   const root = await createProject();
-  const configPath = `${root}/projects/demo/config.yaml`;
+  const configPath = `${root}/demo/config.yaml`;
   const config = await readProjectConfig<{
     workflow: { docMaintainTriggerLabel: string };
     agents: Record<string, unknown>;
@@ -97,7 +97,7 @@ test("standalone issue runs without Documentation Maintenance configuration", as
   config.workflow.docMaintainTriggerLabel = "";
   delete config.agents.documentation;
   await writeProjectConfig(configPath, config);
-  await rm(`${root}/projects/demo/prompts/documentation.md`);
+  await rm(`${root}/demo/prompts/documentation.md`);
   let parentReads = 0;
   let childReads = 0;
 
@@ -167,7 +167,7 @@ test("standalone issue applies ready-for-agent gating and terminal no_work", asy
 
 test("standalone issue uses the selected issue as the Review specification", async () => {
   const root = await createProject();
-  const configPath = `${root}/projects/demo/config.yaml`;
+  const configPath = `${root}/demo/config.yaml`;
   const config = await readProjectConfig<{
     workflow: { review: boolean; docMaintainTriggerLabel: string };
   }>(configPath);
@@ -223,6 +223,8 @@ test("no-auto-merge publishes, repairs CI, and preserves recovery state without 
   const root = await createProject();
   const delivery = createCommittedDelivery(9);
   const worktrees: string[] = [];
+  const removedWorktrees: string[] = [];
+  const deletedBranches: string[] = [];
   const implementation = {
     sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     message: "feat: implementation",
@@ -262,6 +264,19 @@ test("no-auto-merge publishes, repairs CI, and preserves recovery state without 
     },
     async push() {
       pushCalls += 1;
+    },
+    async listWorktrees() {
+      return worktrees.map((worktree) => ({
+        worktree,
+        branch,
+        repository: "/tmp/repo",
+      }));
+    },
+    async removeWorktree(_checkout: string, worktree: string) {
+      removedWorktrees.push(worktree);
+    },
+    async deleteBranch(_checkout: string, branch: string) {
+      deletedBranches.push(branch);
     },
   };
   const result = await executeCli(
@@ -327,7 +342,7 @@ test("no-auto-merge publishes, repairs CI, and preserves recovery state without 
   assert.equal(mergeRequests, 0);
   assert.equal(worktrees.length, 1);
   const snapshot = JSON.parse(
-    await readFile(`${root}/projects/demo/state/issue-9.json`, "utf8"),
+    await readFile(`${root}/demo/state/issue-9.json`, "utf8"),
   ) as {
     phase: string;
     publications?: { ticket: number; phase: string }[];
@@ -338,9 +353,10 @@ test("no-auto-merge publishes, repairs CI, and preserves recovery state without 
     snapshot.publications?.map(({ ticket, phase }) => ({ ticket, phase })),
     [{ ticket: 9, phase: "pr_created" }],
   );
-  assert.deepEqual(snapshot.terminalCleanup, {
-    9: { status: "cleaned", candidates: [] },
-  });
+  assert.equal(snapshot.terminalCleanup, undefined);
+  assert.deepEqual(removedWorktrees, []);
+  assert.deepEqual(deletedBranches, []);
+  assert.deepEqual(result.summary.tickets?.[0]?.retainedWorktrees, worktrees);
 });
 
 test("auto-merge flag forms are parsed and restricted", async () => {

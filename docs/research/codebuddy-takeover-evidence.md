@@ -25,7 +25,7 @@ All continuations retained the original native ID. Exact transcript lookup took 
 
 ## Complete live takeover chain
 
-Run `node docs/research/codebuddy-takeover-probe.ts` in a terminal. It prints only the selected fixture's identity and prompts through the real terminal adapter. At the timeout, enter `k`; use another terminal for native manual resume only after settlement. Follow the [operator sequence](../../projects/README.md#stop-one-invocation-for-manual-takeover), using the printed store, worktree, session, and Git configuration. Ask the native session to recall the original secret marker and write it to `manual.txt`; do not supply the marker again. Exit that CLI, then press Enter in Runner.
+Run `node docs/research/codebuddy-takeover-probe.ts` in a terminal. It prints only the selected fixture's identity and prompts through the real terminal adapter. At the timeout, enter `k`; use another terminal for native manual resume only after settlement. Follow the [operator sequence](../config-guide.md#stop-one-invocation-for-manual-takeover), using the printed store, worktree, session, and Git configuration. Ask the native session to recall the original secret marker and write it to `manual.txt`; do not supply the marker again. Exit that CLI, then press Enter in Runner.
 
 The initial accepted run and a repeat with exact native-storage validation both completed the following chain:
 

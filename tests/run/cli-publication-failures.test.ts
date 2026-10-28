@@ -19,7 +19,7 @@ test.afterEach(cleanupTempRoots);
 
 test("required-check timeout enters Operator Pause", async () => {
   const root = await createProject();
-  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+  await writeProjectConfig(path.join(root, "demo/config.yaml"), {
     ...validConfig,
     timeouts: { ...validConfig.timeouts, requiredChecksMinutes: 1 / 60_000 },
   });
@@ -99,7 +99,7 @@ test("required-check timeout enters Operator Pause", async () => {
 
 test("a successful publication write is not replayed when its result audit is cancelled", async () => {
   const root = await createProject();
-  const logs = path.join(root, "projects/demo/logs");
+  const logs = path.join(root, "demo/logs");
   let branch = "";
   let pushCalls = 0;
   let damagedLog = "";
@@ -255,10 +255,7 @@ test("valid no_change and blocked results stay unresolved without handoffs", asy
     const root = await createProject();
     const config = structuredClone(validConfig);
     config.workflow.review = true;
-    await writeProjectConfig(
-      path.join(root, "projects/demo/config.yaml"),
-      config,
-    );
+    await writeProjectConfig(path.join(root, "demo/config.yaml"), config);
     let inspections = 0;
     let branch = "";
     const { tracker } = createAttemptTracker(9);

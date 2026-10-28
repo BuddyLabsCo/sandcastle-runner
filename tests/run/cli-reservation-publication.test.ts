@@ -182,7 +182,7 @@ test("the final complete scan closes a now-terminal Parent scope", async () => {
 
 test("cancelling a failed audit result append pauses exactly once", async () => {
   const root = await createProject();
-  const logs = path.join(root, "projects", "demo", "logs");
+  const logs = path.join(root, "demo", "logs");
   let pauseCalls = 0;
   const result = await executeCli(
     ["run", "--project", "demo", "--parent", "8"],
@@ -338,7 +338,7 @@ test("a Verified Handoff is published unchanged and becomes CI-ready after check
   assert.ok(agentInput);
   assert.equal(
     agentInput.promptFile,
-    path.join(root, "projects/demo/prompts/implement.md"),
+    path.join(root, "demo/prompts/implement.md"),
   );
   assert.deepEqual(agentInput.promptArgs, {
     TICKET_NUMBER: 9,

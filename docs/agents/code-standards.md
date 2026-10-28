@@ -8,29 +8,40 @@ formatting, lint, and type diagnostics.
 
 ```text
 src/
-  cli.ts          Command parsing, production wiring, exit status
+  cli.ts          Command parsing, informational output, production wiring, exit status
+  init.ts         Reviewed initialization assets and destination creation
+  project-directory.ts  Project-key validation and launch-directory child resolution
   config.ts       Project configuration, credentials, prompt paths
   audit.ts        Diagnostic JSONL serialization and filesystem writes
   recovery.ts     Durable recovery snapshot I/O
   run/            Workflow decisions and in-memory Run state
   adapters/       GitHub, Git, Sandcastle, clock, and terminal operations
   prompts/        Runner-owned task-context, continuation, and output prompts
+templates/        Reviewed initialization configuration and Project prompts
 scripts/
+  build.ts        Emit compiled ESM modules and package-relative prompts into dist/
+  npm-command.ts  Portable npm entry-point launch for package checks on every platform
+  package-acceptance.ts  Inspect a packed tarball and exercise its installed executable
   release/        Standalone release proposal and publication entry points
 tests/
   recovery.test.ts Recovery snapshot behavior
   run/            Behavioral scenarios through the real Run
   adapters/       Adapter contract, recovery, and local process-lifecycle checks
+  package/        Built-tarball and npm executable-shim acceptance
   release/        Release script and workflow boundary checks
   support/        Scripted fakes and controlled time
 ```
 
-`cli.ts` constructs adapters and passes them to the Run entry point. Keep it
-importable without starting a process so tests can exercise command handling.
-`config.ts` reads and validates Project files and resolves credential references;
-it does not select tickets or start agents. Project YAML and Markdown prompts,
-logs, and Recovery Snapshots remain external files in their configured
-locations. Runner-owned templates under `src/prompts/` supply task context, execution restrictions,
+`cli.ts` constructs adapters and passes them to the Run entry point. It keeps
+informational flags and `init` ahead of Project loading, and detects direct
+execution without relying on a runtime version-specific entry flag. `init.ts`
+copies `templates/` unchanged into the launch-directory child; it performs no
+project-key substitution or environment probing. `project-directory.ts` is the
+single definition of the `--project` key boundary for both initialization and
+loading. `config.ts` reads and validates Project files and resolves credential
+references; it does not select tickets or start agents. Project YAML and
+Markdown prompts, logs, and Recovery Snapshots remain external files in their
+configured locations. Runner-owned templates under `src/prompts/` supply task context, execution restrictions,
 continuation instructions, and output contracts. Project prompts contain only
 repository-specific instructions.
 
@@ -41,6 +52,9 @@ invoke. They are not part of the Runner CLI or the published package. Release
 eligibility, version and changelog decisions, release pull request updates,
 publication validation, and retry behavior live there; workflows supply only
 events, permissions, checkout, toolchain setup, and credential wiring.
+`scripts/build.ts` emits the published JavaScript and copies package-relative
+Markdown prompts into `dist/`; `scripts/package-acceptance.ts` accepts the
+packed tarball that publication will upload. Neither script is shipped.
 
 Each entry point runs outside Actions with explicit environment inputs and
 reports failures through output and exit status. `release-lib.ts` owns shared

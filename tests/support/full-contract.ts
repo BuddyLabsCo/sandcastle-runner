@@ -21,7 +21,7 @@ export async function createProject(recovery: boolean): Promise<string> {
   const root = registerTempRoot(
     await mkdtemp(path.join(tmpdir(), "sandcastle-runner-full-")),
   );
-  const project = path.join(root, "projects", "demo");
+  const project = path.join(root, "demo");
   await mkdir(path.join(project, "prompts"), { recursive: true });
   const config = {
     repository: "owner/repo",
@@ -30,13 +30,11 @@ export async function createProject(recovery: boolean): Promise<string> {
     maxBatchSize: 3,
     ...(!recovery && { targetBranch: "main" }),
     tracker: {
-      type: "github",
       tokenEnv: "TEST_GH_TOKEN",
       runnerAccount: "runner",
       reservationLabel: "sandcastle:reserved",
     },
     codeHost: {
-      type: "github",
       tokenEnv: "TEST_GH_TOKEN",
       adminMerge: false,
     },

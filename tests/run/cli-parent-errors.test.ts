@@ -466,10 +466,7 @@ test("startup validation errors return a failed summary without workflow or paus
 
 test("malformed Recovery Snapshots fail startup with one readable error", async () => {
   const root = await createProject();
-  const snapshot = recoveryPaths(
-    path.join(root, "projects", "demo"),
-    8,
-  ).snapshot;
+  const snapshot = recoveryPaths(path.join(root, "demo"), 8).snapshot;
   await mkdir(path.dirname(snapshot), { recursive: true });
   await writeFile(snapshot, "{not-json", "utf8");
   let workflowCalls = 0;
@@ -507,10 +504,7 @@ test("malformed Recovery Snapshots fail startup with one readable error", async 
 
 test("an empty required prompt fails startup before workflow operations", async () => {
   const root = await createProject();
-  await writeFile(
-    path.join(root, "projects", "demo", "prompts", "implement.md"),
-    "",
-  );
+  await writeFile(path.join(root, "demo", "prompts", "implement.md"), "");
   let workflowCalls = 0;
   const result = await executeCli(
     ["run", "--project", "demo", "--parent", "8"],

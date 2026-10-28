@@ -23,6 +23,7 @@ import {
   type PullRequestObservation,
 } from "./pull-request.ts";
 import type { MaintenanceState, PublicationIntent } from "../recovery.ts";
+import { currentRepairHandoff } from "./pull-request-repair.ts";
 
 interface MaintenanceInput extends Omit<
   PublicationInput,
@@ -31,19 +32,27 @@ interface MaintenanceInput extends Omit<
   maintenanceTicket: { title: string; body: string; label: string };
   documentationPrompt: string;
   documentationAgent: AgentConfig;
+  autoMerge: boolean;
   recovery?: MaintenanceState;
   recoveryPublication?: PublicationIntent;
   persistMaintenance?: (state: MaintenanceState | null) => Promise<void>;
 }
 
-export interface MaintenanceResult {
-  outcome: "succeeded" | "incomplete" | "cancelled" | "failed" | "skipped";
+export type MaintenanceResult = {
   reasons: string[];
   ticket?: number;
   skipReason?: string;
   handoff?: VerifiedHandoff;
   pullRequest?: PullRequestObservation;
-}
+} & (
+  | { outcome: "succeeded" | "incomplete" | "cancelled" | "failed" | "skipped" }
+  | {
+      outcome: "ready";
+      ticket: number;
+      handoff: VerifiedHandoff;
+      pullRequest: PullRequestObservation;
+    }
+);
 
 function stopped(
   boundary: {
@@ -368,6 +377,17 @@ async function runMaintenanceOccurrence(
         ticket: ticket.number,
       };
     }
+    if (!input.autoMerge) {
+      return {
+        outcome: "ready",
+        reasons: [
+          `Pull Request #${published.pullRequest.number} is CI-ready; awaiting manual merge`,
+        ],
+        ticket: ticket.number,
+        handoff: currentRepairHandoff(publicationInput, published.handoff),
+        pullRequest: published.observation,
+      };
+    }
     const state = await observePullRequestForIntegration(
       publicationInput,
       published.pullRequest.number,
@@ -495,6 +515,17 @@ async function runMaintenanceOccurrence(
       ticket: ticket.number,
       handoff: attempt.handoff,
       ...(published ? { pullRequest: published.observation } : {}),
+    };
+  }
+  if (!input.autoMerge) {
+    return {
+      outcome: "ready",
+      reasons: [
+        `Pull Request #${published.pullRequest.number} is CI-ready; awaiting manual merge`,
+      ],
+      ticket: ticket.number,
+      handoff: currentRepairHandoff(publicationInput, published.handoff),
+      pullRequest: published.observation,
     };
   }
   const state = await observePullRequestForIntegration(

@@ -240,7 +240,7 @@ for (const {
       assert.equal(result.summary.outcome, "cancelled");
       assert.ok(initialWorkspace);
       const snapshot = await readRecoverySnapshot(
-        recoveryPaths(path.join(root, "projects", "demo"), 8).snapshot,
+        recoveryPaths(path.join(root, "demo"), 8).snapshot,
       );
       assert.deepEqual(snapshot?.terminalCleanup?.[9]?.candidates, [
         `${initialWorkspace.worktree}:${initialWorkspace.branch}`,
@@ -262,7 +262,7 @@ for (const {
       assert.equal(result.summary.outcome, "cancelled");
       assert.equal(worktrees.size, 2);
       const snapshot = await readRecoverySnapshot(
-        recoveryPaths(path.join(root, "projects", "demo"), 8).snapshot,
+        recoveryPaths(path.join(root, "demo"), 8).snapshot,
       );
       assert.equal(
         snapshot?.publications?.[0]?.repairBudgets?.ci?.pendingPush,

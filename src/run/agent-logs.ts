@@ -83,17 +83,3 @@ export async function deleteAgentLogs(
   }
   return failures;
 }
-
-export async function deleteTicketAgentLogs(
-  projectDirectory: string,
-  ticket: number,
-  runIds: string[],
-): Promise<AgentLogDeletionFailure[]> {
-  const failures: AgentLogDeletionFailure[] = [];
-  for (const stage of ["implement", "review", "ci", "merge", "doc"] as const) {
-    failures.push(
-      ...(await deleteAgentLogs(projectDirectory, ticket, stage, runIds)),
-    );
-  }
-  return failures;
-}
