@@ -51,9 +51,9 @@ tracker:
   runnerAccount: your-github-account
   reservationLabel: sandcastle:reserved
 codeHost:
-  # GitHub Pull Request settings. adminMerge allows or forbids administrative squash merge requests.
+  # GitHub Pull Request settings. adminMerge allows administrative squash merge requests.
   tokenEnv: GH_TOKEN
-  adminMerge: true
+  adminMerge: false
 agents:
   # Each purpose independently selects agent (codex/claude-code/pi/codebuddy),
   # model, and optional native options.
