@@ -5,6 +5,36 @@ delivering GitHub tickets. It selects eligible tickets, prepares isolated
 worktrees, verifies and pushes commits, publishes pull requests, waits for CI,
 and coordinates merges and ticket closure.
 
+This successful Run processes three eligible sub-issues with `maxBatchSize: 2` and `workflow.docMaintainTriggerLabel: documentation`. Sub-issue #44 has the `documentation` label. `AI:` marks coding-agent work.
+
+```sh
+issue-runner run --project my-project --parent 42
+```
+
+```mermaid
+flowchart TD
+    P["Parent #42: sub-issues #43, #44, #45"] --> A43 & A44
+    subgraph B1["Batch 1: two issues in parallel"]
+        A43["Sub #43<br/>AI: Implement / review / fix"] --> C43["Publish PR / CI<br/>AI: Repair CI if needed"]
+        A44["Sub #44: documentation label<br/>AI: Implement / review / fix"] --> C44["Publish PR / CI<br/>AI: Repair CI if needed"]
+    end
+    C43 & C44 --> G["Wait until both PRs are CI-ready"]
+    G --> M["Merge PR for #43, then PR for #44<br/>Close issues / clean Worktrees"]
+    M --> D["Create Maintenance Issue<br/>Triggered by Sub #44"]
+    D --> U["AI: Update documentation"]
+    U --> Q{"Documentation changed?"}
+    Q -- Yes --> DC["Publish documentation PR / CI<br/>AI: Repair CI if needed"]
+    DC --> DM["Merge documentation PR"]
+    DM --> DF["Close Maintenance Issue / clean Worktree"]
+    Q -- No --> DF
+    DF --> A45
+    subgraph B2["Batch 2: remaining issue"]
+        A45["Sub #45<br/>AI: Implement / review / fix"] --> C45["Publish PR / CI<br/>AI: Repair CI if needed"]
+        C45 --> M45["Merge PR / close #45 / clean Worktree"]
+    end
+    M45 --> F["Close Parent #42"]
+```
+
 This keeps AI agents focused on writing, reviewing, and repairing code while
 reducing unnecessary token use for workflow coordination. Runner invokes agents
 through [Sandcastle](https://github.com/mattpocock/sandcastle) when a task needs code changes or review.
