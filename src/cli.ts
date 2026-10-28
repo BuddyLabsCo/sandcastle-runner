@@ -113,9 +113,12 @@ Examples:
 
 const initHelp = `${initUsageMessage}
 
-Creates <launch directory>/<project-key>/config.yaml and
-<launch directory>/<project-key>/prompts/{implement,review,documentation}.md
-from the reviewed initialization templates.
+<launch directory>/<project-key>/
+├── config.yaml
+└── prompts/
+    ├── implement.md
+    ├── review.md
+    └── documentation.md
 
 Project keys use letters, digits, dot, underscore, or hyphen and must name a
 child of the launch directory.

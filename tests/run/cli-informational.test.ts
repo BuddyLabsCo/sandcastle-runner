@@ -85,7 +85,11 @@ test("Run and init help list options, constraints, and examples", async () => {
     init.output,
     /^usage: issue-runner init --project <project-key>/u,
   );
-  assert.match(init.output, /prompts\/\{implement,review,documentation\}\.md/u);
+  assert.match(init.output, /├── config\.yaml\n└── prompts\//u);
+  assert.match(
+    init.output,
+    / {4}├── implement\.md\n {4}├── review\.md\n {4}└── documentation\.md/u,
+  );
   assert.doesNotMatch(init.output, /The copy performs/u);
 });
 
