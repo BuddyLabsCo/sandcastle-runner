@@ -1,6 +1,6 @@
 {
   "name": "issue-runner",
-  "version": "0.1.3",
+  "version": "1.0.0",
   "description": "Ticket-driven coding-agent orchestration for configured GitHub projects.",
   "keywords": [
     "coding-agent",
