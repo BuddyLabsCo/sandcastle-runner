@@ -402,6 +402,37 @@ function main(): void {
     if (config.repository !== "your-account/your-repository") {
       fail("init did not copy the reviewed placeholder configuration");
     }
+    const retained = readFileSync(join(cwd, "demo", "config.yaml"), "utf8");
+    const repeat = runExecutable(
+      localBin(prefix),
+      ["init", "--project", "demo"],
+      cwd,
+      environment,
+    );
+    if (
+      repeat.status === 0 ||
+      !`${repeat.stdout}${repeat.stderr}`.includes("already exists")
+    ) {
+      fail("init overwrote an existing destination");
+    }
+    if (readFileSync(join(cwd, "demo", "config.yaml"), "utf8") !== retained) {
+      fail("the rejected init changed the existing Project");
+    }
+    const escaped = runExecutable(
+      localBin(prefix),
+      ["init", "--project", "../outside"],
+      cwd,
+      environment,
+    );
+    if (
+      escaped.status === 0 ||
+      !`${escaped.stdout}${escaped.stderr}`.includes("Invalid project key")
+    ) {
+      fail("init accepted a project key outside the launch directory");
+    }
+    if (listFiles(cwd).length !== initializationFiles.length) {
+      fail("a rejected init wrote outside its destination");
+    }
     const missingProject = runExecutable(
       localBin(prefix),
       ["run", "--project", "absent", "--parent", "1"],

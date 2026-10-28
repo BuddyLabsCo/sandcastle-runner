@@ -66,6 +66,9 @@ installation writes the package into npm's global prefix and places the
 npm install --global issue-runner@latest
 ```
 
+An upgrade replaces only the installed package. It never rewrites Project
+configuration or prompts you created with `init`; your edits stay in place.
+
 The npm/npx tool version and registry metadata are separate from the executing
 CLI version. `issue-runner --version` prints the version of the package that is
 actually running.
