@@ -16,13 +16,11 @@ export const validConfig = {
   maxBatchSize: 3,
   targetBranch: "main",
   tracker: {
-    type: "github",
     tokenEnv: "TEST_GH_TOKEN",
     runnerAccount: "runner",
     reservationLabel: "sandcastle:reserved",
   },
   codeHost: {
-    type: "github",
     tokenEnv: "TEST_GH_TOKEN",
     adminMerge: false,
   },

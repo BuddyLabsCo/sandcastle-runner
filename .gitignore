@@ -1,9 +1,4 @@
 coverage/
 dist/
 node_modules/
-/projects/*
-!/projects/README.md
-!/projects/sandcastle-runner/
-projects/**/logs
-projects/**/state
-projects/**/worktrees
+/projects/

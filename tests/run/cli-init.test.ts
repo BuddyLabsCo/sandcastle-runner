@@ -92,7 +92,6 @@ test("init copies the reviewed assets into the launch-directory child", async ()
     "reservationLabel",
     "runnerAccount",
     "tokenEnv",
-    "type",
   ]);
 
   const output = messages.join("\n");

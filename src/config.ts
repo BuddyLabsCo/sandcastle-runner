@@ -23,12 +23,11 @@ export interface ProjectConfig {
   maxBatchSize: number;
   targetBranch?: string;
   tracker: {
-    type: "github";
     tokenEnv: string;
     runnerAccount: string;
     reservationLabel: string;
   };
-  codeHost: { type: "github"; tokenEnv: string; adminMerge: boolean };
+  codeHost: { tokenEnv: string; adminMerge: boolean };
   workflow: {
     review: boolean;
     maxReviewRounds?: number;
@@ -192,9 +191,6 @@ function parseConfig(
     throw new Error("repository must be owner/repo");
   const checkout = text(input.checkout, "checkout");
   if (!path.isAbsolute(checkout)) throw new Error("checkout must be absolute");
-  if (tracker.type !== "github" || codeHost.type !== "github") {
-    throw new Error("only github adapters are supported");
-  }
   if (typeof codeHost.adminMerge !== "boolean")
     throw new Error("codeHost.adminMerge is required");
   if (input.ticketClosure !== "runner" && input.ticketClosure !== "code_host") {
@@ -247,7 +243,6 @@ function parseConfig(
       ? {}
       : { targetBranch: text(input.targetBranch, "targetBranch") }),
     tracker: {
-      type: "github",
       tokenEnv: text(tracker.tokenEnv, "tracker.tokenEnv"),
       runnerAccount: text(tracker.runnerAccount, "tracker.runnerAccount"),
       reservationLabel: text(
@@ -256,7 +251,6 @@ function parseConfig(
       ),
     },
     codeHost: {
-      type: "github",
       tokenEnv: text(codeHost.tokenEnv, "codeHost.tokenEnv"),
       adminMerge: codeHost.adminMerge,
     },

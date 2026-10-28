@@ -47,13 +47,11 @@ workflow:
   docMaintainTriggerLabel: ""
 tracker:
   # GitHub tracker settings. tokenEnv names an environment variable; reservationLabel marks Runner-owned Delivery Tickets.
-  type: github
   tokenEnv: GH_TOKEN
   runnerAccount: your-github-account
   reservationLabel: sandcastle:reserved
 codeHost:
   # GitHub Pull Request settings. adminMerge allows or forbids administrative squash merge requests.
-  type: github
   tokenEnv: GH_TOKEN
   adminMerge: true
 agents:

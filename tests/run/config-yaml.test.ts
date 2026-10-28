@@ -34,12 +34,10 @@ issueList: [3, 1]
 maxBatchSize: 2
 targetBranch: main
 tracker:
-  type: github
   tokenEnv: TEST_GH_TOKEN
   runnerAccount: runner
   reservationLabel: sandcastle:reserved
 codeHost:
-  type: github
   tokenEnv: TEST_GH_TOKEN
   adminMerge: false
 workflow:

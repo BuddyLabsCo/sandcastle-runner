@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readdir, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
@@ -13,32 +13,20 @@ const placeholders = {
   "documentation.md": [],
 } as const;
 
-test("checked-in projects are loadable and have exact prompt placeholders", async () => {
-  const projects = await readdir(path.join(root, "projects"), {
-    withFileTypes: true,
-  });
-  for (const project of projects.filter((entry) => entry.isDirectory())) {
-    const directory = path.join(root, "projects", project.name);
-    await loadProject(path.join(root, "projects"), project.name, {
-      GH_TOKEN: "test-only",
-    });
-    for (const [filename, expected] of Object.entries(placeholders)) {
-      const prompt = await readFile(
-        path.join(directory, "prompts", filename),
-        "utf8",
-      );
-      const actual = [
-        ...new Set(
-          [...prompt.matchAll(/\{\{([A-Z_]+)\}\}/gu)].map((match) => match[1]),
-        ),
-      ].sort();
-      assert.deepEqual(actual, expected, filename);
-      assert.doesNotMatch(
-        prompt,
-        /<([A-Za-z0-9_]+)>/u,
-        `${filename} output tag`,
-      );
-    }
+test("initialization templates are loadable and have exact prompt placeholders", async () => {
+  await loadProject(root, "templates", { GH_TOKEN: "test-only" });
+  for (const [filename, expected] of Object.entries(placeholders)) {
+    const prompt = await readFile(
+      path.join(root, "templates", "prompts", filename),
+      "utf8",
+    );
+    const actual = [
+      ...new Set(
+        [...prompt.matchAll(/\{\{([A-Z_]+)\}\}/gu)].map((match) => match[1]),
+      ),
+    ].sort();
+    assert.deepEqual(actual, expected, filename);
+    assert.doesNotMatch(prompt, /<([A-Za-z0-9_]+)>/u, `${filename} output tag`);
   }
 });
 

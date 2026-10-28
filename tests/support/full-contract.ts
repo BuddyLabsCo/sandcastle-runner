@@ -30,13 +30,11 @@ export async function createProject(recovery: boolean): Promise<string> {
     maxBatchSize: 3,
     ...(!recovery && { targetBranch: "main" }),
     tracker: {
-      type: "github",
       tokenEnv: "TEST_GH_TOKEN",
       runnerAccount: "runner",
       reservationLabel: "sandcastle:reserved",
     },
     codeHost: {
-      type: "github",
       tokenEnv: "TEST_GH_TOKEN",
       adminMerge: false,
     },

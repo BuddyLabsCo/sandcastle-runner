@@ -1,4 +1,4 @@
-# Project Guide
+# Configuration and workflow guide
 
 A Project is one child of the directory you launch Runner from. It holds
 `config.yaml`, the three Project prompts, and that Project's logs, Recovery
@@ -16,21 +16,45 @@ Initialization copies `config.yaml` and `prompts/{implement,review,documentation
 from reviewed templates. It never overwrites an existing destination and never
 uses credentials, the network, or a target checkout.
 
-In a checkout of this repository, launch from `projects/` to address the
-checked-in example Project as `sandcastle-runner`:
-
-```sh
-cd projects
-npx issue-runner@latest run --project sandcastle-runner --parent 42
-```
-
-Alternatively copy [the example configuration](sandcastle-runner/config.yaml)
-manually into `<launch directory>/<project-key>/`.
-
 ## Configure a Project
 
-Edit the [example config.yaml](sandcastle-runner/config.yaml); its inline comments explain each field and native session lookup options.
+Edit your Project's `config.yaml`; the [template's inline comments](../templates/config.yaml) explain each field. Runner uses GitHub for both issue tracking and pull requests.
 The implementation prompt must be nonempty. Review and documentation prompts are required when their workflow is enabled. CI and conflict repairs use fixed Runner-owned input templates; no Project repair prompt is required.
+
+## Run
+
+```sh
+issue-runner run --project <project-key> --parent <issue-number>
+issue-runner run --project <project-key> --issue <issue-number>
+issue-runner run --project <project-key> --issue
+issue-runner run --project <project-key> --document
+```
+
+`run --project <key>` reads only `cwd/<key>`. A missing or invalid Project is a
+startup failure; there is no fallback to another configuration.
+
+`--issue` without a number uses the Project's configured `issueList`.
+`--document` runs standalone Documentation Maintenance.
+
+Standalone runs request a merge after their pull request is CI-ready. Use
+`--no-auto-merge` with a value-bearing `--issue` to leave the pull request open
+after validation and cleanup. `--auto-merge` and `--no-auto-merge` are mutually
+exclusive, reject supplied values, and require a value-bearing `--issue`.
+
+Audit logs, agent logs, review findings, Recovery Snapshots, and Worktrees stay
+under the selected Project. Runner never writes Run data into the installation
+directory, npm's global prefix, or the npx cache.
+
+An Operator Pause gates new Agent steps and delivery advancement across the Run.
+Already-started invocations keep collecting output; Runner retains their results
+and logs until every pending pause is resolved. Prompts appear one at a time,
+and each response applies only to its displayed invocation. Enter, recovery
+instructions, and skip keep their context-specific meanings. `q` or EOF cancels
+the Run and settles its owned processes. Other Runs continue independently.
+
+Runner prints the outcome of each Delivery and Maintenance Ticket, remaining
+discovery reasons, retained worktrees, and the Audit Log path. `succeeded` and
+`no_work` exit successfully; `incomplete`, `cancelled`, and `failed` do not.
 
 ## Operator Pause actions
 
@@ -198,7 +222,7 @@ flowchart TD
 
 The reviewer writes actionable findings under the Project logs directory and returns the assigned path. A clean review needs no findings document.
 Both sessions are reused within one Runner process. Each review receives the issue reference, Worktree, branch, diff boundaries, and findings path through `review-attempt-input.md`. The reviewer reads the issue and repository instructions itself. Subsequent reviews inspect only the latest fix and verify earlier findings were resolved.
-At the configured limit, implementation still fixes the final findings before publication, without another review. See `workflow.maxReviewRounds` in [config.yaml](sandcastle-runner/config.yaml) for counting and limits.
+At the configured limit, implementation still fixes the final findings before publication, without another review. See `workflow.maxReviewRounds` in [config.yaml](../templates/config.yaml) for counting and limits.
 
 Findings and session logs remain available throughout the loop. Completion or skip cleans owned files; pause and cancellation retain them.
 
