@@ -43,8 +43,9 @@ closes.
   `auto-release` branch. The script repeats that check against the event
   inputs, so a manual run cannot bypass it.
 - The checks job reuses `.github/workflows/ci.yml` at the exact
-  `merge_commit_sha`. Ubuntu and Windows checks therefore cover the merged
-  commit, not the moving `main` tip.
+  `merge_commit_sha`. Ubuntu and Windows checks at both supported Node floors
+  (22.18.0 and 24.0.0) therefore cover the merged commit, not the moving `main`
+  tip.
 - The publish job checks out that commit, installs dependencies, runs the build
   when one exists, packs the candidate tarball, and passes its path to
   `scripts/release/publish-release.ts`.

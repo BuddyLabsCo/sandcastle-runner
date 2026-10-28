@@ -96,7 +96,7 @@ test("init copies the reviewed assets into the launch-directory child", async ()
   ]);
 
   const output = messages.join("\n");
-  assert.match(output, new RegExp(`Initialized Project at ${directory}`));
+  assert.ok(output.includes(`Initialized Project at ${directory}`), output);
   assert.match(output, /repository, checkout, targetBranch/);
   assert.match(
     output,
@@ -118,7 +118,7 @@ test("init refuses every existing destination and preserves its content", async 
   const directoryResult = await runInit(launch, "demo", directoryMessages);
   assert.equal(directoryResult.exitCode, 1);
   assert.match(directoryMessages.join("\n"), /destination already exists/u);
-  assert.match(directoryMessages.join("\n"), new RegExp(directory));
+  assert.ok(directoryMessages.join("\n").includes(directory));
   assert.equal(
     await readFile(path.join(directory, "keep.txt"), "utf8"),
     "keep",
@@ -201,7 +201,7 @@ test("a failed copy retains partial output and names the destination", async (t)
   const result = await runInit(launch, "demo", messages);
   assert.equal(result.exitCode, 1);
   const output = messages.join("\n");
-  assert.match(output, new RegExp(`Initialization failed for ${directory}`));
+  assert.ok(output.includes(`Initialization failed for ${directory}`), output);
   assert.match(output, /copy denied/u);
   assert.match(output, /partial output was retained for inspection/u);
   assert.doesNotMatch(output, /Initialized Project/u);
@@ -233,9 +233,12 @@ test("run selects only the launch-directory child and never falls back", async (
     }),
   );
   assert.equal(missing.exitCode, 1);
-  assert.match(
-    messages.join("\n"),
-    new RegExp(`failed to load ${path.join(launch, "demo", "config.yaml")}`),
+  const missingOutput = messages.join("\n");
+  assert.ok(
+    missingOutput.includes(
+      `failed to load ${path.join(launch, "demo", "config.yaml")}`,
+    ),
+    missingOutput,
   );
   assert.deepEqual(await readdir(tempting), ["config.yaml", "prompts"]);
   assert.equal(

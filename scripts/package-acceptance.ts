@@ -22,6 +22,7 @@ import { join, relative, resolve, sep } from "node:path";
 
 import { parse } from "yaml";
 
+import { npmCommand } from "./npm-command.ts";
 import { inspectPackageArtifact } from "./release/package-artifact.ts";
 import { execute, withoutNpmToken } from "./release/release-lib.ts";
 
@@ -56,6 +57,14 @@ function npmEnvironment(): NodeJS.ProcessEnv {
   const environment = withoutNpmToken();
   delete environment.npm_config_allow_scripts;
   return environment;
+}
+
+function runNpm(
+  args: string[],
+  options: { cwd?: string; env: NodeJS.ProcessEnv },
+) {
+  const invocation = npmCommand(args);
+  return execute(invocation.command, invocation.args, options);
 }
 
 function isAllowed(file: string): boolean {
@@ -154,7 +163,7 @@ function inspectManifest(manifest: Record<string, unknown>): {
 }
 
 function dryRunInventory(): string[] {
-  const result = execute("npm", ["pack", "--dry-run", "--json"], {
+  const result = runNpm(["pack", "--dry-run", "--json"], {
     cwd: packageRoot,
     env: npmEnvironment(),
   });
@@ -270,8 +279,7 @@ function main(): void {
     const globalPrefix = join(scratch, "global");
     const cwd = join(scratch, "launch");
     mkdirSync(cwd, { recursive: true });
-    const install = (args: string[]) =>
-      execute("npm", args, { env: npmEnvironment() });
+    const install = (args: string[]) => runNpm(args, { env: npmEnvironment() });
     const installed = install([
       "install",
       "--prefix",
@@ -352,8 +360,7 @@ function main(): void {
       );
     }
 
-    const executed = execute(
-      "npm",
+    const executed = runNpm(
       [
         "exec",
         "--yes",

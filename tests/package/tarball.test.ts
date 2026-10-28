@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import { npmCommand } from "../../scripts/npm-command.ts";
 import { cleanupTempRoots, registerTempRoot } from "../support/temp-cleanup.ts";
 
 test.afterEach(cleanupTempRoots);
@@ -19,8 +20,9 @@ function environment(): NodeJS.ProcessEnv {
   return env;
 }
 
-function run(command: string, args: string[], env: NodeJS.ProcessEnv) {
-  const result = spawnSync(command, args, {
+function runNpm(args: string[], env: NodeJS.ProcessEnv) {
+  const invocation = npmCommand(args);
+  const result = spawnSync(invocation.command, invocation.args, {
     cwd: repositoryRoot,
     encoding: "utf8",
     env,
@@ -29,7 +31,7 @@ function run(command: string, args: string[], env: NodeJS.ProcessEnv) {
   assert.equal(
     result.status,
     0,
-    `${command} ${args.join(" ")}: ${result.stderr || result.stdout}`,
+    `npm ${args.join(" ")}: ${result.stderr || result.stdout}`,
   );
   return result.stdout;
 }
@@ -40,10 +42,12 @@ test("the packed artifact accepts the reviewed runtime and executable shim", asy
   );
   const env = environment();
   const packed = JSON.parse(
-    run("npm", ["pack", "--json", "--pack-destination", destination], env),
-  ) as { filename: string; files: { path: string }[] }[];
+    runNpm(["pack", "--json", "--pack-destination", destination], env),
+  ) as { filename: string; version: string; files: { path: string }[] }[];
   const filename = packed[0]?.filename;
+  const version = packed[0]?.version;
   assert.ok(filename);
+  assert.ok(typeof version === "string" && version.length > 0);
   const tarball = path.join(destination, filename);
   const files = (packed[0]?.files ?? []).map((entry) => entry.path);
   for (const file of files) {
@@ -71,6 +75,9 @@ test("the packed artifact accepts the reviewed runtime and executable shim", asy
     },
   );
   assert.equal(accepted.status, 0, accepted.stderr || accepted.stdout);
-  assert.match(accepted.stdout, /Accepted issue-runner@0\.1\.0/u);
+  assert.ok(
+    accepted.stdout.includes(`Accepted issue-runner@${version}`),
+    accepted.stdout,
+  );
   assert.deepEqual(await readdir(destination), [filename]);
 });

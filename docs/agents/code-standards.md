@@ -20,6 +20,7 @@ src/
 templates/        Reviewed initialization configuration and Project prompts
 scripts/
   build.ts        Emit compiled ESM modules and package-relative prompts into dist/
+  npm-command.ts  Portable npm entry-point launch for package checks on every platform
   package-acceptance.ts  Inspect a packed tarball and exercise its installed executable
   release/        Standalone release proposal and publication entry points
 tests/

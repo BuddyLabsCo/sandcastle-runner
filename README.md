@@ -20,7 +20,8 @@ The npm package and executable are both named `issue-runner`. See the
 The npm package supplies only the Runner. Install these on the host that runs
 it:
 
-- Node.js 22.18.0 or newer, including its bundled npm.
+- Node.js 22.18.0 or a Node 24 release (24.0.0 or newer), including its bundled
+  npm.
 - Git, with `git` on `PATH`; Runner requires worktree support.
 - GitHub CLI (`gh`), with `gh` on `PATH`.
 - An installed and authenticated coding-agent CLI for every configured agent,
@@ -199,20 +200,21 @@ same artifact.
 
 ## Node support
 
-`package.json` declares `engines.node` as `>=22.18.0`. That floor covers the
-pinned `cac` requirement (Node 20.19 or newer), the `import.meta.dirname`
-support used by the compiled modules, and the Node 22.18/24 release families
-that the pinned Sandcastle version is used with. The published executable does
-not require runtime TypeScript stripping, and entry detection compares resolved
-paths instead of depending on `import.meta.main`.
+`package.json` declares `engines.node` as `^22.18.0 || ^24.0.0`. That range
+accepts only the Node 22 and Node 24 families and refuses untested Node 23 or
+later majors. The floors are the lowest tested patches in each family: 22.18.0
+covers `import.meta.dirname`, the pinned `cac` requirement, and the Node 22
+release family; 24.0.0 is the lowest tested Node 24 patch. The published
+executable does not require runtime TypeScript stripping, and entry detection
+compares resolved paths instead of depending on `import.meta.main`.
 
 Artifact smoke evidence in this repository was collected on Linux x64 with Node
-22.18.0 and Node 24.20.0: the packed tarball installs and its npm executable
-shim runs help, version, initialization, and Project lookup without credentials.
-The repository CI matrix is configured to run the same suite on Ubuntu and
-Windows with Node 24 and to exercise the Windows `.cmd` shim. macOS execution is
-not yet verified in this repository; it remains part of the declared range
-rather than recorded evidence.
+22.18.0, Node 24.0.0, and Node 24.20.0: the packed tarball installs and its npm
+executable shim runs help, version, initialization, and Project lookup without
+credentials. The repository CI matrix runs the same packaged acceptance on
+Ubuntu and Windows at both declared floors, 22.18.0 and 24.0.0, and exercises
+the Windows `.cmd` shim. macOS execution is not yet verified in this repository;
+it remains part of the declared range rather than recorded evidence.
 
 npm's global executable shims are POSIX links on Linux and macOS and `.cmd`
 shims on Windows. Both forms start the same compiled JavaScript entry point.
@@ -223,7 +225,7 @@ Install Node.js, Git, `gh`, and each selected agent CLI. Reopen PowerShell after
 installation so `PATH` changes take effect, then verify:
 
 ```powershell
-node --version       # v22.18.0 or newer
+node --version       # v22.18.0+ (22.x) or v24.0.0+
 npm --version
 git --version
 gh --version
@@ -268,7 +270,7 @@ Install Node.js, Git, `gh`, and each selected agent CLI, then verify the
 commands in the shell that will run Runner:
 
 ```sh
-node --version       # v22.18.0 or newer
+node --version       # v22.18.0+ (22.x) or v24.0.0+
 npm --version
 git --version
 gh --version
