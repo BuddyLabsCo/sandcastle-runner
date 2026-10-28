@@ -16,6 +16,7 @@ export interface CommandResult {
 
 export interface CommandOptions {
   env?: NodeJS.ProcessEnv;
+  cwd?: string;
 }
 
 const versionPattern = /^(\d+)\.(\d+)\.(\d+)$/;
@@ -38,6 +39,7 @@ export function execute(
   const result = spawnSync(command, args, {
     encoding: "utf8",
     env: options.env ?? process.env,
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
     timeout: 300_000,
   });
   if (result.error) {
@@ -123,11 +125,18 @@ export function manifestVersion(
   return requireVersion(manifest.version, `${label} ${MANIFEST_FILE} version`);
 }
 
-// `npm install` mirrors the root package version into both lockfile locations.
-export function lockfileVersion(
+export interface LockfileVersions {
+  root: string | null;
+  top: string | null;
+}
+
+// `npm install` mirrors the root package version into both lockfile locations,
+// so a release must agree with both of them.
+export function lockfileVersions(
   lockfile: Record<string, unknown>,
   label: string,
-): string | null {
+): LockfileVersions {
+  let rootVersion: string | null = null;
   const packages = lockfile.packages;
   if (
     typeof packages === "object" &&
@@ -138,20 +147,18 @@ export function lockfileVersion(
     if (typeof root === "object" && root !== null && !Array.isArray(root)) {
       const candidate = root as Record<string, unknown>;
       if ("version" in candidate) {
-        return requireVersion(
+        rootVersion = requireVersion(
           candidate.version,
-          `${label} ${LOCKFILE_FILE} version`,
+          `${label} ${LOCKFILE_FILE} packages version`,
         );
       }
     }
   }
-  if ("version" in lockfile) {
-    return requireVersion(
-      lockfile.version,
-      `${label} ${LOCKFILE_FILE} version`,
-    );
-  }
-  return null;
+  const topVersion =
+    "version" in lockfile
+      ? requireVersion(lockfile.version, `${label} ${LOCKFILE_FILE} version`)
+      : null;
+  return { root: rootVersion, top: topVersion };
 }
 
 export function writeManifestVersion(version: string): void {

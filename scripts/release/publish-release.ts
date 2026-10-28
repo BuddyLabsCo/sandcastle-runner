@@ -18,7 +18,12 @@
 // match the release identity instead of republishing them.
 //
 // NODE_AUTH_TOKEN is read at the publication boundary only: every earlier
-// command runs without it.
+// command runs without it, and the registry mapping is written for that single
+// command so a fresh runner needs no preconfigured `.npmrc`.
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import {
   LOCKFILE_FILE,
   MANIFEST_FILE,
@@ -28,7 +33,7 @@ import {
   execute,
   gh,
   git,
-  lockfileVersion,
+  lockfileVersions,
   manifestVersion,
   readJsonText,
   readManifest,
@@ -132,13 +137,21 @@ function validateReleaseCommit(merge: string): Release {
   if (lockfileText === null) {
     throw new Error(`The release commit does not contain ${LOCKFILE_FILE}`);
   }
-  const locked = lockfileVersion(
+  const locked = lockfileVersions(
     readJsonText(lockfileText, LOCKFILE_FILE),
     "release",
   );
-  if (locked !== version) {
+  const mismatched = [
+    locked.root === version
+      ? null
+      : `packages[""] version ${String(locked.root ?? "missing")}`,
+    locked.top === version
+      ? null
+      : `top-level version ${String(locked.top ?? "missing")}`,
+  ].filter((problem): problem is string => problem !== null);
+  if (mismatched.length > 0) {
     throw new Error(
-      `${LOCKFILE_FILE} version ${String(locked)} does not match ${MANIFEST_FILE} version ${version}`,
+      `${LOCKFILE_FILE} ${mismatched.join(" and ")} do not match ${MANIFEST_FILE} version ${version}`,
     );
   }
   return { version, tag: tagName(version) };
@@ -205,6 +218,61 @@ function validateReadiness(
   }
 }
 
+// Metadata and an executable entry point do not establish that the packed bytes
+// start. Install the candidate and require the CLI to report the release
+// version before any registry, tag or Release write.
+function acceptCandidate(tarball: string, release: Release): void {
+  const directory = mkdtempSync(join(tmpdir(), "release-acceptance-"));
+  try {
+    const installed = execute(
+      "npm",
+      ["install", "--prefix", directory, "--no-save", tarball],
+      { env: withoutNpmToken() },
+    );
+    if (installed.status !== 0) {
+      throw new Error(
+        `The packed ${PACKAGE_NAME} tarball could not be installed: ${installed.stderr.trim() || installed.stdout.trim()}`,
+      );
+    }
+    const packageRoot = join(directory, "node_modules", PACKAGE_NAME);
+    const installedText = readTextAt(null, join(packageRoot, MANIFEST_FILE));
+    if (installedText === null) {
+      throw new Error(`The installed package has no ${MANIFEST_FILE}`);
+    }
+    const bin = readManifest(installedText, "installed").bin;
+    const executable =
+      typeof bin === "object" && bin !== null && !Array.isArray(bin)
+        ? (bin as Record<string, unknown>)[PACKAGE_NAME]
+        : undefined;
+    if (typeof executable !== "string" || executable.length === 0) {
+      throw new Error(
+        `The installed package does not declare the ${PACKAGE_NAME} executable`,
+      );
+    }
+    const reported = execute(
+      process.execPath,
+      [join(packageRoot, executable), "--version"],
+      { env: withoutNpmToken(), cwd: directory },
+    );
+    if (reported.status !== 0) {
+      throw new Error(
+        `The packed ${PACKAGE_NAME} --version failed: ${reported.stderr.trim() || reported.stdout.trim()}`,
+      );
+    }
+    const printed = reported.stdout.trim();
+    if (printed !== release.version) {
+      throw new Error(
+        `The packed ${PACKAGE_NAME} reports ${printed || "no version"}, not ${release.version}`,
+      );
+    }
+    console.log(
+      `The packed ${PACKAGE_NAME}@${release.version} installs and reports its version.`,
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
 function viewField(args: string[], label: string): string | null {
   const result = execute("npm", args, { env: withoutNpmToken() });
   if (result.status === 0) return result.stdout.trim();
@@ -262,34 +330,85 @@ function releaseState(
 
 function publishToRegistry(tarball: string, version: string): void {
   const token = requireEnvironment("NODE_AUTH_TOKEN");
-  const result = execute(
-    "npm",
-    ["publish", tarball, "--tag", "latest", "--access", "public"],
-    { env: { ...process.env, NODE_AUTH_TOKEN: token } },
-  );
-  if (result.status !== 0) {
-    const detail = result.stderr.trim() || result.stdout.trim();
-    if (/E401|E403|ENEEDAUTH|authenticate|permission/i.test(detail)) {
-      throw new Error(`npm publish was rejected by the registry: ${detail}`);
+  const directory = mkdtempSync(join(tmpdir(), "release-npm-"));
+  try {
+    // npm reads `_authToken` from a config file, not from the bare environment,
+    // so map the publication token for this command only.
+    const userConfig = join(directory, "npmrc");
+    writeFileSync(
+      userConfig,
+      [
+        "registry=https://registry.npmjs.org/",
+        "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}",
+        "",
+      ].join("\n"),
+    );
+    const result = execute(
+      "npm",
+      [
+        "publish",
+        tarball,
+        "--tag",
+        "latest",
+        "--access",
+        "public",
+        "--userconfig",
+        userConfig,
+      ],
+      { env: { ...withoutNpmToken(), NODE_AUTH_TOKEN: token } },
+    );
+    if (result.status !== 0) {
+      const detail = result.stderr.trim() || result.stdout.trim();
+      if (/E401|E403|ENEEDAUTH|authenticate|permission/i.test(detail)) {
+        throw new Error(`npm publish was rejected by the registry: ${detail}`);
+      }
+      throw new Error(
+        `npm publish ${PACKAGE_NAME}@${version} failed: ${detail}`,
+      );
     }
-    throw new Error(`npm publish ${PACKAGE_NAME}@${version} failed: ${detail}`);
+    completed.push("npm");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
   }
-  completed.push("npm");
+}
+
+function localTagCommit(tag: string): string | null {
+  const result = execute(
+    "git",
+    ["rev-parse", "--verify", `refs/tags/${tag}^{commit}`],
+    { env: withoutNpmToken() },
+  );
+  return result.status === 0 ? result.stdout.trim() : null;
+}
+
+// Tags are immutable. Both the remote tag and a local tag left by an earlier
+// failed push must identify this release before anything is published.
+function validateTag(tag: string, merge: string): void {
+  const remote = remoteTagCommit(tag);
+  if (remote !== null && remote !== merge) {
+    throw new Error(`Tag ${tag} already points at ${remote}, not ${merge}`);
+  }
+  const local = localTagCommit(tag);
+  if (local !== null && local !== merge) {
+    throw new Error(`Local tag ${tag} points at ${local}, not ${merge}`);
+  }
 }
 
 function ensureTag(tag: string, merge: string): void {
-  const existing = remoteTagCommit(tag);
-  if (existing !== null) {
-    if (existing !== merge) {
-      throw new Error(`Tag ${tag} already points at ${existing}, not ${merge}`);
-    }
+  if (remoteTagCommit(tag) === merge) {
     console.log(`Tag ${tag} already points at ${merge}.`);
     return;
   }
-  git("tag", tag, merge);
+  // A previous run may have created the local tag and failed to push it.
+  const local = localTagCommit(tag);
+  if (local === null) git("tag", tag, merge);
   git("push", "origin", `refs/tags/${tag}`);
   completed.push("tag");
-  console.log(`Created tag ${tag} at ${merge}.`);
+  console.log(
+    local === null
+      ? `Created tag ${tag} at ${merge}.`
+      : `Pushed the existing local tag ${tag} at ${merge}.`,
+  );
 }
 
 function publishRelease(tag: string, notes: string): void {
@@ -332,6 +451,7 @@ function main(): void {
     artifact,
     release,
   );
+  acceptCandidate(tarball, release);
 
   const published = publishedIntegrity(release.version);
   const latest = latestDistTag();
@@ -351,12 +471,7 @@ function main(): void {
     );
   }
 
-  const tagCommit = remoteTagCommit(release.tag);
-  if (tagCommit !== null && tagCommit !== merge) {
-    throw new Error(
-      `Tag ${release.tag} already points at ${tagCommit}, not ${merge}`,
-    );
-  }
+  validateTag(release.tag, merge);
 
   if (published === null) publishToRegistry(tarball, release.version);
   const latestAfterPublish = published === null ? latestDistTag() : latest;

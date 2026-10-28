@@ -30,12 +30,22 @@ posixTest(
       .filter(({ args }) => args[0] === "publish");
     assert.equal(publish.length, 1);
     assert.equal(publish[0]?.args[1], tarball);
-    assert.deepEqual(publish[0]?.args.slice(2), [
-      "--tag",
-      "latest",
-      "--access",
-      "public",
-    ]);
+    assert.deepEqual(
+      publish[0]?.args.filter((arg) =>
+        ["--tag", "latest", "--access", "public"].includes(arg),
+      ),
+      ["--tag", "latest", "--access", "public"],
+    );
+    // npm authenticates through a config file, so the publication command must
+    // carry the registry mapping rather than a bare environment variable.
+    assert.match(
+      String(publish[0]?.authConfig),
+      /^registry=https:\/\/registry\.npmjs\.org\/$/m,
+    );
+    assert.match(
+      String(publish[0]?.authConfig),
+      /^\/\/registry\.npmjs\.org\/:_authToken=\$\{NODE_AUTH_TOKEN\}$/m,
+    );
     assert.equal(fixture.remoteTag("v0.1.1"), merge);
     const release = fixture.state().release as { tag: string; draft: boolean };
     assert.deepEqual(release, { tag: "v0.1.1", draft: false });
@@ -144,38 +154,60 @@ posixTest("a malformed release version is rejected", (t) => {
   );
 });
 
-posixTest("a lockfile that disagrees with the manifest is rejected", (t) => {
-  const fixture = createPublishFixture(t);
-  fixture.propose("0.1.1");
-  fixture.git("checkout", "auto-release");
-  const lockfile = JSON.parse(
-    readFileSync(path.join(fixture.cwd, "package-lock.json"), "utf8"),
-  ) as {
-    version?: string;
-    packages: Record<string, { version?: string }>;
-  };
-  const root = lockfile.packages[""] ?? {};
-  root.version = "0.1.0";
-  lockfile.packages[""] = root;
-  lockfile.version = "0.1.0";
-  fixture.write("package-lock.json", `${JSON.stringify(lockfile, null, 2)}\n`);
-  fixture.git("add", ".");
-  fixture.git("commit", "-m", "test: desynchronize the lockfile");
-  fixture.git("push", "origin", "auto-release");
-  fixture.git("checkout", "main");
-  const merge = fixture.squashMerge();
-  const tarball = fixture.pack(fixture.artifacts);
+// Regression: the manifest and both lockfile locations must record one version.
+for (const [field, value, expected] of [
+  [
+    "root",
+    "0.1.0",
+    /packages\[""\] version 0\.1\.0 do not match package\.json version 0\.1\.1/,
+  ],
+  [
+    "top",
+    "9.9.9",
+    /top-level version 9\.9\.9 do not match package\.json version 0\.1\.1/,
+  ],
+] as const) {
+  posixTest(
+    `a lockfile whose ${field} version disagrees with the manifest is rejected`,
+    (t) => {
+      const fixture = createPublishFixture(t);
+      fixture.propose("0.1.1");
+      fixture.git("checkout", "auto-release");
+      const lockfile = JSON.parse(
+        readFileSync(path.join(fixture.cwd, "package-lock.json"), "utf8"),
+      ) as {
+        version?: string;
+        packages: Record<string, { version?: string }>;
+      };
+      const root = lockfile.packages[""] ?? {};
+      if (field === "root") root.version = value;
+      else lockfile.version = value;
+      lockfile.packages[""] = root;
+      fixture.write(
+        "package-lock.json",
+        `${JSON.stringify(lockfile, null, 2)}\n`,
+      );
+      fixture.git("add", ".");
+      fixture.git("commit", "-m", "test: desynchronize the lockfile");
+      fixture.git("push", "origin", "auto-release");
+      fixture.git("checkout", "main");
+      const merge = fixture.squashMerge();
+      const tarball = fixture.pack(fixture.artifacts);
 
-  const result = fixture.runExpectingFailure(
-    "publish-release",
-    publishEnvironment(merge, tarball),
-  );
+      const result = fixture.runExpectingFailure(
+        "publish-release",
+        publishEnvironment(merge, tarball),
+      );
 
-  assert.match(
-    result.stderr,
-    /package-lock\.json version 0\.1\.0 does not match package\.json version 0\.1\.1/,
+      assert.match(result.stderr, expected);
+      assert.equal(
+        fixture.calls("npm").filter(({ args }) => args[0] === "publish").length,
+        0,
+      );
+      assert.equal(fixture.remoteTag("v0.1.1"), "");
+    },
   );
-});
+}
 
 // Regression: publication of an incomplete package. The current private,
 // source-only manifest must keep publication disabled.
@@ -302,7 +334,8 @@ posixTest(
   },
 );
 
-// Regression: a broad npm token must not reach earlier commands or logs.
+// Regression: a broad npm token must not reach earlier commands or logs, and
+// only the publication command may see the registry mapping.
 posixTest("only the publication command receives NODE_AUTH_TOKEN", (t) => {
   const fixture = createPublishFixture(t);
   const { merge, tarball } = mergedRelease(fixture);
@@ -314,6 +347,7 @@ posixTest("only the publication command receives NODE_AUTH_TOKEN", (t) => {
 
   assert.equal(result.status, 0, result.stderr);
   const npm = fixture.calls("npm");
+  assert.ok(npm.some(({ args }) => args[0] === "install"));
   assert.ok(npm.some(({ args }) => args[0] === "publish"));
   for (const call of npm) {
     assert.equal(
@@ -321,7 +355,70 @@ posixTest("only the publication command receives NODE_AUTH_TOKEN", (t) => {
       call.args[0] === "publish",
       `NODE_AUTH_TOKEN leaked into npm ${call.args.join(" ")}`,
     );
+    if (call.args[0] !== "publish") {
+      assert.equal(
+        call.authConfig,
+        null,
+        "Only publication may carry registry credentials",
+      );
+    }
   }
   assert.ok(!result.stdout.includes("test-npm-token"));
   assert.ok(!result.stderr.includes("test-npm-token"));
+});
+
+// Regression: metadata and an executable entry point do not prove the packed
+// bytes start. A tarball whose CLI throws must not reach the registry.
+posixTest(
+  "a tarball whose executable fails is rejected before publication",
+  (t) => {
+    const fixture = createPublishFixture(t, {
+      ...readyPackage,
+      files: {
+        ...readyPackage.files,
+        "dist/cli.js": 'throw new Error("broken release artifact");\n',
+      },
+    });
+    const { merge, tarball } = mergedRelease(fixture);
+
+    const result = fixture.runExpectingFailure(
+      "publish-release",
+      publishEnvironment(merge, tarball),
+    );
+
+    assert.match(result.stderr, /--version failed/);
+    assert.match(result.stderr, /broken release artifact/);
+    assert.match(result.stderr, /No publication stages completed\./);
+    assert.equal(
+      fixture.calls("npm").filter(({ args }) => args[0] === "publish").length,
+      0,
+    );
+    assert.equal(fixture.remoteTag("v0.1.1"), "");
+    assert.equal(fixture.state().release, null);
+  },
+);
+
+// Regression: the installed executable must report the version being released,
+// not whatever version the packager happened to leave behind.
+posixTest("an executable that reports another version is rejected", (t) => {
+  const fixture = createPublishFixture(t, {
+    ...readyPackage,
+    files: {
+      ...readyPackage.files,
+      "dist/cli.js": 'console.log("0.0.0");\n',
+    },
+  });
+  const { merge, tarball } = mergedRelease(fixture);
+
+  const result = fixture.runExpectingFailure(
+    "publish-release",
+    publishEnvironment(merge, tarball),
+  );
+
+  assert.match(result.stderr, /reports 0\.0\.0, not 0\.1\.1/);
+  assert.equal(
+    fixture.calls("npm").filter(({ args }) => args[0] === "publish").length,
+    0,
+  );
+  assert.equal(fixture.remoteTag("v0.1.1"), "");
 });

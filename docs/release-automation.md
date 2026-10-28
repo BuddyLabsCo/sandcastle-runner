@@ -15,15 +15,19 @@ credential wiring.
   required checks, approves its own pull request, or merges it.
 - `scripts/release/auto-release-pr.ts` decides eligibility. Files under
   `.github/` are not release content; shipped Markdown prompts and every other
-  shipped path are. A push that only lands the proposal's manifest, lockfile,
-  and changelog changes is the release merge and proposes nothing.
+  shipped path are. A push that only changes the proposal's manifest, lockfile,
+  and changelog and whose head commit is the proposal itself (title
+  `chore: propose release v<version>`) is the release merge and proposes
+  nothing, even when it does not raise the version.
 - The first proposal is `0.1.0`, including when packaging already seeds that
-  version. Later proposals increase the patch of the highest of the manifest
-  version and the latest `v<version>` tag.
+  version. Later proposals increase the patch of the latest `v<version>` tag,
+  while a manifest version the maintainer already raised is proposed unchanged.
 - One open `auto-release` pull request is refreshed in place. A maintainer edit
   to a minor or major version is preserved, and no second proposal is opened.
 - The proposal writes `package.json`, `package-lock.json`, and `CHANGELOG.md`
   together so manifest, lockfile, and changelog agree.
+- The script authors the proposal commit as `github-actions[bot]`, so a fresh
+  runner needs no preconfigured Git identity.
 
 Merge the proposal with squash or rebase. A merge commit is rejected before
 publication writes anything.
@@ -43,14 +47,20 @@ closes.
   when one exists, packs the candidate tarball, and passes its path to
   `scripts/release/publish-release.ts`.
 - The script verifies the checkout, the single-parent merged commit, manifest
-  and lockfile agreement, package readiness, and the tarball's name, version,
-  and declared executable before it touches the registry.
+  and both lockfile version fields, package readiness, and the tarball's name,
+  version, and declared executable before it touches the registry.
+- It then accepts the artifact itself: it installs the packed tarball into a
+  temporary prefix and runs the installed executable with `--version`, requiring
+  exit status zero and the release version. A tarball whose CLI fails to start,
+  or reports another version, blocks publication.
 - Publication runs npm, then the tag, then the GitHub Release. Each stage is
   read first and reused only when its identity matches, so a retry resumes the
-  missing stages without republishing a version or moving a tag.
+  missing stages without republishing a version or moving a tag. A local tag
+  left by a failed push is reused when it points at the release commit.
 - `NODE_AUTH_TOKEN` is wired only into the step that runs the publication
-  script, and the script passes it only to `npm publish`. Every earlier command
-  runs without it.
+  script. The script passes it only to `npm publish`, together with a temporary
+  npm user config that maps the token to `registry.npmjs.org`; every earlier
+  command runs without the token or the registry mapping.
 
 ## Publication stays disabled until the package is ready
 
@@ -88,7 +98,8 @@ repository and the package.
 
 This automation slice was verified by the release script tests in
 `tests/release/`, which run both entry points against disposable Git
-repositories with controlled `gh` and `npm` commands, and by workflow wiring
-checks. The GitHub App token generation, npm authentication, a real publication,
-and OIDC trusted publishing have not been exercised yet; repository Secret names
-alone do not establish valid credentials.
+repositories with controlled `gh` and `npm` commands. No workflow authentication
+check has run: GitHub App token generation, the workflow access token, npm
+authentication, a real publication, and OIDC trusted publishing remain
+unexercised, and repository Secret names alone do not establish valid
+credentials. The first reviewed workflow run is the evidence for those checks.

@@ -192,6 +192,86 @@ posixTest("a release-only merge proposes nothing", (t) => {
   );
 });
 
+// Regression: when packaging seeds 0.1.0, the first release merge does not
+// increase the version. It is still the release merge and must not propose.
+posixTest("merging a seeded first proposal proposes nothing", (t) => {
+  const fixture = createReleaseFixture(t, {
+    manifest: { name: "issue-runner", version: "0.1.0", type: "module" },
+    files: { "dist/cli.js": "export {};\n" },
+  });
+  const before = fixture.head();
+  fixture.write(
+    "package-lock.json",
+    `${JSON.stringify({ name: "issue-runner", version: "0.1.0", lockfileVersion: 3, requires: true, packages: { "": { name: "issue-runner", version: "0.1.0" } } }, null, 2)}\n`,
+  );
+  fixture.write(
+    "CHANGELOG.md",
+    "# Changelog\n\n## 0.1.0\n\n- feat: [issue-8] add shipped behavior\n",
+  );
+  fixture.git("add", ".");
+  fixture.git("commit", "-m", "chore: propose release v0.1.0");
+
+  const result = fixture.run("auto-release-pr", { PUSH_BEFORE: before });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(fixture.remoteHeads("auto-release"), "");
+  assert.equal(
+    fixture.calls("gh").filter(({ args }) => args[1] === "create").length,
+    0,
+  );
+});
+
+// Regression: a maintainer who already raised the manifest version on main
+// keeps that version; automation must not bump it again.
+posixTest(
+  "an explicitly maintained version on main is proposed unchanged",
+  (t) => {
+    const fixture = createReleaseFixture(t, {
+      manifest: { name: "issue-runner", version: "0.2.0", type: "module" },
+      files: { "dist/cli.js": "export {};\n" },
+    });
+    fixture.tag("v0.1.0");
+    const before = fixture.commit(
+      "dist/cli.js",
+      "export const value = 1;\n",
+      "feat: [issue-9] add shipped behavior",
+    );
+
+    const result = fixture.run("auto-release-pr", { PUSH_BEFORE: before });
+
+    assert.equal(result.status, 0, result.stderr);
+    fixture.git("fetch", "origin", "auto-release");
+    assert.equal(
+      manifestVersion(fixture.git("show", "origin/auto-release:package.json")),
+      "0.2.0",
+    );
+  },
+);
+
+// Regression: a fresh runner has no Git identity configured, so the proposal
+// must author its commit rather than failing before the pull request exists.
+posixTest("the proposal commits with the automation identity", (t) => {
+  const fixture = createReleaseFixture(t, {
+    files: { "src/app.ts": "export const value = 1;\n" },
+  });
+  const before = fixture.commit(
+    "src/app.ts",
+    "export const value = 2;\n",
+    "feat: [issue-10] add shipped behavior",
+  );
+  fixture.git("config", "--unset", "user.name");
+  fixture.git("config", "--unset", "user.email");
+
+  const result = fixture.run("auto-release-pr", { PUSH_BEFORE: before });
+
+  assert.equal(result.status, 0, result.stderr);
+  fixture.git("fetch", "origin", "auto-release");
+  assert.equal(
+    fixture.git("log", "-1", "--pretty=%an <%ae>", "origin/auto-release"),
+    "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+  );
+});
+
 // Regression: refreshing must not overwrite an explicitly maintained minor or
 // major version, and must not open a second proposal.
 posixTest(

@@ -13,6 +13,42 @@ function integrityOf(tarball: string): string {
   return `sha512-${createHash("sha512").update(readFileSync(tarball)).digest("base64")}`;
 }
 
+// Regression: a run that created the local tag but failed to push it must not
+// block every later retry on the existing tag object.
+posixTest("a matching local tag is pushed instead of failing on retry", (t) => {
+  const fixture = createPublishFixture(t);
+  const { merge, tarball } = mergedRelease(fixture);
+  fixture.git("tag", "v0.1.1", merge);
+
+  const result = fixture.run(
+    "publish-release",
+    publishEnvironment(merge, tarball),
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(fixture.remoteTag("v0.1.1"), merge);
+  assert.deepEqual(fixture.state().release, { tag: "v0.1.1", draft: false });
+});
+
+// Regression: a local tag for another commit must not be pushed as this release.
+posixTest("a local tag for another commit is rejected", (t) => {
+  const fixture = createPublishFixture(t);
+  const { merge, tarball } = mergedRelease(fixture);
+  fixture.git("tag", "v0.1.1", fixture.git("rev-parse", "HEAD~1"));
+
+  const result = fixture.runExpectingFailure(
+    "publish-release",
+    publishEnvironment(merge, tarball),
+  );
+
+  assert.match(result.stderr, /Local tag v0\.1\.1 points at/);
+  assert.equal(fixture.remoteTag("v0.1.1"), "");
+  assert.equal(
+    fixture.calls("npm").filter(({ args }) => args[0] === "publish").length,
+    0,
+  );
+});
+
 // Regression: a failed Release write after a successful registry publication
 // must report the partial state and a retry must not republish the version.
 posixTest(

@@ -39,6 +39,18 @@ import {
 
 const releasePaths = new Set([MANIFEST_FILE, LOCKFILE_FILE, CHANGELOG_FILE]);
 
+// The proposal's own commit subject. A squash merge keeps the pull request
+// title and a rebase keeps the commit message, so the release merge can be
+// recognized even when the first proposal does not change the seeded version.
+const releaseSubject = /^chore: propose release v\d+\.\d+\.\d+(?: \(#\d+\))?$/;
+
+// Release commits are authored by the automation identity, not by whatever the
+// runner happens to have configured.
+const botIdentity = {
+  name: "github-actions[bot]",
+  email: "41898282+github-actions[bot]@users.noreply.github.com",
+};
+
 function changedPaths(before: string): string[] {
   const output = /^0+$/.test(before)
     ? git("ls-tree", "-r", "--name-only", "-z", "HEAD")
@@ -46,21 +58,14 @@ function changedPaths(before: string): string[] {
   return output.split("\0").filter(Boolean);
 }
 
-function versionAt(ref: string | null, label: string): string | null {
-  const text = readTextAt(ref, MANIFEST_FILE);
-  if (text === null) throw new Error(`${label} ${MANIFEST_FILE} is missing`);
-  return manifestVersion(readManifest(text, label), label);
-}
-
-// A push that only lands the release proposal is the release merge itself. It
-// must not propose the next version, while ordinary dependency-only changes to
-// the manifest and lockfile still count as release content.
-function isReleaseEligible(
-  paths: string[],
-  versionIncreased: boolean,
-): boolean {
+// A push that only lands a release proposal is the release merge itself and
+// must not propose the next version. Ordinary dependency-only changes to the
+// manifest and lockfile keep a different subject and stay release content.
+function isReleaseEligible(paths: string[], headSubject: string): boolean {
   const releaseOnly =
-    versionIncreased && paths.every((path) => releasePaths.has(path));
+    paths.length > 0 &&
+    paths.every((path) => releasePaths.has(path)) &&
+    releaseSubject.test(headSubject);
   return !releaseOnly && paths.some((path) => !path.startsWith(".github/"));
 }
 
@@ -70,9 +75,16 @@ function nextVersion(latest: string | null, current: string | null): string {
       ? current
       : "0.1.0";
   }
-  const base =
-    current !== null && compareVersions(current, latest) > 0 ? current : latest;
-  return incrementPatch(base);
+  // A manifest version ahead of the latest release is a maintainer decision;
+  // increment only when the manifest matches what is already released.
+  if (current !== null && compareVersions(current, latest) > 0) return current;
+  return incrementPatch(latest);
+}
+
+function currentVersion(): string | null {
+  const text = readTextAt(null, MANIFEST_FILE);
+  if (text === null) throw new Error(`current ${MANIFEST_FILE} is missing`);
+  return manifestVersion(readManifest(text, "current"), "current");
 }
 
 function proposedVersion(): string {
@@ -124,13 +136,11 @@ function main(): void {
   }
 
   const paths = changedPaths(before);
-  const current = versionAt(null, "current");
-  const previous = /^0+$/.test(before) ? null : versionAt(before, "previous");
-  const versionIncreased =
-    current !== null &&
-    previous !== null &&
-    compareVersions(current, previous) > 0;
-  const eligible = isReleaseEligible(paths, versionIncreased);
+  const current = currentVersion();
+  const eligible = isReleaseEligible(
+    paths,
+    git("log", "-1", "--pretty=%s", "HEAD"),
+  );
   const openPullRequest = gh(
     "pr",
     "list",
@@ -178,7 +188,15 @@ function main(): void {
     );
     git("add", MANIFEST_FILE, LOCKFILE_FILE, CHANGELOG_FILE);
     if (git("diff", "--cached", "--name-only").length > 0) {
-      git("commit", "-m", title);
+      git(
+        "-c",
+        `user.name=${botIdentity.name}`,
+        "-c",
+        `user.email=${botIdentity.email}`,
+        "commit",
+        "-m",
+        title,
+      );
       git("push", "--force", "origin", RELEASE_BRANCH);
     }
   }

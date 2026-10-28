@@ -24,6 +24,7 @@ export interface CommandCall {
   command: string;
   args: string[];
   body: string | null;
+  authConfig?: string | null;
   token: boolean;
 }
 
@@ -126,17 +127,32 @@ process.exit(90);
 const npmCLI = String.raw`#!/usr/bin/env node
 const crypto = require("node:crypto");
 const fs = require("node:fs");
+const path = require("node:path");
+const { execFileSync } = require("node:child_process");
 const args = process.argv.slice(2);
 const statePath = process.env.RELEASE_NPM_STATE;
 const logPath = process.env.RELEASE_COMMAND_LOG;
 const state = JSON.parse(fs.readFileSync(statePath, "utf8"));
+const flag = (name) => args[args.indexOf(name) + 1];
+const userConfig = args.includes("--userconfig") ? flag("--userconfig") : null;
+const authConfig = userConfig && fs.existsSync(userConfig)
+  ? fs.readFileSync(userConfig, "utf8") : null;
 fs.appendFileSync(logPath, JSON.stringify({ command: "npm", args,
-  body: null, token: Boolean(process.env.NODE_AUTH_TOKEN) }) + "\n");
+  body: null, authConfig, token: Boolean(process.env.NODE_AUTH_TOKEN) }) + "\n");
 if (state.fail === args[0] + " " + args[1] || state.fail === args[0]) {
   console.error(state.message || "simulated npm " + state.fail + " failure");
   process.exit(42);
 }
 const save = () => fs.writeFileSync(statePath, JSON.stringify(state));
+if (args[0] === "install") {
+  const prefix = flag("--prefix");
+  const tarball = args.at(-1);
+  const staging = fs.mkdtempSync(path.join(prefix, "staging-"));
+  execFileSync("tar", ["-xzf", tarball, "-C", staging]);
+  fs.cpSync(path.join(staging, "package"),
+    path.join(prefix, "node_modules", "issue-runner"), { recursive: true });
+  process.exit(0);
+}
 if (args[0] === "view") {
   const spec = args[1], field = args[2];
   const separator = spec.lastIndexOf("@");
@@ -183,7 +199,6 @@ process.exit(90);
 
 export interface FixtureOptions {
   manifest?: Record<string, unknown>;
-  lockfileVersion?: string;
   files?: Record<string, string>;
 }
 

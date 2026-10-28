@@ -18,7 +18,14 @@ export const readyPackage = {
     engines: { node: ">=22.18.0" },
   },
   files: {
-    "dist/cli.js": "#!/usr/bin/env node\nconsole.log('issue-runner');\n",
+    // Stands in for the packaged CLI: it must start from installed bytes and
+    // report the version of the installed manifest.
+    "dist/cli.js": [
+      'import { readFileSync } from "node:fs";',
+      'const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));',
+      'if (process.argv.includes("--version")) console.log(manifest.version);',
+      "",
+    ].join("\n"),
     "README.md": "# issue-runner\n",
     "CHANGELOG.md": "# Changelog\n",
   },
