@@ -45,7 +45,7 @@ const initializationFiles = [
 const initializationAssets = initializationFiles.map(
   (file) => `templates/${file}`,
 );
-const namedFiles = ["LICENSE", "README.md", "package.json"];
+const namedFiles = ["LICENSE", "README.md", "README.zh-CN.md", "package.json"];
 
 function fail(message: string): never {
   throw new Error(message);
