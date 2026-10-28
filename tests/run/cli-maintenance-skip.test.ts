@@ -31,7 +31,7 @@ for (const selector of ["parent", "issue"] as const)
   ] as const) {
     test(`skip ends a Maintenance occurrence ${point} with ${laterBatch ? "later" : "no later"} ${selector} work`, async () => {
       const root = await createProject();
-      const configPath = path.join(root, "projects/demo/config.yaml");
+      const configPath = path.join(root, "demo/config.yaml");
       const config = await readProjectConfig<{
         issueList: number[];
         maxBatchSize: number;
@@ -387,7 +387,7 @@ for (const selector of ["parent", "issue"] as const)
       for (const logFile of logs.get(100) ?? [])
         await assert.rejects(access(logFile));
 
-      const projectDirectory = path.join(root, "projects", "demo");
+      const projectDirectory = path.join(root, "demo");
       const snapshot = await readRecoverySnapshot(
         selector === "parent"
           ? recoveryPaths(projectDirectory, 8).snapshot
@@ -419,14 +419,14 @@ for (const selector of ["parent", "issue"] as const)
 for (const phase of ["attempt", "publication"] as const)
   test(`skipping recovered Maintenance ${phase} stays incomplete under --no-auto-merge`, async () => {
     const root = await createProject();
-    const configPath = path.join(root, "projects/demo/config.yaml");
+    const configPath = path.join(root, "demo/config.yaml");
     const config = await readProjectConfig<{
       workflow: { docMaintainTriggerLabel: string };
     }>(configPath);
     config.workflow.docMaintainTriggerLabel = "documentation";
     await writeProjectConfig(configPath, config);
     await writeRecoverySnapshot(
-      recoveryPaths(path.join(root, "projects/demo"), 9, "issue").snapshot,
+      recoveryPaths(path.join(root, "demo"), 9, "issue").snapshot,
       {
         schemaVersion: 2,
         project: "demo",

@@ -67,7 +67,7 @@ export async function createProject(): Promise<string> {
   const root = registerTempRoot(
     await mkdtemp(path.join(tmpdir(), "sandcastle-runner-")),
   );
-  const project = path.join(root, "projects", "demo");
+  const project = path.join(root, "demo");
   await mkdir(path.join(project, "prompts"), { recursive: true });
   await writeProjectConfig(path.join(project, "config.yaml"), validConfig);
   await Promise.all(
@@ -122,7 +122,7 @@ export async function writePublicationState(
   root: string,
   publications: PublicationIntent[],
 ): Promise<string> {
-  const project = path.join(root, "projects", "demo");
+  const project = path.join(root, "demo");
   const snapshot = recoveryPaths(project, 8).snapshot;
   await writeRecoverySnapshot(snapshot, {
     schemaVersion: 2,
@@ -147,11 +147,7 @@ export async function recoverySnapshot(
   ticket: number,
   publication: PublicationIntent,
 ): Promise<string> {
-  const snapshot = recoveryPaths(
-    `${root}/projects/demo`,
-    ticket,
-    "issue",
-  ).snapshot;
+  const snapshot = recoveryPaths(`${root}/demo`, ticket, "issue").snapshot;
   await writeRecoverySnapshot(snapshot, {
     schemaVersion: 2,
     project: "demo",

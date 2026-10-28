@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { parse } from "yaml";
 
+import { resolveProjectDirectory } from "./project-directory.ts";
 import type { RetryPolicy, TicketClosurePolicy } from "./run/contracts.ts";
 
 const documentationConfigurationError =
@@ -305,14 +306,12 @@ function parseConfig(
 }
 
 export async function loadProject(
-  root: string,
+  launchDirectory: string,
   projectKey: string,
   env: Record<string, string | undefined>,
   options: { requireDocumentationMaintenance?: boolean } = {},
 ): Promise<LoadedProject> {
-  if (!/^[A-Za-z0-9._-]+$/u.test(projectKey))
-    throw new Error("invalid project key");
-  const directory = path.join(root, "projects", projectKey);
+  const directory = resolveProjectDirectory(launchDirectory, projectKey);
   const configPath = path.join(directory, "config.yaml");
   let value: unknown;
   try {

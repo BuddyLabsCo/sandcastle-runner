@@ -21,7 +21,7 @@ export async function createProject(recovery: boolean): Promise<string> {
   const root = registerTempRoot(
     await mkdtemp(path.join(tmpdir(), "sandcastle-runner-full-")),
   );
-  const project = path.join(root, "projects", "demo");
+  const project = path.join(root, "demo");
   await mkdir(path.join(project, "prompts"), { recursive: true });
   const config = {
     repository: "owner/repo",

@@ -1,11 +1,36 @@
-# Project Template
+# Project Guide
 
-This directory is a project template for Sandcastle Runner. Copy it to `projects/<project-key>` and adapt `config.yaml` and the prompts.
+A Project is one child of the directory you launch Runner from. It holds
+`config.yaml`, the three Project prompts, and that Project's logs, Recovery
+Snapshots, and Worktrees.
+
+## Create a Project
+
+From any directory, initialize a child Project with the published package:
+
+```sh
+npx issue-runner@latest init --project <project-key>
+```
+
+Initialization copies `config.yaml` and `prompts/{implement,review,documentation}.md`
+from reviewed templates. It never overwrites an existing destination and never
+uses credentials, the network, or a target checkout.
+
+In a checkout of this repository, launch from `projects/` to address the
+checked-in example Project as `sandcastle-runner`:
+
+```sh
+cd projects
+npx issue-runner@latest run --project sandcastle-runner --parent 42
+```
+
+Alternatively copy [the example configuration](sandcastle-runner/config.yaml)
+manually into `<launch directory>/<project-key>/`.
 
 ## Configure a Project
 
 Edit the [example config.yaml](sandcastle-runner/config.yaml); its inline comments explain each field and native session lookup options.
-The implementation prompt must be nonempty. Review and documentation prompts are required when their workflow is enabled. CI and conflict repairs use fixed input templates under `src/prompts`; no Project repair prompt is required.
+The implementation prompt must be nonempty. Review and documentation prompts are required when their workflow is enabled. CI and conflict repairs use fixed Runner-owned input templates; no Project repair prompt is required.
 
 ## Operator Pause actions
 
@@ -185,5 +210,5 @@ Keep only repository-specific instructions in these files:
 - `review.md`: review skills and criteria
 - `documentation.md`: documentation scope and conventions
 
-Runner templates under `src/prompts` supply task context, Worktree and branch restrictions, review diff boundaries, findings paths, and output protocols.
+Runner-owned templates supply task context, Worktree and branch restrictions, review diff boundaries, findings paths, and output protocols.
 Project prompts do not need placeholders for these inputs.

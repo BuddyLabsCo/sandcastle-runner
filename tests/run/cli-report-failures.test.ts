@@ -32,7 +32,7 @@ function withoutHyperlinks(text: string): string {
 for (const completed of [false, true]) {
   test(`recovered Maintenance PR evidence survives ${completed ? "completed closure" : "early cancellation"}`, async () => {
     const root = await createProject();
-    await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+    await writeProjectConfig(path.join(root, "demo/config.yaml"), {
       ...validConfig,
       workflow: {
         ...validConfig.workflow,

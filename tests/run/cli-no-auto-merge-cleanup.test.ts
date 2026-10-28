@@ -19,12 +19,12 @@ test("a CI-ready no-auto-merge Run removes local artifacts and preserves manual 
   const { tracker, tickets } = createAttemptTracker(9);
   const repository = "/tmp/repo";
   const historical = {
-    worktree: path.join(root, "projects/demo/worktrees/historical/ticket-9"),
+    worktree: path.join(root, "demo/worktrees/historical/ticket-9"),
     branch: "sandcastle/run-historical/ticket-9",
     repository,
   };
   const historicalLogs = ["agent", "merge", "doc"].map((stage) =>
-    path.join(root, `projects/demo/logs/${stage}-9-historical.log`),
+    path.join(root, `demo/logs/${stage}-9-historical.log`),
   );
   await mkdir(path.dirname(historicalLogs[0]!), { recursive: true });
   for (const logFile of historicalLogs) await writeFile(logFile, "keep");
@@ -198,7 +198,7 @@ test("a CI-ready no-auto-merge Run removes local artifacts and preserves manual 
     assert.equal(await readFile(logFile, "utf8"), "keep");
 
   const snapshot = await readRecoverySnapshot(
-    recoveryPaths(path.join(root, "projects/demo"), 9, "issue").snapshot,
+    recoveryPaths(path.join(root, "demo"), 9, "issue").snapshot,
   );
   assert.equal(snapshot?.phase, "running");
   assert.equal(snapshot?.publications?.[0]?.pullRequest?.number, 41);

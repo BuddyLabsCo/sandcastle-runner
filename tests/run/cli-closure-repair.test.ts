@@ -198,7 +198,7 @@ test("required-check polling repairs terminal failure and cancellation evidence"
 
 test("failed required checks are repaired on the existing branch and Pull Request", async () => {
   const root = await createProject();
-  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+  await writeProjectConfig(path.join(root, "demo/config.yaml"), {
     ...validConfig,
     agents: {
       ...validConfig.agents,

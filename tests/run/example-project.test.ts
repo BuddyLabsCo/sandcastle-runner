@@ -19,7 +19,9 @@ test("checked-in projects are loadable and have exact prompt placeholders", asyn
   });
   for (const project of projects.filter((entry) => entry.isDirectory())) {
     const directory = path.join(root, "projects", project.name);
-    await loadProject(root, project.name, { GH_TOKEN: "test-only" });
+    await loadProject(path.join(root, "projects"), project.name, {
+      GH_TOKEN: "test-only",
+    });
     for (const [filename, expected] of Object.entries(placeholders)) {
       const prompt = await readFile(
         path.join(directory, "prompts", filename),

@@ -21,7 +21,7 @@ test.afterEach(cleanupTempRoots);
 
 test("a failed Review probe rejects text and Enter starts a fresh verified attempt", async () => {
   const root = await createProject();
-  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+  await writeProjectConfig(path.join(root, "demo/config.yaml"), {
     ...validConfig,
     workflow: { ...validConfig.workflow, review: true },
   });
@@ -121,7 +121,7 @@ for (const phase of ["labels", "create_label", "create_issue"] as const) {
 
 test("a queued merge receives no completion credit until timeout recovery confirms success", async () => {
   const root = await createProject();
-  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+  await writeProjectConfig(path.join(root, "demo/config.yaml"), {
     ...validConfig,
     timeouts: { ...validConfig.timeouts, mergeQueueMinutes: 1 / 60_000 },
   });

@@ -149,7 +149,7 @@ for (const phase of [
     if (phase === "closure" || afterDelivery) assert.ok(merged.has(9));
     if (afterDelivery) {
       const snapshot = await readRecoverySnapshot(
-        recoveryPaths(path.join(root, "projects/demo"), 8).snapshot,
+        recoveryPaths(path.join(root, "demo"), 8).snapshot,
       );
       assert.equal(snapshot?.terminalCleanup?.[9]?.status, "pending");
       assert.ok(snapshot?.completedDeliveries?.some((row) => row.ticket === 9));
@@ -338,7 +338,7 @@ for (const phase of ["fetch", "close_parent"] as const) {
 
 test("skipping automatic maintenance preparation keeps Parent closeout incomplete", async () => {
   const root = await createProject();
-  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+  await writeProjectConfig(path.join(root, "demo/config.yaml"), {
     ...validConfig,
     workflow: {
       ...validConfig.workflow,

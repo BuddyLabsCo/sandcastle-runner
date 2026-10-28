@@ -1,11 +1,33 @@
 {
-  "name": "sandcastle-runner",
-  "private": true,
+  "name": "issue-runner",
+  "version": "0.1.0",
+  "description": "Ticket-driven coding-agent orchestration for configured GitHub projects.",
+  "license": "MIT",
   "type": "module",
   "bin": {
-    "sandcastle-runner": "src/cli.ts"
+    "issue-runner": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "templates",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BuddyLabsCo/sandcastle-runner.git"
+  },
+  "homepage": "https://github.com/BuddyLabsCo/sandcastle-runner#readme",
+  "bugs": {
+    "url": "https://github.com/BuddyLabsCo/sandcastle-runner/issues"
   },
   "scripts": {
+    "build": "node scripts/build.ts",
+    "prepack": "npm run build",
+    "release:accept": "node scripts/package-acceptance.ts",
     "test": "node --test --test-timeout=30000 \"tests/**/*.test.ts\"",
     "check": "npm run format:check && npm run lint && npm run typecheck",
     "format": "prettier --write \"**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}\" --no-error-on-unmatched-pattern",
@@ -27,6 +49,5 @@
     "cac": "7.0.0",
     "cross-spawn": "7.0.6",
     "yaml": "2.9.1"
-  },
-  "version": "0.1.0"
+  }
 }

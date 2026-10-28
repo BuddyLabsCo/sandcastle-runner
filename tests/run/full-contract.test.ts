@@ -27,7 +27,7 @@ test(
   async () => {
     for (const selector of ["parent", "issue"] as const) {
       const root = await createProject(false);
-      const configPath = path.join(root, "projects", "demo", "config.yaml");
+      const configPath = path.join(root, "demo", "config.yaml");
       const config = await readProjectConfig<{
         issueList: number[];
         maxBatchSize: number;
@@ -148,7 +148,7 @@ test(
   { timeout: 5_000 },
   async () => {
     const root = await createProject(true);
-    const configPath = path.join(root, "projects", "demo", "config.yaml");
+    const configPath = path.join(root, "demo", "config.yaml");
     const config = await readProjectConfig<{
       agents: Record<string, unknown>;
       timeouts: Record<string, number>;
@@ -332,7 +332,7 @@ test(
       ),
     );
 
-    const configPath = path.join(root, "projects", "demo", "config.yaml");
+    const configPath = path.join(root, "demo", "config.yaml");
     const config = await readProjectConfig<{
       maxBatchSize: number;
     }>(configPath);
@@ -370,7 +370,7 @@ test("unfinished maintenance is forgotten when disabled and not rediscovered", a
   const args = ["run", "--project", "demo", "--parent", "8"];
   const first = await executeCli(args, scenario.dependencies);
   assert.notEqual(first.summary.outcome, "succeeded");
-  const configPath = path.join(root, "projects", "demo", "config.yaml");
+  const configPath = path.join(root, "demo", "config.yaml");
   const config = await readProjectConfig<{
     workflow: { docMaintainTriggerLabel: string };
   }>(configPath);

@@ -18,7 +18,7 @@ test("loadProject reads commented YAML configuration", async () => {
   const root = registerTempRoot(
     await mkdtemp(path.join(tmpdir(), "sandcastle-runner-yaml-")),
   );
-  const project = path.join(root, "projects", "demo");
+  const project = path.join(root, "demo");
   await mkdir(path.join(project, "prompts"), { recursive: true });
   await Promise.all(
     ["implement", "ci-repair", "conflict-repair", "documentation"].map((name) =>
@@ -109,7 +109,7 @@ maintenanceTicket:
 
 test("agent idle threshold defaults to ten minutes and rejects invalid values", async () => {
   const root = await createProject();
-  const configPath = path.join(root, "projects/demo/config.yaml");
+  const configPath = path.join(root, "demo/config.yaml");
   const load = () => loadProject(root, "demo", { TEST_GH_TOKEN: "token" });
   assert.equal((await load()).config.timeouts.agentIdleMinutes, 10);
   for (const value of [0, -1, NaN, Infinity, "2", null, true]) {
@@ -132,14 +132,14 @@ test("loadProject reports a missing config.yaml with its path", async () => {
   const root = registerTempRoot(
     await mkdtemp(path.join(tmpdir(), "sandcastle-runner-yaml-")),
   );
-  await mkdir(path.join(root, "projects", "demo"), { recursive: true });
+  await mkdir(path.join(root, "demo"), { recursive: true });
 
   await assert.rejects(
     loadProject(root, "demo", { TEST_GH_TOKEN: "token" }),
     (error: unknown) =>
       error instanceof Error &&
       error.message.startsWith(
-        `failed to load ${path.join(root, "projects", "demo", "config.yaml")}:`,
+        `failed to load ${path.join(root, "demo", "config.yaml")}:`,
       ),
   );
 });
@@ -148,7 +148,7 @@ test("loadProject reports invalid YAML with its path", async () => {
   const root = registerTempRoot(
     await mkdtemp(path.join(tmpdir(), "sandcastle-runner-yaml-")),
   );
-  const project = path.join(root, "projects", "demo");
+  const project = path.join(root, "demo");
   await mkdir(project, { recursive: true });
   await writeFile(
     path.join(project, "config.yaml"),
@@ -176,10 +176,7 @@ test("agent profiles require agent and model and preserve native options", async
       sessionStorage: { hostProjectsDir: "/explicit/projects" },
     },
   } as (typeof config.agents)["implement"];
-  await writeProjectConfig(
-    path.join(root, "projects/demo/config.yaml"),
-    config,
-  );
+  await writeProjectConfig(path.join(root, "demo/config.yaml"), config);
 
   const loaded = await loadProject(root, "demo", { TEST_GH_TOKEN: "token" });
 
@@ -202,10 +199,7 @@ test("agent profiles reject missing selectors and malformed options", async () =
     const root = await createProject();
     const config = structuredClone(validConfig);
     (config.agents as Record<string, unknown>).implement = profile;
-    await writeProjectConfig(
-      path.join(root, "projects/demo/config.yaml"),
-      config,
-    );
+    await writeProjectConfig(path.join(root, "demo/config.yaml"), config);
     await assert.rejects(
       loadProject(root, "demo", { TEST_GH_TOKEN: "token" }),
       /agents\.implement\.(agent|model|options)/u,
@@ -226,10 +220,7 @@ test("obsolete reasoningEffort requires migration, even beside new fields", asyn
     const root = await createProject();
     const config = structuredClone(validConfig);
     (config.agents as Record<string, unknown>).implement = profile;
-    await writeProjectConfig(
-      path.join(root, "projects/demo/config.yaml"),
-      config,
-    );
+    await writeProjectConfig(path.join(root, "demo/config.yaml"), config);
     await assert.rejects(
       loadProject(root, "demo", { TEST_GH_TOKEN: "token" }),
       /reasoningEffort is no longer supported.*options\.effort/u,
@@ -240,7 +231,7 @@ test("obsolete reasoningEffort requires migration, even beside new fields", asyn
 test("review rounds accept only an optional positive integer without a default cap", async () => {
   const root = await createProject();
   const config = structuredClone(validConfig);
-  const configPath = path.join(root, "projects/demo/config.yaml");
+  const configPath = path.join(root, "demo/config.yaml");
   const load = () => loadProject(root, "demo", { TEST_GH_TOKEN: "token" });
   assert.equal((await load()).config.workflow.maxReviewRounds, undefined);
   for (const value of [0, -1, 1.5, "2", null, true]) {

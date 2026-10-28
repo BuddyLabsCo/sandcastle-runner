@@ -101,7 +101,7 @@ for (const repair of ["ci", "conflict"] as const) {
     const implementationCalls = new Map<number, number>();
     let nextPullRequest = 41;
     let parentCloses = 0;
-    const logs = path.join(root, "projects", "demo", "logs");
+    const logs = path.join(root, "demo", "logs");
     await mkdir(logs, { recursive: true });
     const reviewLog = path.join(logs, "review-9-current.log");
     await writeFile(reviewLog, "review");

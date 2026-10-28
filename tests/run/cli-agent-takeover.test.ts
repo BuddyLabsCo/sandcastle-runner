@@ -22,7 +22,7 @@ test.afterEach(cleanupTempRoots);
 
 test("k settles only the selected invocation and keeps all entries pending until manual exit and independent acknowledgement", async () => {
   const root = await createProject();
-  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+  await writeProjectConfig(path.join(root, "demo/config.yaml"), {
     ...validConfig,
     agentRetry: 0,
     timeouts: { ...validConfig.timeouts, agentMinutes: 0.001 },
@@ -150,7 +150,7 @@ for (const state of ["unknown", "missing", "ambiguous"] as const) {
   for (const cancel of ["q", null]) {
     test(`kill with ${state} native storage blocks Enter and retains ${cancel ?? "EOF"} cancellation`, async () => {
       const root = await createProject();
-      await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+      await writeProjectConfig(path.join(root, "demo/config.yaml"), {
         ...validConfig,
         timeouts: { ...validConfig.timeouts, agentMinutes: 0.0005 },
       });
@@ -219,7 +219,7 @@ for (const state of ["unknown", "missing", "ambiguous"] as const) {
 
 test("Review takeover resumes the review session and verifies its ordinary result after manual exit", async () => {
   const root = await createProject();
-  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+  await writeProjectConfig(path.join(root, "demo/config.yaml"), {
     ...validConfig,
     agentRetry: 0,
     workflow: { ...validConfig.workflow, review: true },

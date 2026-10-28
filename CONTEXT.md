@@ -8,6 +8,10 @@ Sandcastle Runner coordinates ticket-driven coding work for configured software 
 A configured target repository together with its tracker, code host, and execution policy.
 _Avoid_: Workspace, target
 
+**Launch Directory**:
+The working directory from which the CLI starts. `--project <key>` names exactly one child of this directory; no ancestor, package-root, or `projects/` fallback applies.
+_Avoid_: Working folder, run root
+
 **Target Branch**:
 The Project branch against which a Run prepares, validates, and integrates Delivery Tickets.
 _Avoid_: Main branch, base branch, default branch

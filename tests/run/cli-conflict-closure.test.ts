@@ -180,7 +180,7 @@ test("Parent cancellation during a merge rejection pause prevents the authorized
 
 test("a post-merge cancellation releases its Reservation without completion credit", async () => {
   const root = await createProject();
-  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+  await writeProjectConfig(path.join(root, "demo/config.yaml"), {
     ...validConfig,
     ticketClosure: "code_host",
   });
@@ -330,7 +330,7 @@ test("Parent cancellation during a closure write pause prevents the authorized r
 
 test("an open code_host ticket after both closure reads enters Operator Pause without credit", async () => {
   const root = await createProject();
-  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+  await writeProjectConfig(path.join(root, "demo/config.yaml"), {
     ...validConfig,
     ticketClosure: "code_host",
   });
@@ -358,7 +358,7 @@ test("an open code_host ticket after both closure reads enters Operator Pause wi
 test("Enter observes completed closure before releasing the Reservation", async () => {
   for (const cancelParent of [false, true]) {
     const root = await createProject();
-    await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+    await writeProjectConfig(path.join(root, "demo/config.yaml"), {
       ...validConfig,
       ticketClosure: "code_host",
     });

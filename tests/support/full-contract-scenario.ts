@@ -85,7 +85,7 @@ export function createFiveTicketScenario(
   };
 
   const dependencies: CliDependencies = {
-    root,
+    launchDirectory: root,
     env: { TEST_GH_TOKEN: "secret" },
     tracker: {
       async getParent() {

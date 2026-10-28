@@ -27,7 +27,7 @@ for (const scenario of [
 ]) {
   test(`skip releases a pre-PR ticket while independent work completes: ${scenario}`, async () => {
     const root = await createProject();
-    await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+    await writeProjectConfig(path.join(root, "demo/config.yaml"), {
       ...validConfig,
       maxBatchSize: scenario.startsWith("later") ? 1 : 3,
       issueList: scenario === "later-standalone" ? [9, 10] : [],
@@ -49,7 +49,7 @@ for (const scenario of [
     let merged = false;
     let checksReads = 0;
     let mergeRequests = 0;
-    const logs = path.join(root, "projects", "demo", "logs");
+    const logs = path.join(root, "demo", "logs");
     await mkdir(logs, { recursive: true });
     const historicalLog = path.join(logs, "agent-9-historical.log");
     const reviewLog = path.join(logs, "review-9-current.log");
@@ -381,7 +381,7 @@ test("a log deletion failure is audited without changing skip", async () => {
 
 test("a blocked Review can also skip its pre-PR ticket", async () => {
   const root = await createProject();
-  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+  await writeProjectConfig(path.join(root, "demo/config.yaml"), {
     ...validConfig,
     workflow: { ...validConfig.workflow, review: true },
   });

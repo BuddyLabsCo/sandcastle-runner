@@ -1,8 +1,8 @@
 # Publishes the npm tarball of the release pull request a human merged into main.
 # scripts/release/publish-release.ts rejects every input that is not a squash or
 # rebase merge of this repository's auto-release branch before it writes to the
-# registry, a tag or a Release. Publication stays disabled while the package is
-# not publication-ready: the script refuses the current private source manifest.
+# registry, a tag or a Release. Publication also stays disabled until the
+# manifest, build, and release:accept check accept the exact packed tarball.
 name: publish-release
 
 on:

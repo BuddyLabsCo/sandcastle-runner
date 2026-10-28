@@ -27,20 +27,20 @@ test("disabled Documentation Maintenance allows delivery and Parent closeout wit
   const root = await createProject();
   const config = structuredClone(validConfig);
   delete config.agents.documentation;
-  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+  await writeProjectConfig(path.join(root, "demo/config.yaml"), {
     ...config,
     workflow: {
       review: false,
       docMaintainTriggerLabel: "",
     },
   });
-  await rm(path.join(root, "projects/demo/prompts/documentation.md"));
+  await rm(path.join(root, "demo/prompts/documentation.md"));
   const maintenancePublication = {
     ...publicationIntent("pr_created", 100),
     kind: "maintenance" as const,
   };
   await writeRecoverySnapshot(
-    recoveryPaths(path.join(root, "projects", "demo"), 8).snapshot,
+    recoveryPaths(path.join(root, "demo"), 8).snapshot,
     {
       schemaVersion: 2,
       project: "demo",
@@ -102,7 +102,7 @@ test("disabled Documentation Maintenance allows delivery and Parent closeout wit
   assert.equal(
     (
       await readRecoverySnapshot(
-        recoveryPaths(path.join(root, "projects", "demo"), 8).snapshot,
+        recoveryPaths(path.join(root, "demo"), 8).snapshot,
       )
     )?.maintenance,
     undefined,
@@ -136,10 +136,7 @@ test("Review and Documentation Maintenance trigger operate independently", async
     } = structuredClone(validConfig);
     if (scenario.workflow === undefined) delete config.workflow;
     else config.workflow = scenario.workflow;
-    await writeProjectConfig(
-      path.join(root, "projects/demo/config.yaml"),
-      config,
-    );
+    await writeProjectConfig(path.join(root, "demo/config.yaml"), config);
     const delivery = createCommittedDelivery();
     if (scenario.workflow?.docMaintainTriggerLabel)
       delivery.tickets[0]!.labels.push("documentation");
@@ -183,10 +180,7 @@ test("enabled Documentation Maintenance requires maintenance ticket title, body,
     const config = structuredClone(validConfig);
     config.workflow.docMaintainTriggerLabel = "documentation";
     delete config.maintenanceTicket[field];
-    await writeProjectConfig(
-      path.join(root, "projects/demo/config.yaml"),
-      config,
-    );
+    await writeProjectConfig(path.join(root, "demo/config.yaml"), config);
     const result = await executeCli(
       ["run", "--project", "demo", "--parent", "8"],
       createCliDependencies(root),
@@ -222,7 +216,7 @@ test("workflow configuration rejects malformed switches, unknown fields", async 
   for (const scenario of cases) {
     const root = await createProject();
     const config = structuredClone(validConfig);
-    await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+    await writeProjectConfig(path.join(root, "demo/config.yaml"), {
       ...config,
       workflow: scenario.workflow,
     });
@@ -241,11 +235,11 @@ test("omitted Documentation Maintenance trigger disables automatic maintenance",
   const root = await createProject();
   const config = structuredClone(validConfig);
   delete config.agents.documentation;
-  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+  await writeProjectConfig(path.join(root, "demo/config.yaml"), {
     ...config,
     workflow: { review: false },
   });
-  await rm(path.join(root, "projects/demo/prompts/documentation.md"));
+  await rm(path.join(root, "demo/prompts/documentation.md"));
 
   const result = await executeCli(
     ["run", "--project", "demo", "--parent", "8"],
@@ -260,10 +254,7 @@ test("enabled Documentation Maintenance rejects a missing profile", async () => 
   const config = structuredClone(validConfig);
   config.workflow.docMaintainTriggerLabel = "documentation";
   delete config.agents.documentation;
-  await writeProjectConfig(
-    path.join(root, "projects/demo/config.yaml"),
-    config,
-  );
+  await writeProjectConfig(path.join(root, "demo/config.yaml"), config);
 
   const result = await executeCli(
     ["run", "--project", "demo", "--parent", "8"],
@@ -282,14 +273,8 @@ test("enabled Documentation Maintenance rejects an empty prompt", async () => {
   const root = await createProject();
   const config = structuredClone(validConfig);
   config.workflow.docMaintainTriggerLabel = "documentation";
-  await writeProjectConfig(
-    path.join(root, "projects/demo/config.yaml"),
-    config,
-  );
-  await writeFile(
-    path.join(root, "projects/demo/prompts/documentation.md"),
-    " \n",
-  );
+  await writeProjectConfig(path.join(root, "demo/config.yaml"), config);
+  await writeFile(path.join(root, "demo/prompts/documentation.md"), " \n");
 
   const result = await executeCli(
     ["run", "--project", "demo", "--parent", "8"],
@@ -306,7 +291,7 @@ test("enabled Documentation Maintenance rejects an empty prompt", async () => {
 
 test("audit gap text and skip stay paused until Enter retries log creation", async () => {
   const root = await createProject();
-  const logs = path.join(root, "projects", "demo", "logs");
+  const logs = path.join(root, "demo", "logs");
   await writeFile(logs, "blocks directory creation");
   let pauseCalls = 0;
   const result = await executeCli(
@@ -382,7 +367,7 @@ test("invalid CLI arguments return a structured startup failure", async () => {
 
 test("an omitted Target Branch is resolved once through CodeHost and fixed for the Run", async () => {
   const root = await createProject();
-  const configPath = path.join(root, "projects", "demo", "config.yaml");
+  const configPath = path.join(root, "demo", "config.yaml");
   const configWithoutBranch = { ...validConfig };
   delete (configWithoutBranch as Partial<typeof validConfig>).targetBranch;
   await writeProjectConfig(configPath, configWithoutBranch);
@@ -405,7 +390,7 @@ test("an omitted Target Branch is resolved once through CodeHost and fixed for t
 
 test("global Target Branch recovery rejects results and skip before retrying the read", async () => {
   const root = await createProject();
-  const configPath = path.join(root, "projects", "demo", "config.yaml");
+  const configPath = path.join(root, "demo", "config.yaml");
   const configWithoutBranch = { ...validConfig };
   delete (configWithoutBranch as Partial<typeof validConfig>).targetBranch;
   await writeProjectConfig(configPath, configWithoutBranch);

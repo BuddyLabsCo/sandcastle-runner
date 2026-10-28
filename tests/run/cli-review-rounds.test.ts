@@ -22,7 +22,7 @@ test("review rounds reuse both sessions, fix every findings round, and review on
     const root = await createProject();
     const config = structuredClone(validConfig);
     config.workflow.review = true;
-    await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+    await writeProjectConfig(path.join(root, "demo/config.yaml"), {
       ...config,
       workflow: {
         ...config.workflow,
@@ -149,10 +149,7 @@ test("review rounds reuse both sessions, fix every findings round, and review on
                 outcome: "passed",
               };
             const filename = String(handoff.findingsFile);
-            assert.equal(
-              path.dirname(filename),
-              path.join(root, "projects/demo/logs"),
-            );
+            assert.equal(path.dirname(filename), path.join(root, "demo/logs"));
             assert.ok(!findingsFiles.includes(filename));
             findingsFiles.push(filename);
             await writeFile(filename, "# P1 finding\nFix missing validation.");
@@ -196,7 +193,7 @@ test("findings pauses stay in the relevant session and retain files until succes
     ["q", "no_change"],
   ] as const) {
     const root = await createProject();
-    await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+    await writeProjectConfig(path.join(root, "demo/config.yaml"), {
       ...validConfig,
       workflow: { ...validConfig.workflow, review: true, maxReviewRounds: 1 },
     });

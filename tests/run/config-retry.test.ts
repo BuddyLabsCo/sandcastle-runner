@@ -47,10 +47,7 @@ test("loadProject rejects missing and malformed retry fields", async () => {
     const config = structuredClone(validConfig) as Record<string, unknown>;
     if (value === undefined) delete config[field];
     else config[field] = value;
-    await writeProjectConfig(
-      path.join(root, "projects", "demo", "config.yaml"),
-      config,
-    );
+    await writeProjectConfig(path.join(root, "demo", "config.yaml"), config);
     await assert.rejects(
       loadProject(root, "demo", { TEST_GH_TOKEN: "token" }),
       new RegExp(field, "u"),
@@ -73,10 +70,7 @@ test("loadProject requires maxBatchSize to be a positive safe integer", async ()
     const config = structuredClone(validConfig) as Record<string, unknown>;
     if (value === undefined) delete config.maxBatchSize;
     else config.maxBatchSize = value;
-    await writeProjectConfig(
-      path.join(root, "projects", "demo", "config.yaml"),
-      config,
-    );
+    await writeProjectConfig(path.join(root, "demo", "config.yaml"), config);
     await assert.rejects(
       loadProject(root, "demo", { TEST_GH_TOKEN: "token" }),
       /maxBatchSize/u,

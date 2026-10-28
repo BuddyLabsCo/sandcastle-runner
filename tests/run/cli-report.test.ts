@@ -48,7 +48,7 @@ test("an empty Run prints the no-work report without an audit path", async () =>
 
 test("processed Delivery and Maintenance Tickets render in processing order", async () => {
   const root = await createProject();
-  const configPath = path.join(root, "projects", "demo", "config.yaml");
+  const configPath = path.join(root, "demo", "config.yaml");
   const config = await readProjectConfig<{
     workflow: { docMaintainTriggerLabel: string };
   }>(configPath);

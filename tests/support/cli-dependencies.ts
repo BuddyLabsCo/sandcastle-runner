@@ -34,7 +34,7 @@ export type CliDependencyOverrides = Omit<
 };
 
 export function createCliDependencies(
-  root: string,
+  launchDirectory: string,
   overrides: CliDependencyOverrides = {},
 ): CliDependencies {
   const completedTickets = new Set<number>();
@@ -261,7 +261,7 @@ export function createCliDependencies(
   });
 
   return {
-    root,
+    launchDirectory,
     env: { TEST_GH_TOKEN: "secret" },
     ...overrides,
     tracker,

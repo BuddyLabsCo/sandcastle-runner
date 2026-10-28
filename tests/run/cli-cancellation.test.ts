@@ -324,7 +324,7 @@ test("cancelling boundary revalidation after an Agent result pauses once", async
 
 test("empty input retries a failed audit creation", async () => {
   const root = await createProject();
-  const logs = path.join(root, "projects", "demo", "logs");
+  const logs = path.join(root, "demo", "logs");
   await writeFile(logs, "blocks directory creation");
   let pauseCalls = 0;
   const result = await executeCli(
@@ -349,7 +349,7 @@ test("empty input retries a failed audit creation", async () => {
 
 test("a fresh Run ignores existing audit logs", async () => {
   const root = await createProject();
-  const logs = path.join(root, "projects", "demo", "logs");
+  const logs = path.join(root, "demo", "logs");
   await mkdir(logs);
   const oldLog = path.join(logs, "earlier.jsonl");
   await writeFile(oldLog, "not valid JSON and not recovery state\n");

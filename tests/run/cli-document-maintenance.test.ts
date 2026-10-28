@@ -23,7 +23,7 @@ test.afterEach(cleanupTempRoots);
 
 async function createMaintenanceProject(): Promise<string> {
   const root = await createProject();
-  const configPath = path.join(root, "projects/demo/config.yaml");
+  const configPath = path.join(root, "demo/config.yaml");
   const config = await readProjectConfig<{
     workflow: { docMaintainTriggerLabel: string };
   }>(configPath);
@@ -86,7 +86,7 @@ test("nonmatching deliveries and Parent closeout do not trigger maintenance", as
 
 test("--document starts fresh after an interrupted Parent-independent occurrence", async () => {
   const root = await createProject();
-  const configPath = path.join(root, "projects/demo/config.yaml");
+  const configPath = path.join(root, "demo/config.yaml");
   const config = await readProjectConfig<{
     issueList: number[];
     agents: Record<string, AgentConfig>;
@@ -275,7 +275,7 @@ test("standalone matching delivery triggers automatic maintenance once", async (
 test("matching unfinished automatic maintenance resumes without duplication", async () => {
   const root = await createMaintenanceProject();
   await writeRecoverySnapshot(
-    recoveryPaths(path.join(root, "projects/demo"), 8).snapshot,
+    recoveryPaths(path.join(root, "demo"), 8).snapshot,
     {
       schemaVersion: 2,
       project: "demo",

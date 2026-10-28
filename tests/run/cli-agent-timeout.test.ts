@@ -25,7 +25,7 @@ test.afterEach(cleanupTempRoots);
 
 test("overall timeout retains the original success and logs until Enter without relaunching", async () => {
   const root = await createProject();
-  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+  await writeProjectConfig(path.join(root, "demo/config.yaml"), {
     ...validConfig,
     timeouts: { ...validConfig.timeouts, agentMinutes: 0.0005 },
   });
@@ -111,7 +111,7 @@ test("overall timeout retains the original success and logs until Enter without 
 for (const response of ["q", null]) {
   test(`timeout ${response === null ? "EOF" : "q"} cancels the Run, preserves recovery, and cannot skip a live invocation`, async () => {
     const root = await createProject();
-    await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+    await writeProjectConfig(path.join(root, "demo/config.yaml"), {
       ...validConfig,
       timeouts: { ...validConfig.timeouts, agentMinutes: 0.0005 },
     });
@@ -174,7 +174,7 @@ for (const response of ["q", null]) {
     assert.equal(inspections, 0);
     assert.equal(prompts, 2);
     const snapshot = await readRecoverySnapshot(
-      recoveryPaths(path.join(root, "projects/demo"), 8).snapshot,
+      recoveryPaths(path.join(root, "demo"), 8).snapshot,
     );
     assert.ok(snapshot);
     assert.deepEqual(snapshot.batch, [9]);
@@ -184,7 +184,7 @@ for (const response of ["q", null]) {
 
 test("competing idle pauses retain a late failure and success until every acknowledgement, then use normal retry", async () => {
   const root = await createProject();
-  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+  await writeProjectConfig(path.join(root, "demo/config.yaml"), {
     ...validConfig,
     agentRetry: 1,
     timeouts: { ...validConfig.timeouts, agentIdleMinutes: 0.0005 },
@@ -281,7 +281,7 @@ test("competing idle pauses retain a late failure and success until every acknow
 for (const action of ["", "k"]) {
   test(`failed settlement after timeout ${action === "k" ? "kill" : "acknowledgement"} blocks fresh attempts and Worktree cleanup`, async () => {
     const root = await createProject();
-    await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+    await writeProjectConfig(path.join(root, "demo/config.yaml"), {
       ...validConfig,
       timeouts: { ...validConfig.timeouts, agentMinutes: 0.0005 },
     });

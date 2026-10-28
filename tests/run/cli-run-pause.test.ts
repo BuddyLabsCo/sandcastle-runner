@@ -419,7 +419,7 @@ test("a CI repair pause gates concurrent publication and cancellation retains it
   assert.ok(!effects.includes("pr:10"));
   assert.ok(!effects.includes("merge"));
   const snapshot = await readRecoverySnapshot(
-    recoveryPaths(path.join(root, "projects/demo"), 8).snapshot,
+    recoveryPaths(path.join(root, "demo"), 8).snapshot,
   );
   assert.equal(
     snapshot?.publications?.find(({ ticket }) => ticket === 10)?.phase,

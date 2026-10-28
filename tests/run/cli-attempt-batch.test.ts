@@ -309,7 +309,7 @@ test("a Batch publishes every PR before merging by creation order", async () => 
 test("multiple matching Delivery Tickets trigger one committed Documentation Maintenance occurrence", async () => {
   const runNames: string[] = [];
   const root = await createProject();
-  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+  await writeProjectConfig(path.join(root, "demo/config.yaml"), {
     ...validConfig,
     workflow: {
       ...validConfig.workflow,
@@ -489,7 +489,7 @@ test("multiple matching Delivery Tickets trigger one committed Documentation Mai
   assert.deepEqual(
     (
       await readRecoverySnapshot(
-        recoveryPaths(path.join(root, "projects", "demo"), 8).snapshot,
+        recoveryPaths(path.join(root, "demo"), 8).snapshot,
       )
     )?.publications
       ?.map(({ ticket }) => ticket)

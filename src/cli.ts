@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 /* eslint-disable max-lines -- CLI startup and recovery sequencing stay together. */
 import { randomUUID } from "node:crypto";
+import { readFileSync, realpathSync } from "node:fs";
 import { rmdir } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { SystemClock } from "./adapters/clock.ts";
 import { LocalGitWorkspace } from "./adapters/git-workspace.ts";
@@ -13,6 +15,7 @@ import { TerminalOperator } from "./adapters/terminal.ts";
 import { AuditLog } from "./audit.ts";
 import { cac } from "cac";
 import { loadProject } from "./config.ts";
+import { initializeProject } from "./init.ts";
 import {
   InvalidRecoverySnapshot,
   readRecoverySnapshot,
@@ -38,7 +41,8 @@ import { runProject, type RunSummary } from "./run/run.ts";
 import type { CleanupRecord } from "./run/cleanup.ts";
 
 export interface CliDependencies {
-  root: string;
+  /** Directory whose child named by `--project` holds the Project. */
+  launchDirectory: string;
   env: Record<string, string | undefined>;
   tracker?: Tracker;
   codeHost?: CodeHost;
@@ -54,8 +58,215 @@ export interface CliResult {
   logPath: string | null;
 }
 
-const usageMessage =
-  "usage: sandcastle-runner run --project <project-key> (--parent <issue-number> | --issue [<issue-number>] | --document)";
+const commandName = "issue-runner";
+const usageMessage = `usage: ${commandName} run --project <project-key> (--parent <issue-number> | --issue [<issue-number>] | --document)`;
+const initUsageMessage = `usage: ${commandName} init --project <project-key>`;
+
+const topLevelHelp = `usage: ${commandName} <command> [options]
+
+Commands:
+  init --project <project-key>  Create config.yaml and the three Project prompts
+                                in <launch directory>/<project-key>
+  run  --project <project-key>  Run one delivery scope from
+                                <launch directory>/<project-key>
+
+Options:
+  -h, --help  Show this help
+  --version   Print the executing package version
+
+Setup:
+  1. ${commandName} init --project <project-key>
+  2. Edit <project-key>/config.yaml and the repository-specific prompts in
+     <project-key>/prompts/. Replace every placeholder before the first Run.
+  3. ${commandName} run --project <project-key> --parent <issue-number>
+
+Project discovery uses only the launch directory. The init command neither
+needs credentials nor copies an existing configured Project. Run
+\`${commandName} run --help\` for Run options and selector examples.`;
+
+const runHelp = `usage: ${usageMessage}
+
+Options:
+  --project <project-key>  Child of the launch directory that holds config.yaml
+                           and prompts/
+  --parent <issue-number>  Parent Ticket; processes its same-repository direct
+                           children
+  --issue [<issue-number>] Standalone Issue; without a number uses the Project
+                           issueList
+  --document               Run Documentation Maintenance without a Parent or
+                           issue scope
+  --auto-merge             Request merge after the Pull Request is CI-ready
+  --no-auto-merge          Stop after the Pull Request is CI-ready
+  -h, --help               Show this help
+
+Constraints:
+  Exactly one of --parent, --issue, or --document is required.
+  --auto-merge and --no-auto-merge are mutually exclusive, reject a supplied
+  value, and require a value-bearing --issue.
+
+Examples:
+  ${commandName} run --project my-project --parent 42
+  ${commandName} run --project my-project --issue 77
+  ${commandName} run --project my-project --issue
+  ${commandName} run --project my-project --document
+  ${commandName} run --project my-project --issue 77 --no-auto-merge`;
+
+const initHelp = `usage: ${initUsageMessage}
+
+Creates <launch directory>/<project-key>/config.yaml and
+<launch directory>/<project-key>/prompts/{implement,review,documentation}.md
+from the reviewed initialization templates.
+
+The copy performs no substitutions, machine probing, credential reads, network
+calls, agent login, or target-checkout access. The destination must not exist;
+empty directories, files, and symbolic links are refused. There is no
+overwrite, merge, or force mode.
+
+Project keys use letters, digits, dot, underscore, or hyphen and must name a
+child of the launch directory.
+
+Next steps:
+  1. Replace the placeholders in config.yaml: repository, checkout,
+     targetBranch, tracker.runnerAccount, and each agent model (and
+     agents.*.agent when you use another supported CLI).
+  2. Replace the repository-specific instructions in the three prompts.
+  3. Set the credential variables named by tracker.tokenEnv and
+     codeHost.tokenEnv. Install Git, GitHub CLI, and every configured agent CLI.
+  4. ${commandName} run --project <project-key> --parent <issue-number>`;
+
+function writeVersion(): string {
+  // The executing package metadata is the only version source.
+  const manifest = readFileSync(
+    path.join(import.meta.dirname, "..", "package.json"),
+    "utf8",
+  );
+  const value = (JSON.parse(manifest) as { version?: unknown }).version;
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error("package.json must declare a version");
+  }
+  return value;
+}
+
+type InformationalRequest = "version" | "run" | "init" | "top";
+
+function requestedHelp(argv: string[]): InformationalRequest | null {
+  const command = argv[0];
+  if (command === "--version" || command === "-v") return "version";
+  if (command === "run") {
+    return argv.slice(1).some((arg) => arg === "--help" || arg === "-h")
+      ? "run"
+      : null;
+  }
+  if (command === "init") {
+    return argv.slice(1).some((arg) => arg === "--help" || arg === "-h")
+      ? "init"
+      : null;
+  }
+  if (command === undefined || command === "--help" || command === "-h") {
+    return "top";
+  }
+  return null;
+}
+
+function informationalSummary(
+  project: string,
+  reasons: string[],
+  outcome: RunSummary["outcome"] = "no_work",
+): RunSummary {
+  return {
+    outcome,
+    project,
+    parentTicket: 0,
+    targetBranch: "unresolved",
+    reasons,
+  };
+}
+
+function parseInitOptions(argv: string[]): { project: string } {
+  const cli = cac(commandName);
+  cli
+    .command("init")
+    .option("--project <project>", "Project key")
+    .action(() => undefined);
+  cli.parse(["node", commandName, ...argv]);
+  if (cli.matchedCommandName !== "init") throw new Error(initUsageMessage);
+  const options = cli.options as { project?: unknown };
+  if (typeof options.project !== "string" || options.project.length === 0) {
+    throw new Error(initUsageMessage);
+  }
+  return { project: options.project };
+}
+
+async function executeInit(
+  argv: string[],
+  dependencies: CliDependencies,
+): Promise<CliResult> {
+  let project: string;
+  try {
+    ({ project } = parseInitOptions(argv));
+  } catch (error) {
+    const reason =
+      error instanceof Error ? error.message : "invalid init arguments";
+    dependencies.operator.write(reason);
+    return {
+      exitCode: 1,
+      summary: informationalSummary("unknown", [reason], "failed"),
+      logPath: null,
+    };
+  }
+  try {
+    const directory = await initializeProject(
+      dependencies.launchDirectory,
+      project,
+    );
+    dependencies.operator.write(
+      [
+        `Initialized Project at ${directory}`,
+        "",
+        "Created:",
+        "  config.yaml",
+        "  prompts/implement.md",
+        "  prompts/review.md",
+        "  prompts/documentation.md",
+        "",
+        "Next:",
+        `  1. Replace the placeholders in ${path.join(directory, "config.yaml")}:`,
+        "     repository, checkout, targetBranch, tracker.runnerAccount, and each",
+        "     agent model (and agents.*.agent when you use another supported CLI).",
+        "  2. Replace the repository-specific instructions in the three prompts.",
+        "  3. Set the credential variables named by tracker.tokenEnv and",
+        "     codeHost.tokenEnv. Install Git, GitHub CLI, and every configured",
+        "     agent CLI.",
+        "  4. Run:",
+        `       ${commandName} run --project ${project} --parent <issue-number>`,
+      ].join("\n"),
+    );
+    return {
+      exitCode: 0,
+      summary: informationalSummary(project, ["Project initialized"]),
+      logPath: null,
+    };
+  } catch (error) {
+    const reason =
+      error instanceof Error ? error.message : "initialization failed";
+    dependencies.operator.write(reason);
+    return {
+      exitCode: 1,
+      summary: informationalSummary(project, [reason], "failed"),
+      logPath: null,
+    };
+  }
+}
+
+function isDirectExecution(): boolean {
+  const entry = process.argv[1];
+  if (entry === undefined) return false;
+  try {
+    return realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
 
 async function removeEmptyRunWorktreeParent(
   directory: string,
@@ -79,7 +290,7 @@ async function removeEmptyRunWorktreeParent(
 }
 
 function parseRunOptions(argv: string[]) {
-  const cli = cac("sandcastle-runner");
+  const cli = cac(commandName);
   cli
     .command("run")
     .option("--project <project>", "Project key")
@@ -89,7 +300,7 @@ function parseRunOptions(argv: string[]) {
     .option("--auto-merge", "Request merge after the Pull Request is CI-ready")
     .option("--no-auto-merge", "Stop after the Pull Request is CI-ready")
     .action(() => undefined);
-  cli.parse(["node", "sandcastle-runner", ...argv]);
+  cli.parse(["node", commandName, ...argv]);
   if (cli.matchedCommandName !== "run") throw new Error(usageMessage);
   const options = cli.options as {
     project?: unknown;
@@ -269,6 +480,49 @@ export async function executeCli(
   argv: string[],
   dependencies: CliDependencies,
 ): Promise<CliResult> {
+  const informational = requestedHelp(argv);
+  if (informational === "version") {
+    dependencies.operator.write(writeVersion());
+    return {
+      exitCode: 0,
+      summary: informationalSummary("unknown", []),
+      logPath: null,
+    };
+  }
+  if (informational !== null) {
+    dependencies.operator.write(
+      informational === "run"
+        ? runHelp
+        : informational === "init"
+          ? initHelp
+          : topLevelHelp,
+    );
+    return {
+      exitCode: 0,
+      summary: informationalSummary("unknown", []),
+      logPath: null,
+    };
+  }
+  if (argv[0] === "init") return executeInit(argv, dependencies);
+  if (argv[0] === "run") return executeRun(argv, dependencies);
+  dependencies.operator.write(startupFailureMessage(usageMessage));
+  return {
+    exitCode: 1,
+    summary: {
+      outcome: "failed",
+      project: startupProject(argv),
+      parentTicket: 0,
+      targetBranch: "unresolved",
+      reasons: [usageMessage],
+    },
+    logPath: null,
+  };
+}
+
+export async function executeRun(
+  argv: string[],
+  dependencies: CliDependencies,
+): Promise<CliResult> {
   let project: string;
   let parentTicket: number | undefined;
   let selector: "parent" | "issue" | "document";
@@ -292,11 +546,16 @@ export async function executeCli(
   }
   let loaded: Awaited<ReturnType<typeof loadProject>>;
   try {
-    loaded = await loadProject(dependencies.root, project, dependencies.env, {
-      ...(selector === "document"
-        ? { requireDocumentationMaintenance: true }
-        : {}),
-    });
+    loaded = await loadProject(
+      dependencies.launchDirectory,
+      project,
+      dependencies.env,
+      {
+        ...(selector === "document"
+          ? { requireDocumentationMaintenance: true }
+          : {}),
+      },
+    );
   } catch (error) {
     const summary: RunSummary = {
       outcome: "failed",
@@ -647,9 +906,9 @@ export async function executeCli(
   };
 }
 
-if (import.meta.main) {
+if (isDirectExecution()) {
   const result = await executeCli(process.argv.slice(2), {
-    root: path.resolve(import.meta.dirname, ".."),
+    launchDirectory: process.cwd(),
     env: process.env,
     clock: new SystemClock(),
     operator: new TerminalOperator(),

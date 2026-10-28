@@ -65,7 +65,7 @@ test("a retried implementation prints its issue and phase once per start", async
 
 test("numbered review rounds and their fixes print distinct phase lines", async () => {
   const root = await createProject();
-  await writeProjectConfig(path.join(root, "projects/demo/config.yaml"), {
+  await writeProjectConfig(path.join(root, "demo/config.yaml"), {
     ...validConfig,
     workflow: { ...validConfig.workflow, review: true, maxReviewRounds: 2 },
   });

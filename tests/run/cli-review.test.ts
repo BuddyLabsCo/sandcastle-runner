@@ -26,11 +26,8 @@ test("default-enabled review reports its required profile and prompt paths", asy
   };
   delete defaulted.workflow;
   delete defaulted.agents.review;
-  await writeProjectConfig(
-    path.join(root, "projects/demo/config.yaml"),
-    config,
-  );
-  await rm(path.join(root, "projects/demo/prompts/review.md"));
+  await writeProjectConfig(path.join(root, "demo/config.yaml"), config);
+  await rm(path.join(root, "demo/prompts/review.md"));
 
   const result = await executeCli(
     ["run", "--project", "demo", "--parent", "8"],
@@ -46,7 +43,7 @@ test("default-enabled review reports its required profile and prompt paths", asy
 
 test("disabled review does not read its prompt", async () => {
   const root = await createProject();
-  await rm(path.join(root, "projects/demo/prompts/review.md"));
+  await rm(path.join(root, "demo/prompts/review.md"));
 
   const disabled = await executeCli(
     ["run", "--project", "demo", "--parent", "8"],
@@ -70,10 +67,7 @@ test("a clean fresh-context review gates publication and preserves implementatio
     model: "claude-sonnet-4-6",
     options: { thinking: "high" },
   } as unknown as NonNullable<typeof config.agents.review>;
-  await writeProjectConfig(
-    path.join(root, "projects/demo/config.yaml"),
-    config,
-  );
+  await writeProjectConfig(path.join(root, "demo/config.yaml"), config);
   const delivery = createCommittedDelivery(9);
   const implementation = {
     sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -189,11 +183,11 @@ test("a clean fresh-context review gates publication and preserves implementatio
   assert.equal(reviewInputData.implementationHead, implementation.sha);
   assert.equal(
     path.dirname(String(reviewInputData.findingsFile)),
-    path.join(root, "projects/demo/logs"),
+    path.join(root, "demo/logs"),
   );
   assert.equal(
     reviewInput.promptFile,
-    path.join(root, "projects/demo/prompts/review.md"),
+    path.join(root, "demo/prompts/review.md"),
   );
   assert.equal(reviewInput.base, "a".repeat(40));
   assert.equal(reviewInput.branch, branch);
@@ -214,10 +208,7 @@ test("blocked, dirty, or invalid review pauses before publication", async () => 
     const root = await createProject();
     const config = structuredClone(validConfig);
     config.workflow.review = true;
-    await writeProjectConfig(
-      path.join(root, "projects/demo/config.yaml"),
-      config,
-    );
+    await writeProjectConfig(path.join(root, "demo/config.yaml"), config);
     const delivery = createCommittedDelivery(9);
     let pushes = 0;
     let pauses = 0;
@@ -302,10 +293,7 @@ test("review continuation verifies the Worktree without consuming a review round
   const root = await createProject();
   const config = structuredClone(validConfig);
   config.workflow.review = true;
-  await writeProjectConfig(
-    path.join(root, "projects/demo/config.yaml"),
-    config,
-  );
+  await writeProjectConfig(path.join(root, "demo/config.yaml"), config);
   const delivery = createCommittedDelivery(9);
   const implementation = {
     sha: "b".repeat(40),
@@ -363,10 +351,7 @@ test("a trusted review result cannot bypass the clean Worktree gate", async () =
   const root = await createProject();
   const config = structuredClone(validConfig);
   config.workflow.review = true;
-  await writeProjectConfig(
-    path.join(root, "projects/demo/config.yaml"),
-    config,
-  );
+  await writeProjectConfig(path.join(root, "demo/config.yaml"), config);
   const delivery = createCommittedDelivery(9);
   let pauses = 0;
   let pushes = 0;

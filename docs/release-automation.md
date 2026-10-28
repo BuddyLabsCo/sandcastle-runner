@@ -56,10 +56,12 @@ closes.
   exit status zero and the release version. A tarball whose CLI fails to start,
   or reports another version, blocks publication.
 - Finally it runs the package-owned `release:accept` script with
-  `RELEASE_TARBALL` pointing at the candidate. That script must exit zero after
-  checking the shipped runtime prompts and initialization assets. Publication
-  stays disabled while the script is absent or failing, so version output alone
-  cannot admit an incomplete package.
+  `RELEASE_TARBALL` pointing at the candidate. That script inspects the dry-run
+  and actual tarballs against the package allowlist, installs the same bytes,
+  and exercises the npm executable shim, help, version, credential-free
+  initialization, and no-fallback Project lookup. Publication stays disabled
+  while the script is absent or failing, so version output alone cannot admit
+  an incomplete package.
 - Publication runs npm, then the tag, then the GitHub Release. Each stage is
   read first and reused only when its identity matches, so a retry resumes the
   missing stages without republishing a version or moving a tag. A local tag
@@ -69,15 +71,18 @@ closes.
   npm user config that maps the token to `registry.npmjs.org`; every earlier
   command runs without the token or the registry mapping.
 
-## Publication stays disabled until the package is ready
+## Publication gates
 
-The script refuses any package whose manifest is still private or source-only,
-lacks the `issue-runner` name, a files allowlist, supported Node engines, a
-packaged executable, or a `release:accept` check. That is why the current
-private manifest cannot publish: the release path is exercised by tests and by a
-rejected publication, not by a real npm upload. The packaging delivery ticket
-supplies the acceptance script; until it exists and passes, publication fails
-closed.
+The script refuses any package whose manifest is private or source-only, lacks
+the `issue-runner` name, a files allowlist, supported Node engines, a packaged
+executable, or a `release:accept` check. The manifest now supplies those fields
+and points the executable at compiled `dist/cli.js`; the build emits the
+JavaScript, copies the seven internal prompts, and the allowlist ships only
+`dist/`, `templates/`, the manifest, README, and license.
+
+A release still requires a human-merged release proposal. An implementation
+merge on its own neither proposes nor publishes a release, and the first
+proposal remains `0.1.0`.
 
 ## Running the scripts outside Actions
 
@@ -105,10 +110,12 @@ repository and the package.
 
 ## Verification status
 
-This automation slice was verified by the release script tests in
+This automation slice is verified by the release script tests in
 `tests/release/`, which run both entry points against disposable Git
-repositories with controlled `gh` and `npm` commands. No workflow authentication
-check has run: GitHub App token generation, the workflow access token, npm
-authentication, a real publication, and OIDC trusted publishing remain
-unexercised, and repository Secret names alone do not establish valid
-credentials. The first reviewed workflow run is the evidence for those checks.
+repositories with controlled `gh` and `npm` commands. `tests/package/` builds
+and packs the real artifact, then runs the production acceptance script against
+that tarball. No workflow authentication check has run: GitHub App token
+generation, the workflow access token, npm authentication, a real publication,
+and OIDC trusted publishing remain unexercised, and repository Secret names
+alone do not establish valid credentials. The first reviewed workflow run is the
+evidence for those checks.

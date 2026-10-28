@@ -19,7 +19,7 @@ async function configureIssueList(
   root: string,
   issueList: number[],
 ): Promise<void> {
-  const configPath = `${root}/projects/demo/config.yaml`;
+  const configPath = `${root}/demo/config.yaml`;
   const config = await readProjectConfig<{
     issueList: number[];
   }>(configPath);

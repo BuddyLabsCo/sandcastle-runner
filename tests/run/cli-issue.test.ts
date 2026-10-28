@@ -34,7 +34,7 @@ test("delivery and document selectors are mutually exclusive and required", asyn
 
 test("value-less issue processes the configured Issue List", async () => {
   const root = await createProject();
-  const configPath = `${root}/projects/demo/config.yaml`;
+  const configPath = `${root}/demo/config.yaml`;
   const config = await readProjectConfig<{
     issueList: number[];
   }>(configPath);
@@ -89,7 +89,7 @@ test("value-less issue rejects an empty Issue List before workflow operations", 
 
 test("standalone issue runs without Documentation Maintenance configuration", async () => {
   const root = await createProject();
-  const configPath = `${root}/projects/demo/config.yaml`;
+  const configPath = `${root}/demo/config.yaml`;
   const config = await readProjectConfig<{
     workflow: { docMaintainTriggerLabel: string };
     agents: Record<string, unknown>;
@@ -97,7 +97,7 @@ test("standalone issue runs without Documentation Maintenance configuration", as
   config.workflow.docMaintainTriggerLabel = "";
   delete config.agents.documentation;
   await writeProjectConfig(configPath, config);
-  await rm(`${root}/projects/demo/prompts/documentation.md`);
+  await rm(`${root}/demo/prompts/documentation.md`);
   let parentReads = 0;
   let childReads = 0;
 
@@ -167,7 +167,7 @@ test("standalone issue applies ready-for-agent gating and terminal no_work", asy
 
 test("standalone issue uses the selected issue as the Review specification", async () => {
   const root = await createProject();
-  const configPath = `${root}/projects/demo/config.yaml`;
+  const configPath = `${root}/demo/config.yaml`;
   const config = await readProjectConfig<{
     workflow: { review: boolean; docMaintainTriggerLabel: string };
   }>(configPath);
@@ -327,7 +327,7 @@ test("no-auto-merge publishes, repairs CI, and preserves recovery state without 
   assert.equal(mergeRequests, 0);
   assert.equal(worktrees.length, 1);
   const snapshot = JSON.parse(
-    await readFile(`${root}/projects/demo/state/issue-9.json`, "utf8"),
+    await readFile(`${root}/demo/state/issue-9.json`, "utf8"),
   ) as {
     phase: string;
     publications?: { ticket: number; phase: string }[];
