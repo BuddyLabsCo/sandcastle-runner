@@ -1,6 +1,35 @@
 import assert from "node:assert/strict";
 
-import { createReleaseFixture, posixTest } from "./support/release-fixture.ts";
+import {
+  createReleaseFixture,
+  posixTest,
+  type ReleaseFixture,
+} from "./support/release-fixture.ts";
+
+// Writes the three release files for a proposal commit and returns the SHA
+// before it, so the push range is exactly the merged proposal.
+function commitReleaseFiles(
+  fixture: ReleaseFixture,
+  version: string,
+  subject: string,
+): string {
+  const before = fixture.head();
+  fixture.write(
+    "package.json",
+    `${JSON.stringify({ name: "issue-runner", version, type: "module" }, null, 2)}\n`,
+  );
+  fixture.write(
+    "package-lock.json",
+    `${JSON.stringify({ name: "issue-runner", version, lockfileVersion: 3, requires: true, packages: { "": { name: "issue-runner", version } } }, null, 2)}\n`,
+  );
+  fixture.write(
+    "CHANGELOG.md",
+    `# Changelog\n\n## ${version}\n\n- feat: [issue-8] add shipped behavior\n`,
+  );
+  fixture.git("add", ".");
+  fixture.git("commit", "-m", subject);
+  return before;
+}
 
 function manifestVersion(text: string): string | undefined {
   const manifest = JSON.parse(text) as { version?: string };
@@ -218,6 +247,105 @@ posixTest("merging a seeded first proposal proposes nothing", (t) => {
   assert.equal(
     fixture.calls("gh").filter(({ args }) => args[1] === "create").length,
     0,
+  );
+});
+
+// Regression: a human may edit the squash title, so the merged release pull
+// request identifies the release merge.
+posixTest(
+  "an edited squash subject still suppresses the release merge",
+  (t) => {
+    const fixture = createReleaseFixture(t, {
+      manifest: { name: "issue-runner", version: "0.1.0", type: "module" },
+      files: { "dist/cli.js": "export {};\n" },
+    });
+    const before = commitReleaseFiles(fixture, "0.1.0", "chore: release 0.1.0");
+    fixture.configureGitHub({
+      mergedPullRequest: {
+        number: "17",
+        mergeCommit: { oid: fixture.head() },
+      },
+    });
+
+    const result = fixture.run("auto-release-pr", { PUSH_BEFORE: before });
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(fixture.remoteHeads("auto-release"), "");
+    assert.equal(
+      fixture.calls("gh").filter(({ args }) => args[1] === "create").length,
+      0,
+    );
+  },
+);
+
+// Regression: a rebase merge can end with a maintainer's version-adjustment
+// commit, and the whole rebased range is still the release merge.
+posixTest(
+  "a rebased release with a trailing adjustment proposes nothing",
+  (t) => {
+    const fixture = createReleaseFixture(t, {
+      manifest: { name: "issue-runner", version: "0.1.0", type: "module" },
+      files: { "dist/cli.js": "export {};\n" },
+    });
+    const before = commitReleaseFiles(fixture, "0.1.0", "chore: release 0.1.0");
+    fixture.write(
+      "package.json",
+      `${JSON.stringify({ name: "issue-runner", version: "1.0.0", type: "module" }, null, 2)}\n`,
+    );
+    fixture.write(
+      "package-lock.json",
+      `${JSON.stringify({ name: "issue-runner", version: "1.0.0", lockfileVersion: 3, requires: true, packages: { "": { name: "issue-runner", version: "1.0.0" } } }, null, 2)}\n`,
+    );
+    fixture.git("add", ".");
+    fixture.git("commit", "-m", "chore: maintain the major version");
+    fixture.configureGitHub({
+      mergedPullRequest: {
+        number: "17",
+        mergeCommit: { oid: fixture.head() },
+      },
+    });
+
+    const result = fixture.run("auto-release-pr", { PUSH_BEFORE: before });
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(fixture.remoteHeads("auto-release"), "");
+  },
+);
+
+// Regression: a dependency-only change after a release merge stays eligible
+// even though the release branch was merged recently.
+posixTest("a dependency-only change after a release merge is proposed", (t) => {
+  const fixture = createReleaseFixture(t, {
+    manifest: { name: "issue-runner", version: "0.1.0", type: "module" },
+    files: { "dist/cli.js": "export {};\n" },
+  });
+  fixture.tag("v0.1.0");
+  const released = fixture.head();
+  const before = fixture.head();
+  fixture.write(
+    "package.json",
+    `${JSON.stringify({ name: "issue-runner", version: "0.1.0", type: "module", dependencies: { yaml: "2.9.1" } }, null, 2)}\n`,
+  );
+  fixture.write(
+    "package-lock.json",
+    `${JSON.stringify({ name: "issue-runner", version: "0.1.0", lockfileVersion: 3, requires: true, packages: { "": { name: "issue-runner", version: "0.1.0", dependencies: { yaml: "2.9.1" } } } }, null, 2)}\n`,
+  );
+  fixture.git("add", ".");
+  fixture.git("commit", "-m", "chore: bump yaml");
+  fixture.configureGitHub({
+    mergedPullRequest: {
+      number: "17",
+      mergeCommit: { oid: released },
+    },
+  });
+
+  const result = fixture.run("auto-release-pr", { PUSH_BEFORE: before });
+
+  assert.equal(result.status, 0, result.stderr);
+  fixture.git("fetch", "origin", "auto-release");
+  assert.equal(
+    manifestVersion(fixture.git("show", "origin/auto-release:package.json")),
+    "0.1.1",
   );
 });
 

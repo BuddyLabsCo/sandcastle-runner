@@ -16,9 +16,11 @@ credential wiring.
 - `scripts/release/auto-release-pr.ts` decides eligibility. Files under
   `.github/` are not release content; shipped Markdown prompts and every other
   shipped path are. A push that only changes the proposal's manifest, lockfile,
-  and changelog and whose head commit is the proposal itself (title
-  `chore: propose release v<version>`) is the release merge and proposes
-  nothing, even when it does not raise the version.
+  and changelog and whose head commit is the merged release pull request's
+  merge commit is the release merge and proposes nothing, even when it does not
+  raise the version. The proposal commit title is a fallback for that identity,
+  so an edited squash title or a rebase that ends with a maintainer commit is
+  still recognized.
 - The first proposal is `0.1.0`, including when packaging already seeds that
   version. Later proposals increase the patch of the latest `v<version>` tag,
   while a manifest version the maintainer already raised is proposed unchanged.
@@ -53,6 +55,11 @@ closes.
   temporary prefix and runs the installed executable with `--version`, requiring
   exit status zero and the release version. A tarball whose CLI fails to start,
   or reports another version, blocks publication.
+- Finally it runs the package-owned `release:accept` script with
+  `RELEASE_TARBALL` pointing at the candidate. That script must exit zero after
+  checking the shipped runtime prompts and initialization assets. Publication
+  stays disabled while the script is absent or failing, so version output alone
+  cannot admit an incomplete package.
 - Publication runs npm, then the tag, then the GitHub Release. Each stage is
   read first and reused only when its identity matches, so a retry resumes the
   missing stages without republishing a version or moving a tag. A local tag
@@ -65,10 +72,12 @@ closes.
 ## Publication stays disabled until the package is ready
 
 The script refuses any package whose manifest is still private or source-only,
-lacks the `issue-runner` name, a files allowlist, supported Node engines, or a
-packaged executable. That is why the current private manifest cannot publish:
-the release path is exercised by tests and by a rejected publication, not by a
-real npm upload.
+lacks the `issue-runner` name, a files allowlist, supported Node engines, a
+packaged executable, or a `release:accept` check. That is why the current
+private manifest cannot publish: the release path is exercised by tests and by a
+rejected publication, not by a real npm upload. The packaging delivery ticket
+supplies the acceptance script; until it exists and passes, publication fails
+closed.
 
 ## Running the scripts outside Actions
 

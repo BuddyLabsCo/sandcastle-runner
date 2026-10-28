@@ -58,15 +58,40 @@ function changedPaths(before: string): string[] {
   return output.split("\0").filter(Boolean);
 }
 
+// The merged release pull request identifies the release merge even when a
+// human edited the squash title or a rebase left a later maintainer commit at
+// the tip of the branch.
+function mergedReleaseCommit(): string | null {
+  const commit = gh(
+    "pr",
+    "list",
+    "--base",
+    TARGET_BRANCH,
+    "--head",
+    RELEASE_BRANCH,
+    "--state",
+    "merged",
+    "--limit",
+    "1",
+    "--json",
+    "mergeCommit",
+    "--jq",
+    ".[0].mergeCommit.oid // empty",
+  );
+  return commit.length > 0 ? commit : null;
+}
+
 // A push that only lands a release proposal is the release merge itself and
 // must not propose the next version. Ordinary dependency-only changes to the
-// manifest and lockfile keep a different subject and stay release content.
-function isReleaseEligible(paths: string[], headSubject: string): boolean {
-  const releaseOnly =
-    paths.length > 0 &&
-    paths.every((path) => releasePaths.has(path)) &&
-    releaseSubject.test(headSubject);
-  return !releaseOnly && paths.some((path) => !path.startsWith(".github/"));
+// manifest and lockfile stay release content.
+function isReleaseEligible(
+  paths: string[],
+  head: string,
+  headSubject: string,
+): boolean {
+  if (!paths.some((path) => !path.startsWith(".github/"))) return false;
+  if (!paths.every((path) => releasePaths.has(path))) return true;
+  return head !== mergedReleaseCommit() && !releaseSubject.test(headSubject);
 }
 
 function nextVersion(latest: string | null, current: string | null): string {
@@ -137,8 +162,10 @@ function main(): void {
 
   const paths = changedPaths(before);
   const current = currentVersion();
+  const head = git("rev-parse", "HEAD");
   const eligible = isReleaseEligible(
     paths,
+    head,
     git("log", "-1", "--pretty=%s", "HEAD"),
   );
   const openPullRequest = gh(

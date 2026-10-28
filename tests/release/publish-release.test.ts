@@ -422,3 +422,56 @@ posixTest("an executable that reports another version is rejected", (t) => {
   );
   assert.equal(fixture.remoteTag("v0.1.1"), "");
 });
+
+// Regression: a CLI that answers --version says nothing about the shipped
+// prompts and initialization assets. Publication stays disabled until the
+// package declares its own acceptance check.
+posixTest("a package without a declared acceptance check is rejected", (t) => {
+  const manifest = { ...readyPackage.manifest } as Record<string, unknown>;
+  delete manifest.scripts;
+  const fixture = createPublishFixture(t, {
+    manifest,
+    files: readyPackage.files,
+  });
+  const { merge, tarball } = mergedRelease(fixture);
+
+  const result = fixture.runExpectingFailure(
+    "publish-release",
+    publishEnvironment(merge, tarball),
+  );
+
+  assert.match(result.stderr, /must declare a release:accept check/);
+  assert.equal(
+    fixture.calls("npm").filter(({ args }) => args[0] === "publish").length,
+    0,
+  );
+  assert.equal(fixture.remoteTag("v0.1.1"), "");
+  assert.equal(fixture.state().release, null);
+});
+
+// Regression: a declared acceptance check that fails must block publication.
+posixTest("a failing packaged acceptance check blocks publication", (t) => {
+  const fixture = createPublishFixture(t, {
+    ...readyPackage,
+    files: {
+      ...readyPackage.files,
+      "scripts/release-accept.mjs":
+        'console.error("packaged prompts are missing");\nprocess.exit(1);\n',
+    },
+  });
+  const { merge, tarball } = mergedRelease(fixture);
+
+  const result = fixture.runExpectingFailure(
+    "publish-release",
+    publishEnvironment(merge, tarball),
+  );
+
+  assert.match(result.stderr, /packaged acceptance check failed/);
+  assert.match(result.stderr, /packaged prompts are missing/);
+  assert.equal(
+    fixture.calls("npm").filter(({ args }) => args[0] === "publish").length,
+    0,
+  );
+  assert.equal(fixture.remoteTag("v0.1.1"), "");
+  assert.equal(fixture.state().release, null);
+});

@@ -22,7 +22,7 @@
 // command so a fresh runner needs no preconfigured `.npmrc`.
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import {
   LOCKFILE_FILE,
@@ -211,6 +211,16 @@ function validateReadiness(
       "the tarball package.json does not match the release commit; pack from the validated commit",
     );
   }
+  const scripts = manifest.scripts;
+  const acceptance =
+    typeof scripts === "object" && scripts !== null && !Array.isArray(scripts)
+      ? (scripts as Record<string, unknown>)["release:accept"]
+      : undefined;
+  if (typeof acceptance !== "string" || acceptance.trim().length === 0) {
+    problems.push(
+      `${MANIFEST_FILE} must declare a release:accept check for the packed artifact`,
+    );
+  }
   if (problems.length > 0) {
     throw new Error(
       `${PACKAGE_NAME} ${release.version} is not publication-ready:\n- ${problems.join("\n- ")}`,
@@ -268,6 +278,18 @@ function acceptCandidate(tarball: string, release: Release): void {
     console.log(
       `The packed ${PACKAGE_NAME}@${release.version} installs and reports its version.`,
     );
+    // The package owns the checks that establish its shipped prompts and
+    // initialization assets work. Publication stays disabled until it declares
+    // and passes them.
+    const accepted = execute("npm", ["run", "release:accept", "--silent"], {
+      env: { ...withoutNpmToken(), RELEASE_TARBALL: resolve(tarball) },
+    });
+    if (accepted.status !== 0) {
+      throw new Error(
+        `The packaged acceptance check failed: ${accepted.stderr.trim() || accepted.stdout.trim() || `exit ${String(accepted.status)}`}`,
+      );
+    }
+    console.log("The packaged acceptance check passed.");
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

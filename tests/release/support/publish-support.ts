@@ -16,6 +16,7 @@ export const readyPackage = {
     bin: { "issue-runner": "dist/cli.js" },
     files: ["dist", "README.md", "CHANGELOG.md"],
     engines: { node: ">=22.18.0" },
+    scripts: { "release:accept": "node scripts/release-accept.mjs" },
   },
   files: {
     // Stands in for the packaged CLI: it must start from installed bytes and
@@ -24,6 +25,13 @@ export const readyPackage = {
       'import { readFileSync } from "node:fs";',
       'const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));',
       'if (process.argv.includes("--version")) console.log(manifest.version);',
+      "",
+    ].join("\n"),
+    // The package-owned acceptance check receives the candidate tarball.
+    "scripts/release-accept.mjs": [
+      'import { existsSync } from "node:fs";',
+      "const tarball = process.env.RELEASE_TARBALL;",
+      'if (!tarball || !existsSync(tarball)) { console.error("RELEASE_TARBALL is missing"); process.exit(1); }',
       "",
     ].join("\n"),
     "README.md": "# issue-runner\n",

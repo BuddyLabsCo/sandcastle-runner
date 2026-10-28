@@ -79,9 +79,13 @@ if (state.fail === args[0] + " " + args[1]) {
 }
 const save = () => fs.writeFileSync(statePath, JSON.stringify(state));
 if (args[0] === "pr" && args[1] === "list") {
-  if (flag("--base") !== "main" || flag("--head") !== "auto-release" ||
-      flag("--state") !== "open") process.exit(91);
-  console.log(state.pullRequest ? state.pullRequest.number : "");
+  if (flag("--base") !== "main" || flag("--head") !== "auto-release") process.exit(91);
+  if (flag("--state") === "merged") {
+    console.log(state.mergedPullRequest
+      ? state.mergedPullRequest.mergeCommit.oid : "");
+  } else if (flag("--state") === "open") {
+    console.log(state.pullRequest ? state.pullRequest.number : "");
+  } else process.exit(91);
   process.exit(0);
 }
 if (args[0] === "pr" && args[1] === "view") {
@@ -128,7 +132,7 @@ const npmCLI = String.raw`#!/usr/bin/env node
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
-const { execFileSync } = require("node:child_process");
+const { execFileSync, execSync } = require("node:child_process");
 const args = process.argv.slice(2);
 const statePath = process.env.RELEASE_NPM_STATE;
 const logPath = process.env.RELEASE_COMMAND_LOG;
@@ -151,6 +155,22 @@ if (args[0] === "install") {
   execFileSync("tar", ["-xzf", tarball, "-C", staging]);
   fs.cpSync(path.join(staging, "package"),
     path.join(prefix, "node_modules", "issue-runner"), { recursive: true });
+  process.exit(0);
+}
+if (args[0] === "run") {
+  const name = args[1];
+  const manifest = JSON.parse(
+    fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8"));
+  const command = manifest.scripts && manifest.scripts[name];
+  if (!command) {
+    console.error('Missing script: "' + name + '"');
+    process.exit(1);
+  }
+  try {
+    execSync(command, { stdio: "inherit", env: process.env, cwd: process.cwd() });
+  } catch (error) {
+    process.exit(typeof error.status === "number" ? error.status : 1);
+  }
   process.exit(0);
 }
 if (args[0] === "view") {
@@ -250,7 +270,12 @@ export function createReleaseFixture(
 
   writeFileSync(
     githubState,
-    JSON.stringify({ pullRequest: null, release: null, fail: "" }),
+    JSON.stringify({
+      pullRequest: null,
+      mergedPullRequest: null,
+      release: null,
+      fail: "",
+    }),
   );
   writeFileSync(
     npmState,
