@@ -209,7 +209,9 @@ if (args[0] === "publish") {
   }
   state.registry[version] = "sha512-" +
     crypto.createHash("sha512").update(fs.readFileSync(tarball)).digest("base64");
-  state.latest = version;
+  // A real registry can keep answering with the previous latest tag for a
+  // while after a successful upload; only the exit status is authoritative.
+  if (!state.staleLatest) state.latest = version;
   save();
   console.log("+ issue-runner@" + version);
   process.exit(0);
@@ -279,7 +281,13 @@ export function createReleaseFixture(
   );
   writeFileSync(
     npmState,
-    JSON.stringify({ registry: {}, latest: "", fail: "", message: "" }),
+    JSON.stringify({
+      registry: {},
+      latest: "",
+      staleLatest: false,
+      fail: "",
+      message: "",
+    }),
   );
   writeFileSync(log, "");
   writeFileSync(path.join(bin, "gh"), githubCLI);

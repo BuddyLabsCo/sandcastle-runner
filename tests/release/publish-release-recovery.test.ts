@@ -191,6 +191,29 @@ posixTest(
   },
 );
 
+// Regression: the exit status of `npm publish` is the authority for the
+// publication stage. Any nonzero exit, not only an authorization rejection,
+// must stop before the tag and Release are written.
+posixTest("a failing npm publish stops before the tag and Release", (t) => {
+  const fixture = createPublishFixture(t);
+  const { merge, tarball } = mergedRelease(fixture);
+  fixture.configureNpm({
+    fail: "publish",
+    message: "npm error code E500\nnpm error the registry rejected the upload",
+  });
+
+  const result = fixture.runExpectingFailure(
+    "publish-release",
+    publishEnvironment(merge, tarball),
+  );
+
+  assert.match(result.stderr, /npm publish issue-runner@0\.1\.1 failed/);
+  assert.match(result.stderr, /registry rejected the upload/);
+  assert.match(result.stderr, /No publication stages completed\./);
+  assert.equal(fixture.remoteTag("v0.1.1"), "");
+  assert.equal(fixture.state().release, null);
+});
+
 // Regression: a network failure while reading the registry must never be
 // mistaken for an unpublished version.
 posixTest("a registry network failure is not treated as an absence", (t) => {
