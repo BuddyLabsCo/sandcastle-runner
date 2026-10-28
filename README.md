@@ -27,12 +27,12 @@ flowchart TD
     subgraph B1["Batch 1: two issues in parallel"]
         A43["Sub #43"] --> I43["AI: codebuddy implement"]
         I43 --> R43["AI: codex review"]
-        R43 -- Findings --> F43["AI: codebuddy fix"] --> R43
+        R43 -- "Findings: fix in same session" --> I43
         R43 -- Clean --> PR43["Publish PR"] --> C43["Wait for CI"]
         C43 -- Failed --> CI43["AI: codebuddy repair CI"] --> C43
         A44["Sub #44: documentation label"] --> I44["AI: codebuddy implement"]
         I44 --> R44["AI: codex review"]
-        R44 -- Findings --> F44["AI: codebuddy fix"] --> R44
+        R44 -- "Findings: fix in same session" --> I44
         R44 -- Clean --> PR44["Publish PR"] --> C44["Wait for CI"]
         C44 -- Failed --> CI44["AI: codebuddy repair CI"] --> C44
     end
@@ -51,7 +51,7 @@ flowchart TD
     subgraph B2["Batch 2: remaining issue"]
         A45["Sub #45"] --> I45["AI: codebuddy implement"]
         I45 --> R45["AI: codex review"]
-        R45 -- Findings --> F45["AI: codebuddy fix"] --> R45
+        R45 -- "Findings: fix in same session" --> I45
         R45 -- Clean --> PR45["Publish PR"] --> C45["Wait for CI"]
         C45 -- CI-ready --> M45["Merge PR"] --> T45["Close #45"]
         T45 --> W45["Clean Worktree"]
