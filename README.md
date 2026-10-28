@@ -42,11 +42,15 @@ session state on paths without Chinese characters.
 
 ## Installation
 
-Run the latest release with `npx`, or install it globally:
-
+Run the latest release with `npx`:
 ```sh
 npx issue-runner@latest --help
+```
+
+or install it globally:
+```sh
 npm install -g issue-runner@latest
+issue-runner --help
 ```
 
 ## Initialize a Project
@@ -95,7 +99,11 @@ Edit the three prompt files with your repository's implementation, review, and d
 ## Run
 
 ```sh
-issue-runner run --project my-project --parent 42 # Deliver the child issues of #42.
+issue-runner run --project my-project --parent 42                # Deliver the child issues of #42.
+issue-runner run --project my-project --issue 43                 # Deliver single issue #42.
+issue-runner run --project my-project --issue                    # Deliver the issues list configured in config.yaml.
+issue-runner run --project my-project --document                 # only start document maintain job
+issue-runner run --project my-project --issue 43 --no-auto-merge # Deliver single issue #42, but keep pr open and won't remove related worktree
 ```
 
 ## Help and version
