@@ -29,7 +29,7 @@ flowchart TD
         A44["Sub #44: documentation label<br/>AI: Implement / review / fix"] --> C44["Publish PR / CI<br/>AI: Repair CI if needed"]
     end
     C43 & C44 --> G["Wait until both PRs are CI-ready"]
-    G --> M["Merge PR for #43, then PR for #44<br/>AI: Resolve merge conflicts if needed<br/>Close issues / clean Worktrees"]
+    G --> M["Merge PRs in order<br/>AI: Resolve merge conflicts if needed<br/>Close issues"]
     M --> D["Create Maintenance Issue<br/>Triggered by Sub #44"]
     D --> U["AI: Update documentation"]
     U --> Q{"Documentation changed?"}
@@ -47,9 +47,9 @@ flowchart TD
 
 </details>
 
-This keeps AI agents focused on writing, reviewing, and repairing code while
+Keeps AI agents focused on writing, reviewing, and repairing code while
 reducing unnecessary token use for workflow coordination. Runner invokes agents
-through [Sandcastle](https://github.com/mattpocock/sandcastle) when a task needs code changes or review.
+through [Sandcastle](https://github.com/mattpocock/sandcastle)
 
 ## Prerequisites
 
