@@ -5,6 +5,9 @@ delivering GitHub tickets. It selects eligible tickets, prepares isolated
 worktrees, verifies and pushes commits, publishes pull requests, waits for CI,
 and coordinates merges and ticket closure.
 
+<details>
+<summary>Expand the Parent Run workflow</summary>
+
 This successful Run processes three eligible sub-issues with `maxBatchSize: 2` and `workflow.docMaintainTriggerLabel: documentation`. Sub-issue #44 has the `documentation` label. `AI:` marks coding-agent work.
 
 ```sh
@@ -34,6 +37,8 @@ flowchart TD
     end
     M45 --> F["Close Parent #42"]
 ```
+
+</details>
 
 This keeps AI agents focused on writing, reviewing, and repairing code while
 reducing unnecessary token use for workflow coordination. Runner invokes agents
