@@ -1,3 +1,5 @@
+[English](config-guide.md) | [简体中文](config-guide.zh-CN.md)
+
 # Configuration and workflow guide
 
 A Project is one child of the directory you launch Runner from. It holds
