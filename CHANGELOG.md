@@ -1,8 +1,15 @@
 # Changelog
 
+## 0.1.2
+
+- - feat: [issue-298] add npm keywords for coding-agent orchestration and GitHub Issues (#300)
+- - feat: [issue-287] publish npm releases with OIDC (#299)
+- - fix: [issue-295] trust npm publish exit status over latest (#296)
+
 ## 0.1.1
 
 - - test: [issue-292] await timeout test log completion (#293)
+
 
 ## 0.1.0
 
