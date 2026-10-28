@@ -5,6 +5,13 @@ delivering GitHub tickets. It selects eligible tickets, prepares isolated
 worktrees, verifies and pushes commits, publishes pull requests, waits for CI,
 and coordinates merges and ticket closure.
 
+Runner runs on Windows, macOS, and Linux and supports `codex`,
+`claude-code`, `pi`, and `codebuddy`. 
+
+The npm package and executable are both named `issue-runner`. See the
+[Configuration and workflow guide](docs/config-guide.md) for detailed setup and workflow explanations.
+
+## What can it do?
 <details>
 <summary>Expand the Parent Run workflow</summary>
 
@@ -22,7 +29,7 @@ flowchart TD
         A44["Sub #44: documentation label<br/>AI: Implement / review / fix"] --> C44["Publish PR / CI<br/>AI: Repair CI if needed"]
     end
     C43 & C44 --> G["Wait until both PRs are CI-ready"]
-    G --> M["Merge PR for #43, then PR for #44<br/>Close issues / clean Worktrees"]
+    G --> M["Merge PR for #43, then PR for #44<br/>AI: Resolve merge conflicts if needed<br/>Close issues / clean Worktrees"]
     M --> D["Create Maintenance Issue<br/>Triggered by Sub #44"]
     D --> U["AI: Update documentation"]
     U --> Q{"Documentation changed?"}
@@ -32,7 +39,7 @@ flowchart TD
     Q -- No --> DF
     DF --> A45
     subgraph B2["Batch 2: remaining issue"]
-        A45["Sub #45<br/>AI: Implement / review / fix"] --> C45["Publish PR / CI<br/>AI: Repair CI if needed"]
+        A45["Sub #45<br/>AI: Implement / review / fix"] --> C45["Publish PR / CI"]
         C45 --> M45["Merge PR / close #45 / clean Worktree"]
     end
     M45 --> F["Close Parent #42"]
@@ -43,12 +50,6 @@ flowchart TD
 This keeps AI agents focused on writing, reviewing, and repairing code while
 reducing unnecessary token use for workflow coordination. Runner invokes agents
 through [Sandcastle](https://github.com/mattpocock/sandcastle) when a task needs code changes or review.
-
-Runner runs on Windows, macOS, and Linux and supports `codex`,
-`claude-code`, `pi`, and `codebuddy`. 
-
-The npm package and executable are both named `issue-runner`. See the
-[Configuration and workflow guide](docs/config-guide.md) for detailed setup and workflow explanations.
 
 ## Prerequisites
 
