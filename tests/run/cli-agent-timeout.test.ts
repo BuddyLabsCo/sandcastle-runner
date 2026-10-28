@@ -34,6 +34,10 @@ test("overall timeout retains the original success and logs until Enter without 
   const complete = new Promise<void>((resolve) => {
     finish = resolve;
   });
+  let finishLog!: () => void;
+  const logWritten = new Promise<void>((resolve) => {
+    finishLog = resolve;
+  });
   let calls = 0;
   let inspections = 0;
   let logFile = "";
@@ -52,6 +56,7 @@ test("overall timeout retains the original success and logs until Enter without 
       activeSignal = options.signal;
       await complete;
       await writeFile(logFile, "late original output\n");
+      finishLog();
       return agentResult(
         `<agent_attempt_result>${JSON.stringify(committed)}</agent_attempt_result>`,
         committed,
@@ -87,7 +92,7 @@ test("overall timeout retains the original success and logs until Enter without 
           assert.match(message, /Enter.*same invocation/iu);
           assert.equal(activeSignal?.aborted, false);
           finish();
-          for (let turn = 0; turn < 100; turn += 1) await setImmediate();
+          await logWritten;
           assert.equal(inspections, 0);
           assert.equal(
             await readFile(logFile, "utf8"),
