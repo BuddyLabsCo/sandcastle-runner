@@ -15,10 +15,13 @@ src/
   run/            Workflow decisions and in-memory Run state
   adapters/       GitHub, Git, Sandcastle, clock, and terminal operations
   prompts/        Runner-owned task-context, continuation, and output prompts
+scripts/
+  release/        Standalone release proposal and publication entry points
 tests/
   recovery.test.ts Recovery snapshot behavior
   run/            Behavioral scenarios through the real Run
   adapters/       Adapter contract, recovery, and local process-lifecycle checks
+  release/        Release script and workflow boundary checks
   support/        Scripted fakes and controlled time
 ```
 
@@ -30,6 +33,21 @@ logs, and Recovery Snapshots remain external files in their configured
 locations. Runner-owned templates under `src/prompts/` supply task context, execution restrictions,
 continuation instructions, and output contracts. Project prompts contain only
 repository-specific instructions.
+
+## Release scripts
+
+`scripts/release/` holds the production entry points that the release workflows
+invoke. They are not part of the Runner CLI or the published package. Release
+eligibility, version and changelog decisions, release pull request updates,
+publication validation, and retry behavior live there; workflows supply only
+events, permissions, checkout, toolchain setup, and credential wiring.
+
+Each entry point runs outside Actions with explicit environment inputs and
+reports failures through output and exit status. `release-lib.ts` owns shared
+Git, `gh`, version, manifest, and changelog helpers; `package-artifact.ts` reads
+a packed npm tarball. Release scripts import each other and Node built-ins,
+never `src/`. Tests drive the entry points in disposable Git repositories with
+controlled `gh` and `npm` commands instead of importing private helpers.
 
 ## Workflow modules
 
