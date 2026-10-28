@@ -128,3 +128,11 @@ _Avoid_: Operation retry
 
 **Retry Policy**: The Project-configured operation and agent retry counts plus their delay schedules.
 _Avoid_: Retry defaults
+
+**Release Proposal**:
+The single pull request that proposes the next package version and its changelog for a release-eligible change on the repository's `main` branch. A human reviews and merges it; automation never approves or merges it.
+_Avoid_: Version bump branch, changelog pull request
+
+**Release Publication**:
+The npm publication, `v<version>` tag, and GitHub Release created for the exact merged commit of a Release Proposal after the required checks and package validation pass.
+_Avoid_: Deploy, release build

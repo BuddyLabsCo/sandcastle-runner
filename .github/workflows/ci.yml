@@ -2,6 +2,14 @@ name: CI
 
 on:
   pull_request:
+  # Publication re-runs these checks on the exact merged release commit, so this
+  # workflow is the single definition of the required checks.
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit to check instead of the event revision
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -17,6 +25,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
       - uses: actions/setup-node@v7
         with:
           node-version: 24

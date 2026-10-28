@@ -1,0 +1,74 @@
+# Publishes the npm tarball of the release pull request a human merged into main.
+# scripts/release/publish-release.ts rejects every input that is not a squash or
+# rebase merge of this repository's auto-release branch before it writes to the
+# registry, a tag or a Release. Publication stays disabled while the package is
+# not publication-ready: the script refuses the current private source manifest.
+name: publish-release
+
+on:
+  pull_request:
+    types:
+      - closed
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-release
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    name: Re-run the required checks
+    if: ${{ github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'auto-release' }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ github.event.pull_request.merge_commit_sha }}
+
+  publish:
+    name: Publish the merged release
+    needs:
+      - checks
+    if: ${{ github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'auto-release' }}
+    permissions:
+      contents: write
+      pull-requests: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the merged release commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Build the package
+        run: npm run build --if-present
+      - name: Pack the candidate tarball
+        id: pack
+        run: |
+          mkdir -p "$RUNNER_TEMP/release"
+          archive="$(npm pack --pack-destination "$RUNNER_TEMP/release" --silent)"
+          printf 'tarball=%s\n' "$RUNNER_TEMP/release/$archive" >> "$GITHUB_OUTPUT"
+      - name: Publish the merged release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_MERGED: ${{ github.event.pull_request.merged }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: node scripts/release/publish-release.ts
