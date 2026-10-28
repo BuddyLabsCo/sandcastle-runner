@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+
+- - test: [issue-292] await timeout test log completion (#293)
+
 ## 0.1.0
 
 - - feat: [issue-286] ship the installable issue-runner CLI (#290)
