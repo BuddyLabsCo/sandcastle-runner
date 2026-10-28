@@ -25,24 +25,39 @@ issue-runner run --project my-project --parent 42
 flowchart TD
     P["Parent #42: sub-issues #43, #44, #45"] --> A43 & A44
     subgraph B1["Batch 1: two issues in parallel"]
-        A43["Sub #43<br/>AI: Implement / review / fix"] --> C43["Publish PR / CI<br/>AI: Repair CI if needed"]
-        A44["Sub #44: documentation label<br/>AI: Implement / review / fix"] --> C44["Publish PR / CI<br/>AI: Repair CI if needed"]
+        A43["Sub #43"] --> I43["AI: codebuddy implement"]
+        I43 --> R43["AI: codex review"]
+        R43 -- "Findings: fix in same session" --> I43
+        R43 -- Clean --> PR43["Publish PR"] --> C43["Wait for CI"]
+        C43 -- Failed --> CI43["AI: codebuddy repair CI"] --> C43
+        A44["Sub #44: documentation label"] --> I44["AI: codebuddy implement"]
+        I44 --> R44["AI: codex review"]
+        R44 -- "Findings: fix in same session" --> I44
+        R44 -- Clean --> PR44["Publish PR"] --> C44["Wait for CI"]
+        C44 -- Failed --> CI44["AI: codebuddy repair CI"] --> C44
     end
-    C43 & C44 --> G["Wait until both PRs are CI-ready"]
-    G --> M["Merge PRs in order<br/>AI: Resolve merge conflicts if needed<br/>Close issues"]
-    M --> D["Create Maintenance Issue<br/>Triggered by Sub #44"]
-    D --> U["AI: Update documentation"]
+    C43 & C44 -- CI-ready --> G["Wait until both PRs are CI-ready"]
+    G --> M["Merge PRs in order"]
+    M -- Conflict --> MC["AI: codex resolve merge conflicts"] --> M
+    M -- Merged --> T["Close issues"]
+    T --> D["Create Maintenance Issue<br/>Triggered by Sub #44"]
+    D --> U["AI: claude-code update documentation"]
     U --> Q{"Documentation changed?"}
-    Q -- Yes --> DC["Publish documentation PR / CI<br/>AI: Repair CI if needed"]
-    DC --> DM["Merge documentation PR"]
-    DM --> DF["Close Maintenance Issue / clean Worktree"]
+    Q -- Yes --> DP["Publish documentation PR"] --> DC["Wait for CI"]
+    DC -- Failed --> DCI["AI: codebuddy repair CI"] --> DC
+    DC -- CI-ready --> DM["Merge documentation PR"]
+    DM --> DF["Close Maintenance Issue"]
     Q -- No --> DF
-    DF --> A45
+    DF --> DW["Clean Worktree"] --> A45
     subgraph B2["Batch 2: remaining issue"]
-        A45["Sub #45<br/>AI: Implement / review / fix"] --> C45["Publish PR / CI"]
-        C45 --> M45["Merge PR / close #45 / clean Worktree"]
+        A45["Sub #45"] --> I45["AI: codebuddy implement"]
+        I45 --> R45["AI: codex review"]
+        R45 -- "Findings: fix in same session" --> I45
+        R45 -- Clean --> PR45["Publish PR"] --> C45["Wait for CI"]
+        C45 -- CI-ready --> M45["Merge PR"] --> T45["Close #45"]
+        T45 --> W45["Clean Worktree"]
     end
-    M45 --> F["Close Parent #42"]
+    W45 --> F["Close Parent #42"]
 ```
 
 </details>
@@ -238,9 +253,6 @@ The test suite uses scripted adapters and harmless local processes. It does not
 call authenticated agents or mutate a remote GitHub repository. Packaging tests
 build and pack the real artifact, install it into a temporary prefix, and run
 the npm executable shim from unrelated directories.
-
-Maintainers: see [release guidance](docs/releasing.md) for the human-reviewed
-release flow, npm OIDC authorization, and real-release verification.
 
 ## Acknowledgements
 
