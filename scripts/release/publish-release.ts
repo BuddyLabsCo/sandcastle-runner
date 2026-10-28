@@ -495,13 +495,11 @@ function main(): void {
 
   validateTag(release.tag, merge);
 
+  // The exit status of `npm publish` owns the publication stage. A registry can
+  // keep reporting the previous `latest` while the new version propagates, so
+  // re-reading it here would fail a release whose bytes were published; retries
+  // still compare `latest` before reusing an already published version.
   if (published === null) publishToRegistry(tarball, release.version);
-  const latestAfterPublish = published === null ? latestDistTag() : latest;
-  if (latestAfterPublish !== release.version) {
-    throw new Error(
-      `npm latest points at ${String(latestAfterPublish)} after publication, not ${release.version}`,
-    );
-  }
   ensureTag(release.tag, merge);
   const notes = gh(
     "pr",

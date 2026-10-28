@@ -59,6 +59,39 @@ posixTest(
   },
 );
 
+// Regression: the registry can keep reporting the previous `latest` right
+// after a successful upload. The exit status of `npm publish` owns that stage,
+// so the tag and Release must still be created without a further latest read.
+posixTest(
+  "a publication whose registry still reports the previous latest completes",
+  (t) => {
+    const fixture = createPublishFixture(t);
+    const { merge, tarball } = mergedRelease(fixture);
+    fixture.configureNpm({ latest: "0.1.0", staleLatest: true });
+
+    const result = fixture.run(
+      "publish-release",
+      publishEnvironment(merge, tarball),
+    );
+
+    assert.equal(result.status, 0, result.stderr);
+    const npm = fixture.calls("npm");
+    const publishIndex = npm.findIndex(({ args }) => args[0] === "publish");
+    assert.ok(publishIndex >= 0, "the candidate must be published");
+    assert.deepEqual(
+      npm
+        .slice(publishIndex + 1)
+        .filter(
+          ({ args }) => args[0] === "view" && args[2] === "dist-tags.latest",
+        ),
+      [],
+      "publication must not wait on the registry to report the new latest",
+    );
+    assert.equal(fixture.remoteTag("v0.1.1"), merge);
+    assert.deepEqual(fixture.state().release, { tag: "v0.1.1", draft: false });
+  },
+);
+
 // Regression: only the release branch of this repository, merged into main, may
 // publish. Observe that no registry, tag or Release write happens.
 for (const [name, overrides, expected] of [
