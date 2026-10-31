@@ -1,3 +1,4 @@
+import { lstat } from "node:fs/promises";
 import path from "node:path";
 
 import type { GitWorkspace, RegisteredWorktree } from "./contracts.ts";
@@ -47,6 +48,20 @@ export function matchingWorktrees(
       path.resolve(entry.worktree).startsWith(boundedRoot) &&
       prefix.test(entry.branch),
   );
+}
+
+async function assertWorktreeRemoved(worktree: string): Promise<void> {
+  // Git can unregister a Worktree even when directory removal fails.
+  const remaining = await lstat(worktree).catch(
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    },
+  );
+  if (remaining)
+    throw new Error(
+      `Worktree directory still exists at ${worktree}; verify and remove the retained directory before retrying cleanup`,
+    );
 }
 
 export async function cleanupTicketWorktrees(
@@ -104,6 +119,7 @@ export async function cleanupTicketWorktrees(
       )
     )
       await gitWorkspace.removeWorktree(checkout, candidate.worktree);
+    else await assertWorktreeRemoved(candidate.worktree);
     await gitWorkspace.deleteBranch(checkout, candidate.branch);
   }
   return {

@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
+
+import { registerTempRoot } from "../support/temp-cleanup.ts";
 
 import {
   cleanupTicketWorktrees,
@@ -7,6 +12,62 @@ import {
   removeReplacedWorkspace,
 } from "../../src/run/cleanup.ts";
 import type { GitWorkspace } from "../../src/run/contracts.ts";
+
+test("terminal cleanup retains an unregistered directory until it is removed", async () => {
+  const root = registerTempRoot(
+    await mkdtemp(path.join(tmpdir(), "cleanup-orphan-")),
+  );
+  const worktree = path.join(root, "ticket-5");
+  const branch = "sandcastle/run/ticket-5";
+  const prior = [`${worktree}:${branch}`];
+  const deleted: string[] = [];
+  const workspace = {
+    async listWorktrees() {
+      return [];
+    },
+    async removeWorktree() {
+      assert.fail("an unregistered directory has no verified ownership");
+    },
+    async deleteBranch(_checkout: string, value: string) {
+      deleted.push(value);
+    },
+  } as unknown as GitWorkspace;
+
+  try {
+    await mkdir(worktree);
+    let pending: string[] = [];
+    await assert.rejects(
+      cleanupTicketWorktrees(
+        workspace,
+        "/repo",
+        "/repo",
+        root,
+        5,
+        async (candidates) => {
+          pending = candidates;
+        },
+        prior,
+      ),
+      /directory still exists.*remove.*retry/iu,
+    );
+    assert.deepEqual(pending, prior);
+    assert.deepEqual(deleted, []);
+    await rm(worktree, { recursive: true });
+    const result = await cleanupTicketWorktrees(
+      workspace,
+      "/repo",
+      "/repo",
+      root,
+      5,
+      undefined,
+      prior,
+    );
+    assert.equal(result.status, "cleaned");
+    assert.deepEqual(deleted, [branch]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("terminal cleanup retries a branch after its Worktree was removed", async () => {
   const calls: string[] = [];

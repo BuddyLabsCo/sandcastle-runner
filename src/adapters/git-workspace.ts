@@ -209,9 +209,11 @@ export class LocalGitWorkspace implements GitWorkspace {
   }
 
   async removeWorktree(checkout: string, worktree: string): Promise<void> {
-    await this.command(checkout, ["worktree", "remove", "--force", worktree], {
-      timeout: 60_000,
-    });
+    await this.command(
+      checkout,
+      ["-c", "core.longpaths=true", "worktree", "remove", "--force", worktree],
+      { timeout: 60_000 },
+    );
   }
 
   async deleteBranch(checkout: string, branch: string): Promise<void> {
