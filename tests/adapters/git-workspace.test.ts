@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -232,13 +239,14 @@ test("terminal cleanup matches only owned worktrees with a bounded ticket prefix
   );
 });
 
-test("terminal cleanup retries after deleting one of several local Git branches", async () => {
+test("terminal cleanup removes long dependency paths and retries remaining local Git branches", async () => {
   const root = registerTempRoot(
     await realpath(await mkdtemp(path.join(tmpdir(), "git-cleanup-retry-"))),
   );
   const checkout = path.join(root, "repo");
   const git = promisify(execFile);
   await git("git", ["init", checkout]);
+  await git("git", ["-C", checkout, "config", "core.longpaths", "false"]);
   await git("git", [
     "-C",
     checkout,
@@ -268,6 +276,11 @@ test("terminal cleanup retries after deleting one of several local Git branches"
   try {
     for (const entry of worktrees)
       await workspace.createWorktree({ checkout, ...entry, base: head.trim() });
+    let dependency = path.join(worktrees[0]!.worktree, "node_modules");
+    while (dependency.length < 310)
+      dependency = path.join(dependency, "nested-dependency-package");
+    await mkdir(dependency, { recursive: true });
+    await writeFile(path.join(dependency, "index.js"), "// dependency\n");
     const removeWorktree = workspace.removeWorktree.bind(workspace);
     let failRemoval = true;
     workspace.removeWorktree = async (repository, worktree) => {
@@ -301,6 +314,8 @@ test("terminal cleanup retries after deleting one of several local Git branches"
       pending,
     );
     assert.equal(result.status, "cleaned");
+    for (const entry of worktrees)
+      await assert.rejects(lstat(entry.worktree), { code: "ENOENT" });
     assert.deepEqual(
       (await workspace.listWorktrees(checkout)).map(({ worktree }) => worktree),
       [checkout],
@@ -313,6 +328,14 @@ test("terminal cleanup retries after deleting one of several local Git branches"
       "refs/heads/sandcastle/",
     ]);
     assert.equal(branches, "");
+    const { stdout: longpaths } = await git("git", [
+      "-C",
+      checkout,
+      "config",
+      "--get",
+      "core.longpaths",
+    ]);
+    assert.equal(longpaths.trim(), "false");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
