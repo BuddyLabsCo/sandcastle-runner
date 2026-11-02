@@ -38,11 +38,13 @@ function createReviewInput(
   handoff: VerifiedHandoff,
   reviewBase: string,
   findingsFile: string,
+  reviewRound: number,
 ): string {
   return JSON.stringify({
     worktree: handoff.worktree,
     deliveryBranch: handoff.branch,
     deliveryTicket: `${input.repository}#${handoff.ticket}`,
+    reviewRound,
     reviewBase,
     implementationHead: handoff.commits.at(-1)!.sha,
     findingsFile,
@@ -157,6 +159,7 @@ async function runReviewRound(
         handoff,
         round.base,
         findingsFile,
+        round.number,
       );
       let result: ReviewAttemptResult;
       try {
@@ -408,6 +411,7 @@ export async function reviewHandoff(
         handoff,
         reviewBase,
         reviewSession.logFile!.replace(/\.log$/u, `-round-${round + 1}.md`),
+        round + 1,
       ),
     );
   }

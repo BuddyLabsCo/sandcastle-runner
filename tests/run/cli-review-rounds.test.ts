@@ -117,10 +117,12 @@ test("review rounds reuse both sessions, fix every findings round, and review on
             const handoff = JSON.parse(
               String(input.promptArgs.REVIEW_INPUT),
             ) as {
+              reviewRound: number;
               reviewBase: string;
               implementationHead: string;
               findingsFile: string;
             };
+            assert.equal(handoff.reviewRound, round);
             assert.ok(handoff.findingsFile.endsWith(`-round-${round}.md`));
             assert.equal(
               handoff.reviewBase,
@@ -289,7 +291,8 @@ test("findings pauses stay in the relevant session and retain files until succes
             reviews += 1;
             const handoff = JSON.parse(
               String(input.promptArgs.REVIEW_INPUT),
-            ) as { findingsFile: string };
+            ) as { reviewRound: number; findingsFile: string };
+            assert.equal(handoff.reviewRound, 1);
             assert.ok(handoff.findingsFile.endsWith("-round-1.md"));
             if (reviews === 1) {
               reviewLog = input.logFile;

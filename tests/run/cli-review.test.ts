@@ -174,12 +174,14 @@ test("a clean fresh-context review gates publication and preserves implementatio
     "findingsFile",
     "implementationHead",
     "reviewBase",
+    "reviewRound",
     "worktree",
   ]);
   assert.equal(reviewInputData.deliveryTicket, "owner/repo#9");
   assert.equal(reviewInputData.worktree, implementationInput?.worktree);
   assert.equal(reviewInputData.deliveryBranch, branch);
   assert.equal(reviewInputData.reviewBase, "a".repeat(40));
+  assert.equal(reviewInputData.reviewRound, 1);
   assert.equal(reviewInputData.implementationHead, implementation.sha);
   assert.equal(
     path.dirname(String(reviewInputData.findingsFile)),
@@ -323,6 +325,10 @@ test("review continuation verifies the Worktree without consuming a review round
         async executeReview(input) {
           gitConfigs.push(input.gitConfigGlobal);
           reviews += 1;
+          const reviewInputData = JSON.parse(
+            String(input.promptArgs.REVIEW_INPUT),
+          ) as { reviewRound: number };
+          assert.equal(reviewInputData.reviewRound, 1);
           if (reviews === 2) {
             return {
               outcome: "passed",
