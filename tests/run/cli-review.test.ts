@@ -164,7 +164,11 @@ test("a clean fresh-context review gates publication and preserves implementatio
   assert.equal(reviewInput.agent, "pi");
   assert.equal(reviewInput.model, "claude-sonnet-4-6");
   assert.deepEqual(reviewInput.options, { thinking: "high" });
-  assert.deepEqual(Object.keys(reviewInput.promptArgs), ["REVIEW_INPUT"]);
+  assert.deepEqual(Object.keys(reviewInput.promptArgs).sort(), [
+    "REVIEW_INPUT",
+    "REVIEW_ROUND",
+  ]);
+  assert.equal(reviewInput.promptArgs.REVIEW_ROUND, 1);
   const reviewInputData = JSON.parse(
     String(reviewInput.promptArgs.REVIEW_INPUT),
   ) as Record<string, unknown>;
@@ -174,14 +178,12 @@ test("a clean fresh-context review gates publication and preserves implementatio
     "findingsFile",
     "implementationHead",
     "reviewBase",
-    "reviewRound",
     "worktree",
   ]);
   assert.equal(reviewInputData.deliveryTicket, "owner/repo#9");
   assert.equal(reviewInputData.worktree, implementationInput?.worktree);
   assert.equal(reviewInputData.deliveryBranch, branch);
   assert.equal(reviewInputData.reviewBase, "a".repeat(40));
-  assert.equal(reviewInputData.reviewRound, 1);
   assert.equal(reviewInputData.implementationHead, implementation.sha);
   assert.equal(
     path.dirname(String(reviewInputData.findingsFile)),
@@ -325,10 +327,7 @@ test("review continuation verifies the Worktree without consuming a review round
         async executeReview(input) {
           gitConfigs.push(input.gitConfigGlobal);
           reviews += 1;
-          const reviewInputData = JSON.parse(
-            String(input.promptArgs.REVIEW_INPUT),
-          ) as { reviewRound: number };
-          assert.equal(reviewInputData.reviewRound, 1);
+          assert.equal(input.promptArgs.REVIEW_ROUND, 1);
           if (reviews === 2) {
             return {
               outcome: "passed",

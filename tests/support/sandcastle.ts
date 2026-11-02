@@ -68,7 +68,7 @@ export function reviewInput() {
     ...review,
     runName: "review issue 9",
     promptFile: path.resolve("templates/prompts/review.md"),
-    promptArgs: { REVIEW_INPUT: "{}" },
+    promptArgs: { REVIEW_INPUT: "{}", REVIEW_ROUND: 1 },
   };
 }
 

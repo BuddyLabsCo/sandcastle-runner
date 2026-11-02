@@ -60,9 +60,9 @@ test("Runner supplies task context even when project prompts contain only user i
         ...reviewInput(),
         promptFile: reviewPromptFile,
         promptArgs: {
+          REVIEW_ROUND: 1,
           REVIEW_INPUT: JSON.stringify({
             deliveryTicket: context.TICKET_REFERENCE,
-            reviewRound: 1,
             worktree: input().worktree,
             deliveryBranch: input().branch,
             reviewBase: input().base,
@@ -124,12 +124,12 @@ test("Runner supplies task context even when project prompts contain only user i
     assert.ok(prompt.includes(`<${tag}>`));
     assert.doesNotMatch(prompt, /\{\{[A-Z_]+\}\}/u);
     if (review) {
-      assert.match(prompt, /"reviewRound":1/u);
+      assert.match(prompt, /^Review round: 1$/mu);
+      assert.doesNotMatch(prompt, /"reviewRound"/u);
       assert.ok(prompt.includes("/runner/logs/findings.md"));
       assert.ok(prompt.includes("b".repeat(40)));
       const nextInput = {
         deliveryTicket: context.TICKET_REFERENCE,
-        reviewRound: 2,
         worktree: input().worktree,
         deliveryBranch: input().branch,
         reviewBase: "b".repeat(40),
@@ -138,17 +138,23 @@ test("Runner supplies task context even when project prompts contain only user i
       };
       const continuation = (
         await readFile("src/prompts/review-attempt-input.md", "utf8")
-      ).replaceAll("{{REVIEW_INPUT}}", JSON.stringify(nextInput));
+      )
+        .replaceAll("{{REVIEW_INPUT}}", JSON.stringify(nextInput))
+        .replaceAll("{{REVIEW_ROUND}}", "2");
       await executor.executeReview({
         ...reviewInput(),
         promptFile: reviewPromptFile,
-        promptArgs: { REVIEW_INPUT: JSON.stringify(nextInput) },
+        promptArgs: {
+          REVIEW_INPUT: JSON.stringify(nextInput),
+          REVIEW_ROUND: 2,
+        },
         resumePrompt: continuation,
       });
       const resumedPrompt = String(prompts[1]?.prompt);
       assert.equal(prompts[1]?.resumeSession, "session-id");
       assert.ok(resumedPrompt.includes(JSON.stringify(nextInput)));
-      assert.match(resumedPrompt, /"reviewRound":2/u);
+      assert.match(resumedPrompt, /^Review round: 2$/mu);
+      assert.doesNotMatch(resumedPrompt, /"reviewRound"|\{\{[A-Z_]+\}\}/u);
       assert.doesNotMatch(
         resumedPrompt,
         /Follow this project's instructions|\bRunner\b/u,

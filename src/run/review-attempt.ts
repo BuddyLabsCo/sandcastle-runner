@@ -38,13 +38,11 @@ function createReviewInput(
   handoff: VerifiedHandoff,
   reviewBase: string,
   findingsFile: string,
-  reviewRound: number,
 ): string {
   return JSON.stringify({
     worktree: handoff.worktree,
     deliveryBranch: handoff.branch,
     deliveryTicket: `${input.repository}#${handoff.ticket}`,
-    reviewRound,
     reviewBase,
     implementationHead: handoff.commits.at(-1)!.sha,
     findingsFile,
@@ -159,7 +157,6 @@ async function runReviewRound(
         handoff,
         round.base,
         findingsFile,
-        round.number,
       );
       let result: ReviewAttemptResult;
       try {
@@ -176,6 +173,7 @@ async function runReviewRound(
             promptFile: input.reviewPrompt,
             promptArgs: {
               REVIEW_INPUT: reviewInput,
+              REVIEW_ROUND: round.number,
             },
             agent: reviewAgent.agent,
             model: reviewAgent.model,
@@ -404,16 +402,17 @@ export async function reviewHandoff(
         new URL("../prompts/review-attempt-input.md", import.meta.url),
         "utf8",
       )
-    ).replaceAll(
-      "{{REVIEW_INPUT}}",
-      createReviewInput(
-        input,
-        handoff,
-        reviewBase,
-        reviewSession.logFile!.replace(/\.log$/u, `-round-${round + 1}.md`),
-        round + 1,
-      ),
-    );
+    )
+      .replaceAll("{{REVIEW_ROUND}}", String(round + 1))
+      .replaceAll(
+        "{{REVIEW_INPUT}}",
+        createReviewInput(
+          input,
+          handoff,
+          reviewBase,
+          reviewSession.logFile!.replace(/\.log$/u, `-round-${round + 1}.md`),
+        ),
+      );
   }
   for (const stage of ["implement", "review"] as const)
     await discardAgentLogs(input, "review", handoff.ticket, stage, 1);
