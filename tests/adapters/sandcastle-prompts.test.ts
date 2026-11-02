@@ -20,6 +20,8 @@ test("Runner supplies task context even when project prompts contain only user i
   );
   const promptFile = path.join(directory, "user.md");
   await writeFile(promptFile, "Follow this project's instructions.");
+  const reviewPromptFile = path.resolve("templates/prompts/review.md");
+  const reviewPrompt = await readFile(reviewPromptFile, "utf8");
   for (const purpose of [
     "implement",
     "review",
@@ -56,8 +58,9 @@ test("Runner supplies task context even when project prompts contain only user i
     if (review) {
       await executor.executeReview({
         ...reviewInput(),
-        promptFile,
+        promptFile: reviewPromptFile,
         promptArgs: {
+          REVIEW_ROUND: 1,
           REVIEW_INPUT: JSON.stringify({
             deliveryTicket: context.TICKET_REFERENCE,
             worktree: input().worktree,
@@ -95,6 +98,7 @@ test("Runner supplies task context even when project prompts contain only user i
       assert.ok(prompt.includes(value), `${purpose}: missing ${value}`);
     if (purpose === "ciRepair" || purpose === "conflictRepair")
       assert.doesNotMatch(prompt, /Follow this project's instructions/u);
+    else if (review) assert.ok(prompt.includes(reviewPrompt.trimEnd()));
     else assert.match(prompt, /Follow this project's instructions/u);
     assert.match(prompt, /Work only in the supplied Worktree/u);
     if (purpose === "conflictRepair") {
@@ -120,6 +124,8 @@ test("Runner supplies task context even when project prompts contain only user i
     assert.ok(prompt.includes(`<${tag}>`));
     assert.doesNotMatch(prompt, /\{\{[A-Z_]+\}\}/u);
     if (review) {
+      assert.match(prompt, /^Review round: 1$/mu);
+      assert.doesNotMatch(prompt, /"reviewRound"/u);
       assert.ok(prompt.includes("/runner/logs/findings.md"));
       assert.ok(prompt.includes("b".repeat(40)));
       const nextInput = {
@@ -132,16 +138,23 @@ test("Runner supplies task context even when project prompts contain only user i
       };
       const continuation = (
         await readFile("src/prompts/review-attempt-input.md", "utf8")
-      ).replaceAll("{{REVIEW_INPUT}}", JSON.stringify(nextInput));
+      )
+        .replaceAll("{{REVIEW_INPUT}}", JSON.stringify(nextInput))
+        .replaceAll("{{REVIEW_ROUND}}", "2");
       await executor.executeReview({
         ...reviewInput(),
-        promptFile,
-        promptArgs: { REVIEW_INPUT: JSON.stringify(nextInput) },
+        promptFile: reviewPromptFile,
+        promptArgs: {
+          REVIEW_INPUT: JSON.stringify(nextInput),
+          REVIEW_ROUND: 2,
+        },
         resumePrompt: continuation,
       });
       const resumedPrompt = String(prompts[1]?.prompt);
       assert.equal(prompts[1]?.resumeSession, "session-id");
       assert.ok(resumedPrompt.includes(JSON.stringify(nextInput)));
+      assert.match(resumedPrompt, /^Review round: 2$/mu);
+      assert.doesNotMatch(resumedPrompt, /"reviewRound"|\{\{[A-Z_]+\}\}/u);
       assert.doesNotMatch(
         resumedPrompt,
         /Follow this project's instructions|\bRunner\b/u,

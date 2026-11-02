@@ -121,6 +121,7 @@ test("review rounds reuse both sessions, fix every findings round, and review on
               implementationHead: string;
               findingsFile: string;
             };
+            assert.equal(input.promptArgs.REVIEW_ROUND, round);
             assert.ok(handoff.findingsFile.endsWith(`-round-${round}.md`));
             assert.equal(
               handoff.reviewBase,
@@ -139,6 +140,11 @@ test("review rounds reuse both sessions, fix every findings round, and review on
               );
               assert.ok(input.resumePrompt?.includes(JSON.stringify(handoff)));
               assert.ok(input.resumePrompt?.startsWith("Review input:"));
+              assert.match(
+                input.resumePrompt!,
+                new RegExp(`^Review round: ${round}$`, "mu"),
+              );
+              assert.doesNotMatch(input.resumePrompt!, /\{\{[A-Z_]+\}\}/u);
               for (const filename of findingsFiles) await access(filename);
             }
             assert.notEqual(reviewLog, implementationLog);
@@ -290,6 +296,7 @@ test("findings pauses stay in the relevant session and retain files until succes
             const handoff = JSON.parse(
               String(input.promptArgs.REVIEW_INPUT),
             ) as { findingsFile: string };
+            assert.equal(input.promptArgs.REVIEW_ROUND, 1);
             assert.ok(handoff.findingsFile.endsWith("-round-1.md"));
             if (reviews === 1) {
               reviewLog = input.logFile;
