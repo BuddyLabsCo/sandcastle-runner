@@ -1,17 +1,24 @@
 # Changelog
 
+## 1.0.3
+
+- - fix: [issue-314] require merge for conflict repair (#315)
+
 ## 1.0.2
 
 - - feat: [issue-311] expose review rounds and scope review template (#312)
+
 
 ## 1.0.1
 
 - - fix: [issue-308] handle long-path Worktree cleanup safely (#309)
 
 
+
 ## 0.1.3
 
 - - docs: [issue-273] add Simplified Chinese README and configuration guide (#302)
+
 
 
 
@@ -24,9 +31,11 @@
 
 
 
+
 ## 0.1.1
 
 - - test: [issue-292] await timeout test log completion (#293)
+
 
 
 
